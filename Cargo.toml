@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "illuminate",
+    "playground",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.65"
+
+[workspace.dependencies]
+clipboard = "0.5"
+image = "0.24"
+profiling = "=1.0.7"
+serde = "1"
+winit = "0.27"
+raw-window-handle = "0.5"
+log = "0.4"
+env_logger = "0.10.0"
+num = "0.4"
+thiserror = "1"
+anyhow = "1"
+lazy_static = "1"
+nalgebra-glm = "0.17"
+typed-builder = "0.11"
+bitflags = "1"
+winapi = "0.3"
+naga = "0.10"
+windows = "0.43"
+fxhash = "0.2"
+parking_lot = "0.12"
+
+# Vulkan
+ash = "0.37"
+
+
+#glium = "0.32.1"
+#imgui = "0.9"
+#imgui-glium-renderer = "0.9"
+#imgui-winit-support = "0.9"
