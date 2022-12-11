@@ -12,7 +12,7 @@ env:
 
 jobs:
   build_and_test:
-    name: Rise Engine - latest
+    name: Eureka Engine - latest
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:

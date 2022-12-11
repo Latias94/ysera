@@ -7,6 +7,10 @@ rust-version.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["vulkan"]
+vulkan = ["naga/spv-out", "ash"]
+
 [dependencies]
 ash = { workspace = true, default-features = false, features = ["linked", "debug"], optional = true }
 raw-window-handle.workspace = true
@@ -19,6 +23,8 @@ bitflags.workspace = true
 winit.workspace = true
 fxhash.workspace = true
 parking_lot.workspace = true
+gpu-allocator.workspace = true
+#vk-mem.workspace = true
 naga = { workspace = true, features = ["clone"] }
 
 [target.'cfg(windows)'.dependencies]
