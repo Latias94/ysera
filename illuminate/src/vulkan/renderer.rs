@@ -2,6 +2,7 @@ use super::device::Device;
 use super::instance::Instance;
 use super::surface::Surface;
 use super::swapchain::Swapchain;
+use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
 use crate::{AdapterRequirements, DeviceError, InstanceDescriptor};
@@ -17,6 +18,7 @@ pub struct VulkanRenderer {
     device: Rc<Device>,
     allocator: Option<Rc<Allocator>>,
     swapchain: Option<Swapchain>,
+    debug_utils: Option<DebugUtils>,
     // format: vk::SurfaceFormatKHR,
     // present_mode: vk::PresentModeKHR,
 }
@@ -59,7 +61,7 @@ impl VulkanRenderer {
 
         let device = unsafe {
             adapter
-                .open(&instance, indices, &requirements, debug_utils)
+                .open(&instance, indices, &requirements, debug_utils.clone())
                 .unwrap()
         };
         log::info!("Device opened.");
@@ -101,6 +103,31 @@ impl VulkanRenderer {
             device,
             allocator: Some(Rc::new(allocator)),
             swapchain: Some(swapchain),
+            debug_utils,
         })
+    }
+}
+
+impl Drop for VulkanRenderer {
+    fn drop(&mut self) {
+        self.device.wait_idle();
+        self.swapchain = None; // drop first
+
+        if let Some(DebugUtils {
+            extension,
+            messenger,
+        }) = self.debug_utils.take()
+        {
+            unsafe {
+                extension.destroy_debug_utils_messenger(messenger, None);
+            }
+        }
+
+        unsafe {
+            self.surface
+                .loader()
+                .destroy_surface(self.surface.raw(), None);
+        }
+        log::debug!("surface destroyed.");
     }
 }

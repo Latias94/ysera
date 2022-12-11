@@ -26,12 +26,14 @@ fn main() {
     run(event_loop, window);
 }
 
-struct State {}
+struct State {
+    renderer: VulkanRenderer,
+}
 impl State {
     fn new(window: &Window) -> Self {
-        VulkanRenderer::new(window);
+        let renderer = VulkanRenderer::new(window).unwrap();
 
-        Self {}
+        Self { renderer }
     }
 
     fn resize(&mut self, new_size: PhysicalSize<u32>) {}

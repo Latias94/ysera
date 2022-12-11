@@ -54,7 +54,7 @@ impl Swapchain {
         &self.loader
     }
 
-    pub fn new(mut desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
+    pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
         let (swapchain_loader, swapchain, properties, support) = Self::create_swapchain(
             desc.adapter,
             desc.surface,
@@ -240,7 +240,7 @@ impl SwapChainSupportDetail {
     ) -> vk::SurfaceFormatKHR {
         // check if list contains most widely used R8G8B8A8 format with nonlinear color space
         for available_format in available_formats {
-            if available_format.format == vk::Format::B8G8R8A8_UNORM
+            if available_format.format == vk::Format::B8G8R8A8_SRGB
                 && available_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
             {
                 return *available_format;
@@ -298,5 +298,14 @@ impl SwapChainSupportDetail {
                 ),
             }
         }
+    }
+}
+
+impl Drop for Swapchain {
+    fn drop(&mut self) {
+        unsafe {
+            self.loader.destroy_swapchain(self.raw, None);
+        }
+        log::debug!("swapchain destroyed.");
     }
 }

@@ -18,6 +18,10 @@ impl Device {
         Self { raw, debug_utils }
     }
 
+    pub fn wait_idle(&self) {
+        unsafe { self.raw.device_wait_idle().unwrap() }
+    }
+
     pub fn create_texture_view(
         &self,
         create_info: &vk::ImageViewCreateInfo,
@@ -28,6 +32,18 @@ impl Device {
     pub fn destroy_texture_view(&self, image_view: vk::ImageView) {
         unsafe {
             self.raw.destroy_image_view(image_view, None);
+        }
+    }
+    pub fn create_shader_module(
+        &self,
+        create_info: &vk::ShaderModuleCreateInfo,
+    ) -> Result<vk::ShaderModule, DeviceError> {
+        Ok(unsafe { self.raw.create_shader_module(create_info, None)? })
+    }
+
+    pub fn destroy_shader_module(&self, shader_module: vk::ShaderModule) {
+        unsafe {
+            self.raw.destroy_shader_module(shader_module, None);
         }
     }
 
