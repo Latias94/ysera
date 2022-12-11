@@ -41,11 +41,16 @@ impl Instance {
         }
     }
 
-    pub fn vk_instance(&self) -> &ash::Instance {
+    pub fn raw(&self) -> &ash::Instance {
         &self.raw
     }
+
     pub fn flags(&self) -> InstanceFlags {
         self.flags
+    }
+
+    pub fn debug_utils(&self) -> &Option<DebugUtils> {
+        &self.debug_utils
     }
 
     pub unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, crate::InstanceError> {
@@ -191,7 +196,7 @@ impl Instance {
             }
         };
 
-        let fp = khr::Surface::new(&self.entry, &self.raw);
-        Surface::new(surface, fp)
+        let surface_loader = khr::Surface::new(&self.entry, &self.raw);
+        Surface::new(surface, surface_loader)
     }
 }

@@ -6,6 +6,7 @@ use ash::{extensions::ext, vk};
 
 use crate::vulkan::utils;
 
+#[derive(Clone)]
 pub struct DebugUtils {
     pub extension: ext::DebugUtils,
     pub messenger: vk::DebugUtilsMessengerEXT,

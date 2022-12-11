@@ -30,12 +30,12 @@ naga = "0.10"
 windows = "0.43"
 fxhash = "0.2"
 parking_lot = "0.12"
-#gpu-allocator = "0.21"
-vk-mem = { git = "https://github.com/gwihlidal/vk-mem-rs", version = "0.2.3" }
 
 # Vulkan
 ash = "0.37"
-
+# Vulkan allocator
+gpu-allocator = "0.21"
+#vk-mem = { git = "https://github.com/gwihlidal/vk-mem-rs", version = "0.2.3" } # wait for update
 
 #glium = "0.32.1"
 #imgui = "0.9"

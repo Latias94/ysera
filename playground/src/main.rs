@@ -1,11 +1,7 @@
-use naga::ShaderStage;
 use std::borrow::{Borrow, Cow};
-use std::path::Path;
 use std::time::Instant;
 
-use illuminate::vulkan::instance::Instance;
-use illuminate::*;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use illuminate::vulkan::renderer::VulkanRenderer;
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
     event::*,
@@ -33,40 +29,7 @@ fn main() {
 struct State {}
 impl State {
     fn new(window: &Window) -> Self {
-        let instance_desc = InstanceDescriptor::builder()
-            // .debug_level_filter(log::LevelFilter::Info)
-            .build();
-        let instance = unsafe { Instance::init(&instance_desc).unwrap() };
-        let mut surface = unsafe {
-            instance
-                .create_surface(window.raw_display_handle(), window.raw_window_handle())
-                .unwrap()
-        };
-        let adapters = unsafe { instance.enumerate_adapters().unwrap() };
-        assert!(!adapters.is_empty());
-
-        let requirements = AdapterRequirements::builder()
-            .compute(true)
-            .adapter_extension_names(vec![])
-            .build();
-        let mut selected_adapter = None;
-        for adapter in adapters {
-            if unsafe {
-                adapter.meet_requirements(&instance.vk_instance(), &surface, &requirements)
-            }
-            .is_ok()
-            {
-                selected_adapter = Some(adapter);
-                break;
-            }
-        }
-        let adapter = match selected_adapter {
-            None => panic!("Cannot find the require device."),
-            Some(adapter) => adapter,
-        };
-        log::info!("Find the require device.");
-        let device = unsafe { adapter.open(&instance, &surface, &requirements).unwrap() };
-        log::info!("Device opened.");
+        VulkanRenderer::new(window);
 
         Self {}
     }

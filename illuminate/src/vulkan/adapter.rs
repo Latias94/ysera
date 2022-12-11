@@ -1,4 +1,5 @@
 use super::{device::Device, instance::Instance, surface::Surface, utils};
+use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::instance::InstanceFlags;
 use crate::{AdapterRequirements, QueueFamilyIndices};
 use ash::extensions::khr;
@@ -11,9 +12,14 @@ pub struct Adapter {
 }
 
 impl Adapter {
+    pub fn raw(&self) -> vk::PhysicalDevice {
+        self.raw
+    }
+
     pub fn new(raw: vk::PhysicalDevice) -> Self {
         Self { raw }
     }
+
     pub unsafe fn meet_requirements(
         &self,
         instance: &ash::Instance,
@@ -32,7 +38,7 @@ impl Adapter {
         let queue_families =
             unsafe { instance.get_physical_device_queue_family_properties(self.raw) };
 
-        let queue_family_indices = self.get_queue_family_indices(surface, queue_families)?;
+        let queue_family_indices = utils::get_queue_family_indices(instance, self.raw, surface)?;
         if !queue_family_indices.is_complete(requirements) {
             log::error!("Device is not meet queue family indices' requirement! \nindices is {:#?},\nbut requirement is {:#?}", queue_family_indices, requirements);
             return Err(crate::DeviceError::NotMeetRequirement);
@@ -49,13 +55,11 @@ impl Adapter {
     pub unsafe fn open(
         &self,
         instance: &Instance,
-        surface: &Surface,
+        indices: QueueFamilyIndices,
         requirement: &AdapterRequirements,
+        debug_utils: Option<DebugUtils>,
     ) -> Result<Device, crate::DeviceError> {
-        let instance_fp = instance.vk_instance();
-        let queue_families =
-            unsafe { instance_fp.get_physical_device_queue_family_properties(self.raw) };
-        let indices = self.get_queue_family_indices(surface, queue_families)?;
+        let instance_raw = instance.raw();
 
         let queue_priorities = [1_f32];
         let queue_create_info = vk::DeviceQueueCreateInfo::builder()
@@ -94,11 +98,11 @@ impl Adapter {
             .enabled_features(&physical_device_features);
 
         let ash_device: ash::Device =
-            unsafe { instance_fp.create_device(self.raw, &device_create_info, None)? };
+            unsafe { instance_raw.create_device(self.raw, &device_create_info, None)? };
 
         log::info!("Vulkan logical device created.");
 
-        let device = Device::new(ash_device);
+        let device = Device::new(ash_device, debug_utils);
         Ok(device)
     }
 
@@ -194,41 +198,5 @@ impl Adapter {
                 "Unsupport"
             }
         );
-    }
-}
-
-impl Adapter {
-    unsafe fn get_queue_family_indices(
-        &self,
-        surface: &Surface,
-        queue_families: Vec<QueueFamilyProperties>,
-    ) -> Result<QueueFamilyIndices, crate::DeviceError> {
-        let mut indices = QueueFamilyIndices::default();
-        for (i, queue_family) in queue_families.iter().enumerate() {
-            let index = i as u32;
-            if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-                && indices.graphics_family.is_none()
-            {
-                indices.graphics_family = Some(index);
-            }
-            if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE)
-                && indices.compute_family.is_none()
-            {
-                indices.compute_family = Some(index);
-            };
-            if queue_family.queue_flags.contains(vk::QueueFlags::TRANSFER)
-                && indices.transfer_family.is_none()
-            {
-                indices.transfer_family = Some(index);
-            };
-            let support_present = surface
-                .khr_surface()
-                .get_physical_device_surface_support(self.raw, index, surface.vk_surface_khr())
-                .map_err(crate::DeviceError::VulkanError)?;
-            if support_present {
-                indices.present_family = Some(index);
-            }
-        }
-        Ok(indices)
     }
 }

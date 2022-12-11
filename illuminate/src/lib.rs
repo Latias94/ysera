@@ -1,13 +1,18 @@
 #![allow(clippy::missing_safety_doc)]
 
+extern crate core;
+
 use log::LevelFilter;
 use std::ffi::CStr;
+use std::fmt::{Debug, Formatter};
 use typed_builder::TypedBuilder;
 
 mod error;
 pub mod vulkan;
 use crate::vulkan::instance::InstanceFlags;
 pub use error::*;
+
+pub type Label<'a> = Option<&'a str>;
 
 #[derive(Debug, TypedBuilder)]
 pub struct AdapterRequirements {
@@ -36,7 +41,7 @@ pub struct InstanceDescriptor<'a> {
     pub debug_level_filter: LevelFilter,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct QueueFamilyIndices {
     graphics_family: Option<u32>,
     present_family: Option<u32>,
@@ -58,5 +63,26 @@ impl QueueFamilyIndices {
             return false;
         }
         true
+    }
+
+    pub fn log_debug(&self) {
+        if self.graphics_family.is_some() {
+            log::debug!(
+                "graphics family indices is {}, ",
+                self.graphics_family.unwrap()
+            );
+        }
+        if self.present_family.is_some() {
+            log::debug!("present family indices is {}", self.present_family.unwrap());
+        }
+        if self.compute_family.is_some() {
+            log::debug!("compute family indices is {}", self.compute_family.unwrap());
+        }
+        if self.transfer_family.is_some() {
+            log::debug!(
+                "transfer family indices is {}",
+                self.transfer_family.unwrap()
+            );
+        }
     }
 }
