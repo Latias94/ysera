@@ -503,6 +503,7 @@ dependencies = [
  "raw-window-handle 0.5.0",
  "thiserror",
  "typed-builder",
+ "vk-mem",
  "windows 0.43.0",
  "winit",
 ]
@@ -708,6 +709,7 @@ dependencies = [
  "num-traits",
  "pp-rs",
  "rustc-hash",
+ "spirv",
  "thiserror",
 ]
 
@@ -1251,6 +1253,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "spirv"
+version = "0.2.0+1.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "246bfa38fe3db3f1dfc8ca5a2cdeb7348c78be2112740cc0ec8ef18b6d94f830"
+dependencies = [
+ "bitflags",
+ "num-traits",
+]
+
+[[package]]
 name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1461,6 +1473,16 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "vk-mem"
+version = "0.2.3"
+source = "git+https://github.com/gwihlidal/vk-mem-rs#0b18c5dac60214e3556308cc3a6127f363d6866f"
+dependencies = [
+ "ash",
+ "bitflags",
+ "cc",
+]
 
 [[package]]
 name = "wasi"

@@ -6,7 +6,6 @@ rust-version.workspace = true
 
 [dependencies]
 illuminate = { path = "../illuminate" }
-#rise_graphics = { path = "../rise_graphics" } # vulkan
 fxhash.workspace = true
 log.workspace = true
 env_logger.workspace = true
