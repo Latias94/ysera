@@ -51,6 +51,65 @@ impl Device {
         unsafe { self.raw.get_device_queue(queue_family_index, queue_index) }
     }
 
+    pub fn create_render_pass(
+        &self,
+        create_info: &vk::RenderPassCreateInfo,
+    ) -> Result<vk::RenderPass, DeviceError> {
+        Ok(unsafe { self.raw.create_render_pass(create_info, None)? })
+    }
+
+    pub fn destroy_render_pass(&self, render_pass: vk::RenderPass) {
+        unsafe { self.raw.destroy_render_pass(render_pass, None) }
+    }
+
+    pub fn create_pipeline_layout(
+        &self,
+        create_info: &vk::PipelineLayoutCreateInfo,
+    ) -> Result<vk::PipelineLayout, DeviceError> {
+        Ok(unsafe { self.raw.create_pipeline_layout(create_info, None)? })
+    }
+
+    pub fn destroy_pipeline_layout(&self, pipeline_layout: vk::PipelineLayout) {
+        unsafe { self.raw.destroy_pipeline_layout(pipeline_layout, None) }
+    }
+
+    pub fn create_graphics_pipelines(
+        &self,
+        create_infos: &[vk::GraphicsPipelineCreateInfo],
+    ) -> Result<Vec<vk::Pipeline>, DeviceError> {
+        Ok(unsafe {
+            self.raw
+                .create_graphics_pipelines(vk::PipelineCache::default(), create_infos, None)
+                .map_err(|e| e.1)?
+        })
+    }
+
+    pub fn destroy_pipeline(&self, pipeline: vk::Pipeline) {
+        unsafe { self.raw.destroy_pipeline(pipeline, None) }
+    }
+
+    pub fn create_semaphore(
+        &self,
+        create_info: &vk::SemaphoreCreateInfo,
+    ) -> Result<vk::Semaphore, DeviceError> {
+        Ok(unsafe { self.raw.create_semaphore(create_info, None)? })
+    }
+
+    pub fn destroy_semaphore(&self, semaphore: vk::Semaphore) {
+        unsafe { self.raw.destroy_semaphore(semaphore, None) }
+    }
+
+    pub fn create_fence(
+        &self,
+        create_info: &vk::FenceCreateInfo,
+    ) -> Result<vk::Fence, DeviceError> {
+        Ok(unsafe { self.raw.create_fence(create_info, None)? })
+    }
+
+    pub fn destroy_fence(&self, fence: vk::Fence) {
+        unsafe { self.raw.destroy_fence(fence, None) }
+    }
+
     pub unsafe fn set_object_name(
         &self,
         object_type: vk::ObjectType,

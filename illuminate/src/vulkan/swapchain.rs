@@ -54,6 +54,10 @@ impl Swapchain {
         &self.loader
     }
 
+    pub fn surface_format(&self) -> vk::SurfaceFormatKHR {
+        self.surface_format
+    }
+
     pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
         let (swapchain_loader, swapchain, properties, support) = Self::create_swapchain(
             desc.adapter,
@@ -306,6 +310,6 @@ impl Drop for Swapchain {
         unsafe {
             self.loader.destroy_swapchain(self.raw, None);
         }
-        log::debug!("swapchain destroyed.");
+        log::debug!("Swapchain destroyed.");
     }
 }

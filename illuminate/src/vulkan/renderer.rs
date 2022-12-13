@@ -3,6 +3,10 @@ use super::instance::Instance;
 use super::surface::Surface;
 use super::swapchain::Swapchain;
 use crate::vulkan::debug::DebugUtils;
+use crate::vulkan::pipeline::Pipeline;
+use crate::vulkan::pipeline_layout::PipelineLayout;
+use crate::vulkan::render_pass::RenderPass;
+use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
 use crate::{AdapterRequirements, DeviceError, InstanceDescriptor};
@@ -19,6 +23,8 @@ pub struct VulkanRenderer {
     allocator: Option<Rc<Allocator>>,
     swapchain: Option<Swapchain>,
     debug_utils: Option<DebugUtils>,
+    present_queue: vk::Queue,
+    graphics_queue: vk::Queue,
     // format: vk::SurfaceFormatKHR,
     // present_mode: vk::PresentModeKHR,
 }
@@ -64,7 +70,6 @@ impl VulkanRenderer {
                 .open(&instance, indices, &requirements, debug_utils.clone())
                 .unwrap()
         };
-        log::info!("Device opened.");
 
         let allocator = Allocator::new(&AllocatorCreateDesc {
             instance: instance.raw().clone(),
@@ -83,19 +88,41 @@ impl VulkanRenderer {
         };
 
         // this queue should support graphics and present
-        let queue = device.get_device_queue(indices.graphics_family.unwrap(), 0);
+        let graphics_queue = device.get_device_queue(indices.graphics_family.unwrap(), 0);
+        let present_queue = device.get_device_queue(indices.present_family.unwrap(), 0);
         let device = Rc::new(device);
         let inner_size = window.inner_size();
+
         let swapchain_desc = SwapchainDescriptor {
             adapter: &adapter,
             surface: &surface,
             instance: &instance,
             device: &device,
-            queue,
+            queue: present_queue,
             queue_family: indices,
             dimensions: [inner_size.width, inner_size.height],
         };
+
         let swapchain = Swapchain::new(&swapchain_desc)?;
+
+        let render_pass = RenderPass::new(&device, swapchain.surface_format().format)?;
+
+        let extent = vk::Extent2D::builder()
+            .width(inner_size.width)
+            .height(inner_size.height)
+            .build();
+
+        let shader_desc = ShaderDescriptor {
+            label: Some("Triangle"),
+            device: &device,
+            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.vert"),
+            vert_entry_name: "main",
+            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.frag"),
+            frag_entry_name: "main",
+        };
+        let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
+
+        let pipeline = Pipeline::new(&device, render_pass.raw(), extent, shader)?;
 
         Ok(Self {
             instance: Rc::new(instance),
@@ -104,6 +131,8 @@ impl VulkanRenderer {
             allocator: Some(Rc::new(allocator)),
             swapchain: Some(swapchain),
             debug_utils,
+            present_queue,
+            graphics_queue,
         })
     }
 }

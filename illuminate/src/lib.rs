@@ -49,7 +49,7 @@ pub struct QueueFamilyIndices {
     transfer_family: Option<u32>,
 }
 impl QueueFamilyIndices {
-    pub fn is_complete(&self, requirements: &AdapterRequirements) -> bool {
+    pub fn has_meet_requirement(&self, requirements: &AdapterRequirements) -> bool {
         if requirements.graphics && self.graphics_family.is_none() {
             return false;
         }
@@ -63,6 +63,13 @@ impl QueueFamilyIndices {
             return false;
         }
         true
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.graphics_family.is_some()
+            && self.transfer_family.is_some()
+            && self.present_family.is_some()
+            && self.compute_family.is_some()
     }
 
     pub fn log_debug(&self) {

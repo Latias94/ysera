@@ -5,6 +5,7 @@ use crate::{AdapterRequirements, QueueFamilyIndices};
 use ash::extensions::khr;
 use ash::vk;
 use ash::vk::QueueFamilyProperties;
+use std::collections::HashSet;
 use std::ffi::{c_char, CString};
 
 pub struct Adapter {
@@ -39,7 +40,7 @@ impl Adapter {
             unsafe { instance.get_physical_device_queue_family_properties(self.raw) };
 
         let queue_family_indices = utils::get_queue_family_indices(instance, self.raw, surface)?;
-        if !queue_family_indices.is_complete(requirements) {
+        if !queue_family_indices.has_meet_requirement(requirements) {
             log::error!("Device is not meet queue family indices' requirement! \nindices is {:#?},\nbut requirement is {:#?}", queue_family_indices, requirements);
             return Err(crate::DeviceError::NotMeetRequirement);
         }
@@ -61,12 +62,22 @@ impl Adapter {
     ) -> Result<Device, crate::DeviceError> {
         let instance_raw = instance.raw();
 
-        let queue_priorities = [1_f32];
-        let queue_create_info = vk::DeviceQueueCreateInfo::builder()
-            .queue_priorities(&queue_priorities)
-            .queue_family_index(indices.graphics_family.unwrap())
-            .build();
-        let queue_create_infos = [queue_create_info];
+        let queue_priorities = &[1_f32];
+
+        let mut unique_indices = HashSet::new();
+        unique_indices.insert(indices.graphics_family.unwrap());
+        unique_indices.insert(indices.present_family.unwrap());
+
+        let queue_create_infos = unique_indices
+            .iter()
+            .map(|i| {
+                vk::DeviceQueueCreateInfo::builder()
+                    .queue_family_index(*i)
+                    .queue_priorities(queue_priorities)
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
         let physical_device_features = vk::PhysicalDeviceFeatures::builder()
             .sampler_anisotropy(requirement.sampler_anisotropy)
             .sample_rate_shading(true) // enable sample shading feature for the device

@@ -6,6 +6,7 @@ pub mod instance;
 pub mod pipeline;
 pub mod pipeline_layout;
 pub mod platforms;
+pub mod render_pass;
 pub mod renderer;
 pub mod shader;
 pub mod surface;

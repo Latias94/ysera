@@ -12,6 +12,8 @@ pub enum DeviceError {
     Lost,
     #[error("The physical device not meet requirement")]
     NotMeetRequirement,
+    #[error("other reason: {0}")]
+    Other(&'static str),
     #[error(transparent)]
     #[cfg(all(feature = "vulkan"))]
     VulkanError(#[from] ash::vk::Result),
