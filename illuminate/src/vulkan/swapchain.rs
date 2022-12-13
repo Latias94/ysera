@@ -367,6 +367,10 @@ impl SwapChainSupportDetail {
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
+        self.framebuffers
+            .lock()
+            .iter()
+            .for_each(|e| self.device.destroy_framebuffer(*e.1));
         unsafe {
             self.loader.destroy_swapchain(self.raw, None);
         }
