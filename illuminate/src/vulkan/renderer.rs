@@ -4,7 +4,6 @@ use super::surface::Surface;
 use super::swapchain::Swapchain;
 use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::pipeline::Pipeline;
-use crate::vulkan::pipeline_layout::PipelineLayout;
 use crate::vulkan::render_pass::RenderPass;
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::swapchain::SwapchainDescriptor;
@@ -105,13 +104,6 @@ impl VulkanRenderer {
 
         let swapchain = Swapchain::new(&swapchain_desc)?;
 
-        let render_pass = RenderPass::new(&device, swapchain.surface_format().format)?;
-
-        let extent = vk::Extent2D::builder()
-            .width(inner_size.width)
-            .height(inner_size.height)
-            .build();
-
         let shader_desc = ShaderDescriptor {
             label: Some("Triangle"),
             device: &device,
@@ -122,7 +114,12 @@ impl VulkanRenderer {
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
 
-        let pipeline = Pipeline::new(&device, render_pass.raw(), extent, shader)?;
+        let pipeline = Pipeline::new(
+            &device,
+            swapchain.render_pass().raw(),
+            swapchain.extent(),
+            shader,
+        )?;
 
         Ok(Self {
             instance: Rc::new(instance),

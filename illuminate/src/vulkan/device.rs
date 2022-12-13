@@ -62,6 +62,17 @@ impl Device {
         unsafe { self.raw.destroy_render_pass(render_pass, None) }
     }
 
+    pub fn create_framebuffer(
+        &self,
+        create_info: &vk::FramebufferCreateInfo,
+    ) -> Result<vk::Framebuffer, DeviceError> {
+        Ok(unsafe { self.raw.create_framebuffer(create_info, None)? })
+    }
+
+    pub fn destroy_framebuffer(&self, framebuffer: vk::Framebuffer) {
+        unsafe { self.raw.destroy_framebuffer(framebuffer, None) }
+    }
+
     pub fn create_pipeline_layout(
         &self,
         create_info: &vk::PipelineLayoutCreateInfo,

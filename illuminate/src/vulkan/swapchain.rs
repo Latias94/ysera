@@ -1,11 +1,13 @@
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
+use crate::vulkan::render_pass::RenderPass;
 use crate::vulkan::surface::Surface;
 use crate::vulkan::texture_view::TextureView;
 use crate::{DeviceError, QueueFamilyIndices};
 use ash::extensions::khr;
 use ash::vk;
+use parking_lot::Mutex;
 use std::rc::Rc;
 use typed_builder::TypedBuilder;
 
@@ -19,6 +21,8 @@ pub struct Swapchain {
     surface_format: vk::SurfaceFormatKHR,
     extent: vk::Extent2D,
     capabilities: vk::SurfaceCapabilitiesKHR,
+    render_pass: RenderPass,
+    framebuffers: Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -45,6 +49,13 @@ pub struct SwapchainDescriptor<'a> {
     pub dimensions: [u32; 2],
 }
 
+#[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
+pub struct FramebufferDescriptor {
+    render_pass: vk::RenderPass,
+    texture_views: Vec<vk::ImageView>,
+    swapchain_extent: vk::Extent2D,
+}
+
 impl Swapchain {
     pub fn raw(&self) -> vk::SwapchainKHR {
         self.raw
@@ -56,6 +67,14 @@ impl Swapchain {
 
     pub fn surface_format(&self) -> vk::SurfaceFormatKHR {
         self.surface_format
+    }
+
+    pub fn extent(&self) -> vk::Extent2D {
+        self.extent
+    }
+
+    pub fn render_pass(&self) -> &RenderPass {
+        &self.render_pass
     }
 
     pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
@@ -86,7 +105,24 @@ impl Swapchain {
                 )
                 .unwrap()
             })
-            .collect();
+            .collect::<Vec<TextureView>>();
+
+        let map = Default::default();
+        let render_pass = RenderPass::new(desc.device, properties.surface_format.format)?;
+
+        texture_views
+            .iter()
+            .map(|i| {
+                let image_view = i.raw();
+                let framebuffer_desc = FramebufferDescriptor::builder()
+                    .texture_views(vec![image_view])
+                    .swapchain_extent(properties.extent)
+                    .render_pass(render_pass.raw())
+                    .build();
+                Self::create_framebuffer(desc.device, &map, framebuffer_desc)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         // // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
         // // 如专用 VRAM 和当 VRAM 耗尽时 RAM 中的交换空间。不同类型的内存存在于这些堆中。现在我们只关心内存的类型，
         // // 而不关心它来自的堆，但是可以想象这可能会影响性能。
@@ -124,6 +160,8 @@ impl Swapchain {
             extent: properties.extent,
             capabilities,
             texture_views,
+            framebuffers: map,
+            render_pass,
         })
     }
 
@@ -203,6 +241,28 @@ impl Swapchain {
         log::info!("Vulkan swapchain created.");
 
         Ok((swapchain_loader, swapchain, properties, swapchain_support))
+    }
+
+    pub fn create_framebuffer(
+        device: &Device,
+        map: &Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
+        desc: FramebufferDescriptor,
+    ) -> Result<vk::Framebuffer, DeviceError> {
+        use std::collections::hash_map::Entry;
+        Ok(match map.lock().entry(desc) {
+            Entry::Occupied(e) => *e.get(),
+            Entry::Vacant(e) => {
+                let desc = e.key();
+                let create_info = vk::FramebufferCreateInfo::builder()
+                    .render_pass(desc.render_pass)
+                    .attachments(&desc.texture_views)
+                    .width(desc.swapchain_extent.width)
+                    .height(desc.swapchain_extent.height)
+                    .layers(1)
+                    .build();
+                device.create_framebuffer(&create_info)?
+            }
+        })
     }
 }
 
