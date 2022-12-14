@@ -99,6 +99,97 @@ impl Device {
         unsafe { self.raw.destroy_pipeline(pipeline, None) }
     }
 
+    pub fn create_command_pool(
+        &self,
+        create_info: &vk::CommandPoolCreateInfo,
+    ) -> Result<vk::CommandPool, DeviceError> {
+        Ok(unsafe { self.raw.create_command_pool(create_info, None)? })
+    }
+
+    pub fn destroy_command_pool(&self, command_pool: vk::CommandPool) {
+        unsafe { self.raw.destroy_command_pool(command_pool, None) }
+    }
+
+    pub fn allocate_command_buffers(
+        &self,
+        allocate_info: &vk::CommandBufferAllocateInfo,
+    ) -> Result<Vec<vk::CommandBuffer>, DeviceError> {
+        Ok(unsafe { self.raw.allocate_command_buffers(allocate_info)? })
+    }
+
+    pub fn begin_command_buffer(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        begin_info: &vk::CommandBufferBeginInfo,
+    ) -> Result<(), DeviceError> {
+        Ok(unsafe { self.raw.begin_command_buffer(command_buffer, begin_info)? })
+    }
+
+    pub fn end_command_buffer(&self, command_buffer: vk::CommandBuffer) -> Result<(), DeviceError> {
+        Ok(unsafe { self.raw.end_command_buffer(command_buffer)? })
+    }
+
+    pub fn cmd_begin_render_pass(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        begin_info: &vk::RenderPassBeginInfo,
+        contents: vk::SubpassContents,
+    ) {
+        unsafe {
+            self.raw
+                .cmd_begin_render_pass(command_buffer, begin_info, contents);
+        }
+    }
+
+    pub fn cmd_end_render_pass(&self, command_buffer: vk::CommandBuffer) {
+        unsafe { self.raw.cmd_end_render_pass(command_buffer) }
+    }
+
+    pub fn cmd_set_viewport(&self, command_buffer: vk::CommandBuffer, viewport: math::Rect2D) {
+        unsafe {
+            let vp = ash::vk::Viewport::builder()
+                .x(viewport.x)
+                .y(viewport.y)
+                .width(viewport.width)
+                .height(viewport.height)
+                .min_depth(0f32)
+                .max_depth(1f32)
+                .build();
+            self.raw.cmd_set_viewport(command_buffer, 0, &[vp])
+        }
+    }
+
+    pub fn cmd_bind_pipeline(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        pipeline_bind_point: vk::PipelineBindPoint,
+        pipeline: vk::Pipeline,
+    ) {
+        unsafe {
+            self.raw
+                .cmd_bind_pipeline(command_buffer, pipeline_bind_point, pipeline);
+        }
+    }
+
+    pub fn cmd_draw(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) {
+        unsafe {
+            self.raw.cmd_draw(
+                command_buffer,
+                vertex_count,
+                instance_count,
+                first_vertex,
+                first_instance,
+            );
+        }
+    }
+
     pub fn create_semaphore(
         &self,
         create_info: &vk::SemaphoreCreateInfo,

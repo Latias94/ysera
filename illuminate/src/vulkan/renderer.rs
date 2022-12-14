@@ -3,9 +3,6 @@ use super::instance::Instance;
 use super::surface::Surface;
 use super::swapchain::Swapchain;
 use crate::vulkan::debug::DebugUtils;
-use crate::vulkan::pipeline::Pipeline;
-use crate::vulkan::render_pass::RenderPass;
-use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
 use crate::{AdapterRequirements, DeviceError, InstanceDescriptor};
@@ -24,6 +21,9 @@ pub struct VulkanRenderer {
     debug_utils: Option<DebugUtils>,
     present_queue: vk::Queue,
     graphics_queue: vk::Queue,
+    command_pool: vk::CommandPool,
+    image_available_semaphore: vk::Semaphore,
+    render_finished_semaphore: vk::Semaphore,
     // format: vk::SurfaceFormatKHR,
     // present_mode: vk::PresentModeKHR,
 }
@@ -92,34 +92,30 @@ impl VulkanRenderer {
         let device = Rc::new(device);
         let inner_size = window.inner_size();
 
+        let command_pool_create_info = vk::CommandPoolCreateInfo::builder()
+            .queue_family_index(indices.graphics_family.unwrap())
+            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+            .build();
+        let command_pool = device.create_command_pool(&command_pool_create_info)?;
+
         let swapchain_desc = SwapchainDescriptor {
             adapter: &adapter,
             surface: &surface,
             instance: &instance,
             device: &device,
-            queue: present_queue,
             queue_family: indices,
             dimensions: [inner_size.width, inner_size.height],
+            command_pool,
+            graphics_queue,
+            present_queue,
+            allocator: &allocator,
         };
 
         let swapchain = Swapchain::new(&swapchain_desc)?;
 
-        let shader_desc = ShaderDescriptor {
-            label: Some("Triangle"),
-            device: &device,
-            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.vert"),
-            vert_entry_name: "main",
-            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.frag"),
-            frag_entry_name: "main",
-        };
-        let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
-
-        let pipeline = Pipeline::new(
-            &device,
-            swapchain.render_pass().raw(),
-            swapchain.extent(),
-            shader,
-        )?;
+        let semaphore_create_info = vk::SemaphoreCreateInfo::builder().build();
+        let image_available_semaphore = device.create_semaphore(&semaphore_create_info)?;
+        let render_finished_semaphore = device.create_semaphore(&semaphore_create_info)?;
 
         Ok(Self {
             instance: Rc::new(instance),
@@ -130,6 +126,9 @@ impl VulkanRenderer {
             debug_utils,
             present_queue,
             graphics_queue,
+            command_pool,
+            image_available_semaphore,
+            render_finished_semaphore,
         })
     }
 }
@@ -138,7 +137,7 @@ impl Drop for VulkanRenderer {
     fn drop(&mut self) {
         self.device.wait_idle();
         self.swapchain = None; // drop first
-
+        self.device.destroy_command_pool(self.command_pool);
         if let Some(DebugUtils {
             extension,
             messenger,

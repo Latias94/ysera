@@ -1,12 +1,16 @@
 use crate::vulkan::adapter::Adapter;
+use crate::vulkan::command_buffer::CommandBufferAllocator;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
+use crate::vulkan::pipeline::Pipeline;
 use crate::vulkan::render_pass::RenderPass;
+use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
 use crate::vulkan::texture_view::TextureView;
 use crate::{DeviceError, QueueFamilyIndices};
 use ash::extensions::khr;
 use ash::vk;
+use gpu_allocator::vulkan::Allocator;
 use parking_lot::Mutex;
 use std::rc::Rc;
 use typed_builder::TypedBuilder;
@@ -44,9 +48,12 @@ pub struct SwapchainDescriptor<'a> {
     pub surface: &'a Surface,
     pub instance: &'a Instance,
     pub device: &'a Rc<Device>,
-    pub queue: vk::Queue,
+    pub graphics_queue: vk::Queue,
+    pub present_queue: vk::Queue,
     pub queue_family: QueueFamilyIndices,
     pub dimensions: [u32; 2],
+    pub command_pool: vk::CommandPool,
+    pub allocator: &'a Allocator,
 }
 
 #[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
@@ -78,14 +85,16 @@ impl Swapchain {
     }
 
     pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
+        let device = desc.device;
         let (swapchain_loader, swapchain, properties, support) = Self::create_swapchain(
             desc.adapter,
             desc.surface,
             desc.instance,
-            desc.device,
+            device,
             &desc.queue_family,
             desc.dimensions,
         )?;
+        let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
         let swapchain_textures = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
 
@@ -99,7 +108,7 @@ impl Swapchain {
             .map(|i| {
                 TextureView::new_color_texture_view(
                     Some("swapchain texture view"),
-                    desc.device,
+                    device,
                     *i,
                     properties.surface_format.format,
                 )
@@ -108,20 +117,73 @@ impl Swapchain {
             .collect::<Vec<TextureView>>();
 
         let map = Default::default();
-        let render_pass = RenderPass::new(desc.device, properties.surface_format.format)?;
+        let render_pass = RenderPass::new(device, properties.surface_format.format)?;
 
-        texture_views
+        let framebuffers = texture_views
             .iter()
             .map(|i| {
                 let image_view = i.raw();
                 let framebuffer_desc = FramebufferDescriptor::builder()
                     .texture_views(vec![image_view])
-                    .swapchain_extent(properties.extent)
+                    .swapchain_extent(extent)
                     .render_pass(render_pass.raw())
                     .build();
-                Self::create_framebuffer(desc.device, &map, framebuffer_desc)
+                Self::create_framebuffer(device, &map, framebuffer_desc)
             })
             .collect::<Result<Vec<_>, _>>()?;
+
+        let command_pool = desc.command_pool;
+
+        let shader_desc = ShaderDescriptor {
+            label: Some("Triangle"),
+            device: &device,
+            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.vert"),
+            vert_entry_name: "main",
+            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.frag"),
+            frag_entry_name: "main",
+        };
+        let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
+
+        let pipeline = Pipeline::new(device, render_pass.raw(), extent, shader)?;
+
+        let command_buffer_allocator =
+            CommandBufferAllocator::new(device, command_pool, desc.graphics_queue);
+
+        let color_clear_value = vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [0.68, 0.85, 0.9, 1.0],
+            },
+        };
+        let color_clear_values = &[color_clear_value];
+
+        for framebuffer in framebuffers {
+            command_buffer_allocator.create_single_use(|device, command_buffer| {
+                let command_buffer = *command_buffer;
+                let render_area = vk::Rect2D::builder()
+                    .offset(vk::Offset2D::default())
+                    .extent(extent)
+                    .build();
+
+                let begin_info = vk::RenderPassBeginInfo::builder()
+                    .render_pass(render_pass.raw())
+                    .framebuffer(framebuffer)
+                    .render_area(render_area)
+                    .clear_values(color_clear_values)
+                    .build();
+                device.cmd_begin_render_pass(
+                    command_buffer,
+                    &begin_info,
+                    vk::SubpassContents::INLINE,
+                );
+                device.cmd_bind_pipeline(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline.raw(),
+                );
+                device.cmd_draw(command_buffer, 3, 1, 0, 0);
+                device.cmd_end_render_pass(command_buffer);
+            })?;
+        }
 
         // // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
         // // 如专用 VRAM 和当 VRAM 耗尽时 RAM 中的交换空间。不同类型的内存存在于这些堆中。现在我们只关心内存的类型，

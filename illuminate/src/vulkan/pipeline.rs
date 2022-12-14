@@ -187,10 +187,10 @@ impl Pipeline {
             .blend_constants([0.0, 0.0, 0.0, 0.0])
             .build();
 
-        let dynamic_state = Box::new([vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
-        let dynamic_state_create_info = vk::PipelineDynamicStateCreateInfo::builder()
-            .dynamic_states(dynamic_state.as_ref())
-            .build();
+        // let dynamic_state = Box::new([vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
+        // let dynamic_state_create_info = vk::PipelineDynamicStateCreateInfo::builder()
+        //     .dynamic_states(dynamic_state.as_ref())
+        //     .build();
 
         let graphic_pipeline_create_info = vk::GraphicsPipelineCreateInfo::builder()
             .stages(&shader_stages)
@@ -201,7 +201,7 @@ impl Pipeline {
             // .multisample_state(&multisample_state_create_info)
             // .depth_stencil_state(&depth_stencil_state_create_info)
             .color_blend_state(&color_blend_state_create_info)
-            .dynamic_state(&dynamic_state_create_info)
+            // .dynamic_state(&dynamic_state_create_info)
             .layout(pipeline_layout)
             .render_pass(render_pass)
             .subpass(0)

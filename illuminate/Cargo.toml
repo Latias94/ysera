@@ -13,6 +13,7 @@ vulkan = ["naga/spv-out", "ash"]
 
 [dependencies]
 ash = { workspace = true, default-features = false, features = ["linked", "debug"], optional = true }
+math.workspace = true
 raw-window-handle.workspace = true
 log.workspace = true
 num.workspace = true
