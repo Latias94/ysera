@@ -26,7 +26,10 @@ pub struct Swapchain {
     extent: vk::Extent2D,
     capabilities: vk::SurfaceCapabilitiesKHR,
     render_pass: RenderPass,
+    command_buffers: Vec<vk::CommandBuffer>,
     framebuffers: Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
+    graphics_queue: vk::Queue,
+    present_queue: vk::Queue,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,6 +85,10 @@ impl Swapchain {
 
     pub fn render_pass(&self) -> &RenderPass {
         &self.render_pass
+    }
+
+    pub fn command_buffers(&self) -> &Vec<vk::CommandBuffer> {
+        &self.command_buffers
     }
 
     pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
@@ -151,7 +158,7 @@ impl Swapchain {
 
         let color_clear_value = vk::ClearValue {
             color: vk::ClearColorValue {
-                float32: [0.68, 0.85, 0.9, 1.0],
+                float32: [0.65, 0.8, 0.9, 1.0],
             },
         };
         let color_clear_values = &[color_clear_value];
@@ -184,6 +191,15 @@ impl Swapchain {
                 device.cmd_end_render_pass(command_buffer);
             })?;
         }
+
+        let command_buffers = {
+            let create_info = vk::CommandBufferAllocateInfo::builder()
+                .command_pool(command_pool)
+                .command_buffer_count(texture_views.len() as u32)
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .build();
+            device.allocate_command_buffers(&create_info)?
+        };
 
         // // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
         // // 如专用 VRAM 和当 VRAM 耗尽时 RAM 中的交换空间。不同类型的内存存在于这些堆中。现在我们只关心内存的类型，
@@ -224,6 +240,9 @@ impl Swapchain {
             texture_views,
             framebuffers: map,
             render_pass,
+            command_buffers,
+            graphics_queue: desc.graphics_queue,
+            present_queue: desc.present_queue,
         })
     }
 
@@ -324,6 +343,24 @@ impl Swapchain {
                     .build();
                 device.create_framebuffer(&create_info)?
             }
+        })
+    }
+
+    pub fn acquire_next_image(
+        &self,
+        timeout: u64,
+        semaphore: vk::Semaphore,
+    ) -> Result<(u32, bool), DeviceError> {
+        Ok(unsafe {
+            self.loader
+                .acquire_next_image(self.raw, timeout, semaphore, vk::Fence::null())?
+        })
+    }
+
+    pub fn queue_present(&self, present_info: &vk::PresentInfoKHR) -> Result<bool, DeviceError> {
+        Ok(unsafe {
+            self.loader
+                .queue_present(self.present_queue, present_info)?
         })
     }
 }

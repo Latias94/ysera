@@ -129,6 +129,27 @@ impl Device {
         Ok(unsafe { self.raw.end_command_buffer(command_buffer)? })
     }
 
+    pub fn queue_submit(
+        &self,
+        queue: vk::Queue,
+        submits: &[vk::SubmitInfo],
+        fence: vk::Fence,
+    ) -> Result<(), DeviceError> {
+        Ok(unsafe { self.raw.queue_submit(queue, submits, fence)? })
+    }
+
+    pub fn queue_wait_idle(&self, queue: vk::Queue) -> Result<(), DeviceError> {
+        Ok(unsafe { self.raw.queue_wait_idle(queue)? })
+    }
+
+    pub fn free_command_buffers(
+        &self,
+        command_pool: vk::CommandPool,
+        command_buffers: &[vk::CommandBuffer],
+    ) {
+        unsafe { self.raw.free_command_buffers(command_pool, command_buffers) }
+    }
+
     pub fn cmd_begin_render_pass(
         &self,
         command_buffer: vk::CommandBuffer,

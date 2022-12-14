@@ -34,7 +34,7 @@ impl VulkanRenderer {
             // .debug_level_filter(log::LevelFilter::Info)
             .build();
         let instance = unsafe { Instance::init(&instance_desc).unwrap() };
-        let mut surface = unsafe {
+        let surface = unsafe {
             instance
                 .create_surface(window.raw_display_handle(), window.raw_window_handle())
                 .unwrap()
@@ -78,7 +78,7 @@ impl VulkanRenderer {
             buffer_device_address: true, // Ideally, check the BufferDeviceAddressFeatures struct.
         });
 
-        let mut allocator = match allocator {
+        let allocator = match allocator {
             Ok(x) => x,
             Err(e) => {
                 log::error!("gpu-allocator allocator create failed!");
@@ -131,12 +131,43 @@ impl VulkanRenderer {
             render_finished_semaphore,
         })
     }
+
+    pub fn render(&mut self) -> Result<(), DeviceError> {
+        let swapchain = self.swapchain.as_mut().unwrap();
+        let (image_index, _sub_optimal) =
+            swapchain.acquire_next_image(u64::MAX, self.image_available_semaphore)?;
+        let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+
+        let command_buffers = &[swapchain.command_buffers()[image_index as usize]];
+        let signal_semaphores = &[self.render_finished_semaphore];
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(&[self.image_available_semaphore])
+            .wait_dst_stage_mask(wait_stages)
+            .command_buffers(command_buffers)
+            .signal_semaphores(signal_semaphores)
+            .build();
+
+        self.device
+            .queue_submit(self.graphics_queue, &[submit_info], vk::Fence::null())?;
+
+        let present_info = vk::PresentInfoKHR::builder()
+            .wait_semaphores(signal_semaphores)
+            .swapchains(&[swapchain.raw()])
+            .image_indices(&[image_index as u32])
+            .build();
+        swapchain.queue_present(&present_info)?;
+        Ok(())
+    }
 }
 
 impl Drop for VulkanRenderer {
     fn drop(&mut self) {
         self.device.wait_idle();
         self.swapchain = None; // drop first
+        self.device
+            .destroy_semaphore(self.image_available_semaphore);
+        self.device
+            .destroy_semaphore(self.render_finished_semaphore);
         self.device.destroy_command_pool(self.command_pool);
         if let Some(DebugUtils {
             extension,

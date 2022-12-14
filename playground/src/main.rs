@@ -44,7 +44,9 @@ impl State {
 
     fn update(&mut self) {}
 
-    fn render(&mut self) {}
+    fn render(&mut self) {
+        self.renderer.render().unwrap()
+    }
 
     fn exit(mut self) {}
 }

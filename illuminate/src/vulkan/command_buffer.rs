@@ -57,6 +57,16 @@ impl CommandBufferAllocator {
     }
 
     pub fn end_single_use(&self, command_buffer: vk::CommandBuffer) -> Result<(), DeviceError> {
-        self.device.end_command_buffer(command_buffer)
+        self.device.end_command_buffer(command_buffer)?;
+        let submit_info = vk::SubmitInfo::builder()
+            .command_buffers(&[command_buffer])
+            .build();
+        self.device
+            .queue_submit(self.queue, &[submit_info], vk::Fence::default())?;
+
+        self.device.queue_wait_idle(self.queue)?;
+        self.device
+            .free_command_buffers(self.command_pool, &[command_buffer]);
+        Ok(())
     }
 }
