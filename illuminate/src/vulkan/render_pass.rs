@@ -74,18 +74,12 @@ impl RenderPass {
         //     .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
         //     .build();
 
+        let color_attachments = [color_attachment_ref];
         let subpass = vk::SubpassDescription::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&[color_attachment_ref])
-            // .depth_stencil_attachment(&depth_stencil_attachment_ref)
-            // .resolve_attachments(&[color_resolve_attachment_ref])
+            .color_attachments(&color_attachments)
             .build();
 
-        let attachments = &[
-            color_attachment,
-            // depth_stencil_attachment,
-            // color_resolve_attachment,
-        ];
         let dependency = vk::SubpassDependency::builder()
             .src_subpass(vk::SUBPASS_EXTERNAL)
             .dst_subpass(0)
@@ -95,12 +89,20 @@ impl RenderPass {
             .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
             .build();
 
-        let create_info = vk::RenderPassCreateInfo::builder()
-            .subpasses(&[subpass])
-            .attachments(attachments)
-            .dependencies(&[dependency])
-            .build();
+        let attachments = &[
+            color_attachment,
+            // depth_stencil_attachment,
+            // color_resolve_attachment,
+        ];
 
+        // dont's do the `.subpasses(&[subpass])` + `build()` will cause the temporary array pointer
+        //  live shorter before the vulkan call  https://github.com/ash-rs/ash/issues/158
+        let subpasses = [subpass];
+        let dependencies = [dependency];
+        let create_info = vk::RenderPassCreateInfo::builder()
+            .subpasses(&subpasses)
+            .attachments(attachments)
+            .dependencies(&dependencies);
         let raw = device.create_render_pass(&create_info)?;
 
         Ok(Self {

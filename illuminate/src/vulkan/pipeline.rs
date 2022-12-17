@@ -81,13 +81,11 @@ impl Pipeline {
             // member to true, then it's possible to break up lines and triangles in the STRIP
             // topology modes by using a special index of 0xFFFF or 0xFFFFFFFF.
             .primitive_restart_enable(false)
-            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-            .build();
+            .topology(vk::PrimitiveTopology::TRIANGLE_LIST);
 
         let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
             .scissor_count(1)
-            .viewport_count(1)
-            .build();
+            .viewport_count(1);
 
         let rasterization_state_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
             // If depth_clamp_enable is set to true, then fragments that are beyond the near and far
@@ -103,16 +101,14 @@ impl Pipeline {
             .cull_mode(vk::CullModeFlags::BACK)
             .front_face(vk::FrontFace::CLOCKWISE)
             // 光栅化器可以通过添加一个常数值或根据片段的斜率偏置它们来改变深度值。这有时用于阴影映射，但我们不会使用它。
-            .depth_bias_enable(false)
-            .build();
+            .depth_bias_enable(false);
 
         let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
             // .sample_shading_enable(true)
             // .min_sample_shading(0.2)
             // .rasterization_samples(msaa_samples)
             .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-            .sample_shading_enable(false)
-            .build();
+            .sample_shading_enable(false);
 
         // let stencil_state = vk::StencilOpState {
         //     fail_op: vk::StencilOp::KEEP,
@@ -160,17 +156,16 @@ impl Pipeline {
             .color_write_mask(vk::ColorComponentFlags::RGBA)
             .build();
 
+        let color_blend_attachment_states = &[color_blend_attachment_state];
         let color_blend_state_create_info = vk::PipelineColorBlendStateCreateInfo::builder()
             .logic_op_enable(false)
             .logic_op(vk::LogicOp::COPY)
-            .attachments(&[color_blend_attachment_state])
-            .blend_constants([0.0, 0.0, 0.0, 0.0])
-            .build();
+            .attachments(color_blend_attachment_states)
+            .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-        let dynamic_state = Box::new([vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
-        let dynamic_state_create_info = vk::PipelineDynamicStateCreateInfo::builder()
-            .dynamic_states(dynamic_state.as_ref())
-            .build();
+        let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+        let dynamic_state_create_info =
+            vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
 
         let graphic_pipeline_create_info = vk::GraphicsPipelineCreateInfo::builder()
             .stages(&shader_stages)
@@ -187,7 +182,8 @@ impl Pipeline {
             .subpass(0)
             .build();
 
-        device.create_graphics_pipelines(&[graphic_pipeline_create_info])
+        let graphic_pipeline_create_infos = [graphic_pipeline_create_info];
+        device.create_graphics_pipelines(&graphic_pipeline_create_infos)
     }
 }
 

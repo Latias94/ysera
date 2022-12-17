@@ -17,9 +17,7 @@ impl PipelineLayout {
         device: &Rc<Device>,
         layouts: &[vk::DescriptorSetLayout],
     ) -> Result<Self, DeviceError> {
-        let create_info = vk::PipelineLayoutCreateInfo::builder()
-            .set_layouts(layouts)
-            .build();
+        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(layouts);
 
         let raw = device.create_pipeline_layout(&create_info)?;
         Ok(Self {

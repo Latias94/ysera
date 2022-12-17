@@ -1,4 +1,3 @@
-use std::borrow::{Borrow, Cow};
 use std::time::Instant;
 
 use illuminate::vulkan::renderer::VulkanRenderer;
@@ -13,7 +12,7 @@ fn main() {
     std::env::set_var("RUST_BACKTRACE", "full");
     std::env::set_var("RUST_LOG", "debug");
 
-    profiling::tracy_client::Client::start();
+    // profiling::tracy_client::Client::start();
 
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).unwrap();

@@ -35,7 +35,7 @@ impl Adapter {
         }
 
         // let features = unsafe { instance.get_physical_device_features(self.raw) };
-        let queue_families =
+        let _queue_families =
             unsafe { instance.get_physical_device_queue_family_properties(self.raw) };
 
         let queue_family_indices = utils::get_queue_family_indices(instance, self.raw, surface)?;
@@ -79,8 +79,7 @@ impl Adapter {
 
         let physical_device_features = vk::PhysicalDeviceFeatures::builder()
             .sampler_anisotropy(requirement.sampler_anisotropy)
-            .sample_rate_shading(true) // enable sample shading feature for the device
-            .build();
+            .sample_rate_shading(true);
 
         let enable_validation = instance.flags().contains(InstanceFlags::VALIDATION);
         let mut required_layers = vec![];

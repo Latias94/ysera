@@ -29,7 +29,6 @@ pub struct Swapchain {
     pipeline: Pipeline,
     command_buffers: Vec<vk::CommandBuffer>,
     framebuffers: Vec<vk::Framebuffer>,
-    framebuffers_map: Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
 }
@@ -131,7 +130,6 @@ impl Swapchain {
 
         let map = Default::default();
         let render_pass = RenderPass::new(device, properties.surface_format.format)?;
-
         let framebuffers = texture_views
             .iter()
             .map(|i| {
@@ -150,9 +148,9 @@ impl Swapchain {
         let shader_desc = ShaderDescriptor {
             label: Some("Triangle"),
             device,
-            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.vert"),
+            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_0.vert"),
             vert_entry_name: "main",
-            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.frag"),
+            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_0.frag"),
             frag_entry_name: "main",
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
@@ -211,7 +209,6 @@ impl Swapchain {
             extent: properties.extent,
             capabilities,
             texture_views,
-            framebuffers_map: map,
             framebuffers,
             render_pass,
             pipeline,
@@ -267,10 +264,9 @@ impl Swapchain {
             height: self.extent.height as f32,
         };
 
+        self.device.cmd_set_viewport(command_buffer, rect2d);
         self.device
             .cmd_set_scissor(command_buffer, 0, &[conv::convert_rect2d(rect2d)]);
-
-        self.device.cmd_set_viewport(command_buffer, rect2d);
 
         self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
         self.device.cmd_end_render_pass(command_buffer);

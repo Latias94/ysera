@@ -63,8 +63,7 @@ impl Instance {
             .engine_version(vk::make_api_version(0, 1, 0, 0))
             .application_name(app_name.as_c_str())
             .engine_name(engine_name.as_c_str())
-            .api_version(vk::API_VERSION_1_3)
-            .build();
+            .api_version(vk::API_VERSION_1_3);
         let enable_validation = desc.flags.contains(InstanceFlags::VALIDATION);
         let mut required_layers = vec![];
         if enable_validation {
@@ -100,8 +99,7 @@ impl Instance {
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .enabled_layer_names(enable_layer_names.as_slice())
-            .enabled_extension_names(extension_names.as_slice())
-            .build();
+            .enabled_extension_names(extension_names.as_slice());
 
         log::debug!("Creating Vulkan instance...");
         let instance: ash::Instance = entry

@@ -40,6 +40,7 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 impl VulkanRenderer {
     pub fn new(window: &Window) -> Result<Self, DeviceError> {
         let instance_desc = InstanceDescriptor::builder()
+            // .flags(crate::vulkan::instance::InstanceFlags::empty())
             // .debug_level_filter(log::LevelFilter::Info)
             .build();
         let instance = unsafe { Instance::init(&instance_desc).unwrap() };
@@ -164,8 +165,9 @@ impl VulkanRenderer {
         }
 
         let in_flight_fence = self.in_flight_fences[self.frame];
+        let in_flight_fences = [in_flight_fence];
         self.device
-            .wait_for_fence(&[in_flight_fence], true, u64::MAX)?;
+            .wait_for_fence(&in_flight_fences, true, u64::MAX)?;
 
         let swapchain = self.swapchain.as_mut().unwrap();
         let result =
@@ -178,7 +180,7 @@ impl VulkanRenderer {
             }
             Err(e) => panic!("failed to acquire_next_image. Err: {}", e),
         };
-        self.device.reset_fence(&[in_flight_fence])?;
+        self.device.reset_fence(&in_flight_fences)?;
 
         let command_buffer = swapchain.render(self.frame, image_index as usize)?;
 
@@ -187,20 +189,23 @@ impl VulkanRenderer {
         let wait_semaphores = &[self.image_available_semaphores[self.frame]];
         let signal_semaphores = &[self.render_finished_semaphores[self.frame]];
 
+        let command_buffers = [command_buffer];
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
             .wait_dst_stage_mask(wait_stages)
-            .command_buffers(&[command_buffer])
+            .command_buffers(&command_buffers)
             .signal_semaphores(signal_semaphores)
             .build();
 
         self.device
             .queue_submit(self.graphics_queue, &[submit_info], in_flight_fence)?;
 
+        let swapchains = [swapchain.raw()];
+        let image_indices = [image_index];
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(signal_semaphores)
-            .swapchains(&[swapchain.raw()])
-            .image_indices(&[image_index])
+            .swapchains(&swapchains)
+            .image_indices(&image_indices)
             .build();
 
         match swapchain.queue_present(&present_info) {
