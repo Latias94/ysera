@@ -86,10 +86,19 @@ impl RenderPass {
             // depth_stencil_attachment,
             // color_resolve_attachment,
         ];
+        let dependency = vk::SubpassDependency::builder()
+            .src_subpass(vk::SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .build();
 
         let create_info = vk::RenderPassCreateInfo::builder()
             .subpasses(&[subpass])
             .attachments(attachments)
+            .dependencies(&[dependency])
             .build();
 
         let raw = device.create_render_pass(&create_info)?;

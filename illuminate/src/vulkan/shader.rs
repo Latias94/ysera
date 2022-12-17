@@ -42,8 +42,8 @@ impl Shader {
     }
 
     pub fn new(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
-        let vert_shader = Self::create_shader_module(desc.label, &desc.device, desc.vert_bytes)?;
-        let frag_shader = Self::create_shader_module(desc.label, &desc.device, desc.frag_bytes)?;
+        let vert_shader = Self::create_shader_module(desc.label, desc.device, desc.vert_bytes)?;
+        let frag_shader = Self::create_shader_module(desc.label, desc.device, desc.frag_bytes)?;
 
         Ok(Self {
             device: desc.device.clone(),

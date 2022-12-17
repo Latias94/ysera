@@ -122,11 +122,22 @@ impl Device {
         command_buffer: vk::CommandBuffer,
         begin_info: &vk::CommandBufferBeginInfo,
     ) -> Result<(), DeviceError> {
-        Ok(unsafe { self.raw.begin_command_buffer(command_buffer, begin_info)? })
+        unsafe { self.raw.begin_command_buffer(command_buffer, begin_info)? };
+        Ok(())
     }
 
     pub fn end_command_buffer(&self, command_buffer: vk::CommandBuffer) -> Result<(), DeviceError> {
-        Ok(unsafe { self.raw.end_command_buffer(command_buffer)? })
+        unsafe { self.raw.end_command_buffer(command_buffer)? };
+        Ok(())
+    }
+
+    pub fn reset_command_buffer(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        flags: vk::CommandBufferResetFlags,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.reset_command_buffer(command_buffer, flags)? };
+        Ok(())
     }
 
     pub fn queue_submit(
@@ -135,11 +146,13 @@ impl Device {
         submits: &[vk::SubmitInfo],
         fence: vk::Fence,
     ) -> Result<(), DeviceError> {
-        Ok(unsafe { self.raw.queue_submit(queue, submits, fence)? })
+        unsafe { self.raw.queue_submit(queue, submits, fence)? };
+        Ok(())
     }
 
     pub fn queue_wait_idle(&self, queue: vk::Queue) -> Result<(), DeviceError> {
-        Ok(unsafe { self.raw.queue_wait_idle(queue)? })
+        unsafe { self.raw.queue_wait_idle(queue)? };
+        Ok(())
     }
 
     pub fn free_command_buffers(
@@ -168,7 +181,7 @@ impl Device {
 
     pub fn cmd_set_viewport(&self, command_buffer: vk::CommandBuffer, viewport: math::Rect2D) {
         unsafe {
-            let vp = ash::vk::Viewport::builder()
+            let vp = vk::Viewport::builder()
                 .x(viewport.x)
                 .y(viewport.y)
                 .width(viewport.width)
@@ -177,6 +190,17 @@ impl Device {
                 .max_depth(1f32)
                 .build();
             self.raw.cmd_set_viewport(command_buffer, 0, &[vp])
+        }
+    }
+    pub fn cmd_set_scissor(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        first_scissor: u32,
+        scissors: &[vk::Rect2D],
+    ) {
+        unsafe {
+            self.raw
+                .cmd_set_scissor(command_buffer, first_scissor, scissors)
         }
     }
 
@@ -231,6 +255,20 @@ impl Device {
 
     pub fn destroy_fence(&self, fence: vk::Fence) {
         unsafe { self.raw.destroy_fence(fence, None) }
+    }
+
+    pub fn wait_for_fence(
+        &self,
+        fences: &[vk::Fence],
+        wait_all: bool,
+        timeout: u64,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.wait_for_fences(fences, wait_all, timeout)? };
+        Ok(())
+    }
+    pub fn reset_fence(&self, fences: &[vk::Fence]) -> Result<(), DeviceError> {
+        unsafe { self.raw.reset_fences(fences)? };
+        Ok(())
     }
 
     pub unsafe fn set_object_name(

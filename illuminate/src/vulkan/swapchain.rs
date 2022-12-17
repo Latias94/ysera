@@ -1,5 +1,6 @@
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer::CommandBufferAllocator;
+use crate::vulkan::conv;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::pipeline::Pipeline;
@@ -26,8 +27,10 @@ pub struct Swapchain {
     extent: vk::Extent2D,
     capabilities: vk::SurfaceCapabilitiesKHR,
     render_pass: RenderPass,
+    pipeline: Pipeline,
     command_buffers: Vec<vk::CommandBuffer>,
-    framebuffers: Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
+    framebuffers: Vec<vk::Framebuffer>,
+    framebuffers_map: Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
 }
@@ -89,6 +92,10 @@ impl Swapchain {
 
     pub fn command_buffers(&self) -> &Vec<vk::CommandBuffer> {
         &self.command_buffers
+    }
+
+    pub fn pipeline(&self) -> &Pipeline {
+        &self.pipeline
     }
 
     pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
@@ -153,44 +160,11 @@ impl Swapchain {
 
         let pipeline = Pipeline::new(device, render_pass.raw(), extent, shader)?;
 
-        let command_buffer_allocator =
-            CommandBufferAllocator::new(device, command_pool, desc.graphics_queue);
-
-        let color_clear_value = vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.65, 0.8, 0.9, 1.0],
-            },
-        };
-        let color_clear_values = &[color_clear_value];
-
-        for framebuffer in framebuffers {
-            command_buffer_allocator.create_single_use(|device, command_buffer| {
-                let command_buffer = *command_buffer;
-                let render_area = vk::Rect2D::builder()
-                    .offset(vk::Offset2D::default())
-                    .extent(extent)
-                    .build();
-
-                let begin_info = vk::RenderPassBeginInfo::builder()
-                    .render_pass(render_pass.raw())
-                    .framebuffer(framebuffer)
-                    .render_area(render_area)
-                    .clear_values(color_clear_values)
-                    .build();
-                device.cmd_begin_render_pass(
-                    command_buffer,
-                    &begin_info,
-                    vk::SubpassContents::INLINE,
-                );
-                device.cmd_bind_pipeline(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipeline.raw(),
-                );
-                device.cmd_draw(command_buffer, 3, 1, 0, 0);
-                device.cmd_end_render_pass(command_buffer);
-            })?;
-        }
+        // let command_buffer_allocator =
+        //     CommandBufferAllocator::new(device, command_pool, desc.graphics_queue);
+        // for framebuffer in framebuffers {
+        //     command_buffer_allocator.create_single_use(|device, command_buffer| {})?;
+        // }
 
         let command_buffers = {
             let create_info = vk::CommandBufferAllocateInfo::builder()
@@ -238,12 +212,68 @@ impl Swapchain {
             extent: properties.extent,
             capabilities,
             texture_views,
-            framebuffers: map,
+            framebuffers_map: map,
+            framebuffers,
             render_pass,
+            pipeline,
             command_buffers,
             graphics_queue: desc.graphics_queue,
             present_queue: desc.present_queue,
         })
+    }
+
+    pub fn render(&self, image_index: usize) -> Result<vk::CommandBuffer, DeviceError> {
+        let command_buffer = self.command_buffers[image_index];
+        let framebuffer = self.framebuffers[image_index];
+
+        self.device
+            .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
+        self.device.begin_command_buffer(
+            command_buffer,
+            &vk::CommandBufferBeginInfo::builder().build(),
+        )?;
+
+        let color_clear_value = vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [0.65, 0.8, 0.9, 1.0],
+            },
+        };
+        let color_clear_values = &[color_clear_value];
+        let render_area = vk::Rect2D::builder()
+            .offset(vk::Offset2D::default())
+            .extent(self.extent)
+            .build();
+
+        let begin_info = vk::RenderPassBeginInfo::builder()
+            .render_pass(self.render_pass.raw())
+            .framebuffer(framebuffer)
+            .render_area(render_area)
+            .clear_values(color_clear_values)
+            .build();
+        self.device
+            .cmd_begin_render_pass(command_buffer, &begin_info, vk::SubpassContents::INLINE);
+        self.device.cmd_bind_pipeline(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline.raw(),
+        );
+        let rect2d = math::Rect2D {
+            x: 0.0,
+            y: 0.0,
+            width: self.extent.width as f32,
+            height: self.extent.height as f32,
+        };
+
+        self.device
+            .cmd_set_scissor(command_buffer, 0, &[conv::convert_rect2d(rect2d)]);
+
+        self.device.cmd_set_viewport(command_buffer, rect2d);
+
+        self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+        self.device.cmd_end_render_pass(command_buffer);
+        self.device.end_command_buffer(command_buffer)?;
+
+        Ok(command_buffer)
     }
 
     fn create_swapchain(
@@ -466,7 +496,7 @@ impl SwapChainSupportDetail {
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
-        self.framebuffers
+        self.framebuffers_map
             .lock()
             .iter()
             .for_each(|e| self.device.destroy_framebuffer(*e.1));

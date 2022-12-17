@@ -49,7 +49,8 @@ impl CommandBufferAllocator {
 
         let info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::empty()) // Optional.
-            .inheritance_info(&inheritance); // Optional.
+            .inheritance_info(&inheritance)
+            .build(); // Optional.
 
         let command_buffer = command_buffers[0];
         self.device.begin_command_buffer(command_buffer, &info)?;
@@ -57,7 +58,7 @@ impl CommandBufferAllocator {
     }
 
     pub fn end_single_use(&self, command_buffer: vk::CommandBuffer) -> Result<(), DeviceError> {
-        self.device.end_command_buffer(command_buffer)?;
+        self.end_command_buffer(command_buffer)?;
         let submit_info = vk::SubmitInfo::builder()
             .command_buffers(&[command_buffer])
             .build();
@@ -68,5 +69,13 @@ impl CommandBufferAllocator {
         self.device
             .free_command_buffers(self.command_pool, &[command_buffer]);
         Ok(())
+    }
+
+    fn end_command_buffer(&self, command_buffer: vk::CommandBuffer) -> Result<(), DeviceError> {
+        self.device.end_command_buffer(command_buffer)
+    }
+
+    fn reset_command_buffer(&self, command_buffer: vk::CommandBuffer) -> Result<(), DeviceError> {
+        self.device.end_command_buffer(command_buffer)
     }
 }

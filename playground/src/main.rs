@@ -31,8 +31,8 @@ struct State {
 }
 impl State {
     fn new(window: &Window) -> Self {
-        let renderer = VulkanRenderer::new(window).unwrap();
-
+        let mut renderer = VulkanRenderer::new(window).unwrap();
+        renderer.render().unwrap();
         Self { renderer }
     }
 
@@ -45,7 +45,7 @@ impl State {
     fn update(&mut self) {}
 
     fn render(&mut self) {
-        self.renderer.render().unwrap()
+        // self.renderer.render().unwrap()
     }
 
     fn exit(mut self) {}

@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod command_buffer;
+pub mod conv;
 pub mod debug;
 pub mod device;
 pub mod instance;
