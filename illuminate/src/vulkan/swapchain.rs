@@ -221,8 +221,12 @@ impl Swapchain {
         })
     }
 
-    pub fn render(&self, image_index: usize) -> Result<vk::CommandBuffer, DeviceError> {
-        let command_buffer = self.command_buffers[image_index];
+    pub fn render(
+        &self,
+        command_buffer_index: usize,
+        image_index: usize,
+    ) -> Result<vk::CommandBuffer, DeviceError> {
+        let command_buffer = self.command_buffers[command_buffer_index];
         let framebuffer = self.framebuffers[image_index];
 
         self.device
