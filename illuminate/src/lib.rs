@@ -4,7 +4,7 @@ extern crate core;
 
 use log::LevelFilter;
 use std::ffi::CStr;
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 use typed_builder::TypedBuilder;
 
 mod error;

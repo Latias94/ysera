@@ -4,7 +4,6 @@ use crate::vulkan::instance::InstanceFlags;
 use crate::{AdapterRequirements, QueueFamilyIndices};
 use ash::extensions::khr;
 use ash::vk;
-use ash::vk::QueueFamilyProperties;
 use std::collections::HashSet;
 use std::ffi::{c_char, CString};
 
@@ -105,6 +104,7 @@ impl Adapter {
             .collect::<Vec<_>>();
         let device_create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_create_infos)
+            .enabled_layer_names(&enable_layer_names)
             .enabled_extension_names(&enable_extension_names)
             .enabled_features(&physical_device_features);
 

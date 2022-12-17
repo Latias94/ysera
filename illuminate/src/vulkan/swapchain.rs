@@ -1,5 +1,4 @@
 use crate::vulkan::adapter::Adapter;
-use crate::vulkan::command_buffer::CommandBufferAllocator;
 use crate::vulkan::conv;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
@@ -8,7 +7,7 @@ use crate::vulkan::render_pass::RenderPass;
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
 use crate::vulkan::texture_view::TextureView;
-use crate::{DeviceError, QueueFamilyIndices};
+use crate::{DeviceError, QueueFamilyIndices, SurfaceError};
 use ash::extensions::khr;
 use ash::vk;
 use gpu_allocator::vulkan::Allocator;
@@ -150,7 +149,7 @@ impl Swapchain {
 
         let shader_desc = ShaderDescriptor {
             label: Some("Triangle"),
-            device: &device,
+            device,
             vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.vert"),
             vert_entry_name: "main",
             frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle0.frag"),
@@ -380,18 +379,33 @@ impl Swapchain {
         &self,
         timeout: u64,
         semaphore: vk::Semaphore,
-    ) -> Result<(u32, bool), DeviceError> {
-        Ok(unsafe {
+    ) -> Result<(u32, bool), SurfaceError> {
+        match unsafe {
             self.loader
-                .acquire_next_image(self.raw, timeout, semaphore, vk::Fence::null())?
-        })
+                .acquire_next_image(self.raw, timeout, semaphore, vk::Fence::null())
+        } {
+            Ok(pair) => Ok(pair),
+            Err(error) => match error {
+                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
+                    Err(SurfaceError::OutOfDate)
+                }
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
+                other => Err(DeviceError::from(other).into()),
+            },
+        }
     }
 
-    pub fn queue_present(&self, present_info: &vk::PresentInfoKHR) -> Result<bool, DeviceError> {
-        Ok(unsafe {
-            self.loader
-                .queue_present(self.present_queue, present_info)?
-        })
+    pub fn queue_present(&self, present_info: &vk::PresentInfoKHR) -> Result<bool, SurfaceError> {
+        match unsafe { self.loader.queue_present(self.present_queue, present_info) } {
+            Ok(suboptimal) => Ok(suboptimal),
+            Err(error) => match error {
+                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
+                    Err(SurfaceError::OutOfDate)
+                }
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
+                other => Err(DeviceError::from(other).into()),
+            },
+        }
     }
 }
 
@@ -496,10 +510,10 @@ impl SwapChainSupportDetail {
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
-        self.framebuffers_map
-            .lock()
+        self.framebuffers
             .iter()
-            .for_each(|e| self.device.destroy_framebuffer(*e.1));
+            .for_each(|e| self.device.destroy_framebuffer(*e));
+
         unsafe {
             self.loader.destroy_swapchain(self.raw, None);
         }

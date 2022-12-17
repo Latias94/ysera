@@ -2,29 +2,36 @@ use super::device::Device;
 use super::instance::Instance;
 use super::surface::Surface;
 use super::swapchain::Swapchain;
+use crate::vulkan::adapter::Adapter;
 use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
-use crate::{AdapterRequirements, DeviceError, InstanceDescriptor};
+use crate::{
+    AdapterRequirements, DeviceError, InstanceDescriptor, QueueFamilyIndices, SurfaceError,
+};
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::rc::Rc;
+use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 pub struct VulkanRenderer {
+    adapter: Rc<Adapter>,
     instance: Rc<Instance>,
     surface: Rc<Surface>,
     device: Rc<Device>,
-    allocator: Option<Rc<Allocator>>,
+    allocator: Rc<Allocator>,
     swapchain: Option<Swapchain>,
     debug_utils: Option<DebugUtils>,
     present_queue: vk::Queue,
     graphics_queue: vk::Queue,
     command_pool: vk::CommandPool,
+    extent: vk::Extent2D,
     image_available_semaphore: vk::Semaphore,
     render_finished_semaphore: vk::Semaphore,
     in_flight_fence: vk::Fence,
+    indices: QueueFamilyIndices,
     // format: vk::SurfaceFormatKHR,
     // present_mode: vk::PresentModeKHR,
 }
@@ -123,10 +130,12 @@ impl VulkanRenderer {
         let in_flight_fence = device.create_fence(&fence_create_info)?;
 
         Ok(Self {
+            adapter: Rc::new(adapter),
             instance: Rc::new(instance),
             surface: Rc::new(surface),
             device,
-            allocator: Some(Rc::new(allocator)),
+            allocator: Rc::new(allocator),
+            extent: swapchain.extent(),
             swapchain: Some(swapchain),
             debug_utils,
             present_queue,
@@ -135,18 +144,33 @@ impl VulkanRenderer {
             image_available_semaphore,
             render_finished_semaphore,
             in_flight_fence,
+            indices,
         })
     }
 
     pub fn render(&mut self) -> Result<(), DeviceError> {
+        if self.swapchain.is_none() {
+            self.recreate_swapchain(PhysicalSize {
+                width: self.extent.width,
+                height: self.extent.height,
+            })?;
+        }
+
         let in_flight_fences = &[self.in_flight_fence];
         self.device
             .wait_for_fence(in_flight_fences, true, u64::MAX)?;
         self.device.reset_fence(in_flight_fences)?;
 
         let swapchain = self.swapchain.as_mut().unwrap();
-        let (image_index, _sub_optimal) =
-            swapchain.acquire_next_image(u64::MAX, self.image_available_semaphore)?;
+        let result = swapchain.acquire_next_image(u64::MAX, self.image_available_semaphore);
+        let image_index = match result {
+            Ok((image_index, _)) => image_index,
+            Err(SurfaceError::OutOfDate) => {
+                self.swapchain = None;
+                return Ok(());
+            }
+            Err(e) => panic!("failed to acquire_next_image. Err: {e}"),
+        };
 
         // command_buffer add cmd
         let command_buffer = swapchain.render(image_index as usize)?;
@@ -169,7 +193,39 @@ impl VulkanRenderer {
             .swapchains(&[swapchain.raw()])
             .image_indices(&[image_index])
             .build();
-        swapchain.queue_present(&present_info)?;
+
+        match swapchain.queue_present(&present_info) {
+            Ok(suboptimal) => suboptimal,
+            Err(SurfaceError::OutOfDate) => {
+                self.swapchain = None;
+                return Ok(());
+            }
+            Err(e) => panic!("failed to acquire_next_image. Err: {e}"),
+        };
+
+        Ok(())
+    }
+
+    pub fn recreate_swapchain(&mut self, inner_size: PhysicalSize<u32>) -> Result<(), DeviceError> {
+        self.device.wait_idle();
+        self.swapchain = None;
+
+        let swapchain_desc = SwapchainDescriptor {
+            adapter: &self.adapter,
+            surface: &self.surface,
+            instance: &self.instance,
+            device: &self.device,
+            queue_family: self.indices,
+            dimensions: [inner_size.width, inner_size.height],
+            command_pool: self.command_pool,
+            graphics_queue: self.graphics_queue,
+            present_queue: self.present_queue,
+            allocator: &self.allocator,
+        };
+
+        let swapchain = Swapchain::new(&swapchain_desc)?;
+        self.swapchain = Some(swapchain);
+        log::info!("Swapchain recreated.");
         Ok(())
     }
 }
