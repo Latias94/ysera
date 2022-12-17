@@ -169,7 +169,7 @@ impl VulkanRenderer {
 
         let swapchain = self.swapchain.as_mut().unwrap();
         let result =
-            swapchain.acquire_next_image(u64::MAX, self.render_finished_semaphores[self.frame]);
+            swapchain.acquire_next_image(u64::MAX, self.image_available_semaphores[self.frame]);
         let image_index = match result {
             Ok((image_index, _)) => image_index,
             Err(SurfaceError::OutOfDate) => {
@@ -184,7 +184,7 @@ impl VulkanRenderer {
 
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
 
-        let wait_semaphores = &[self.render_finished_semaphores[self.frame]];
+        let wait_semaphores = &[self.image_available_semaphores[self.frame]];
         let signal_semaphores = &[self.render_finished_semaphores[self.frame]];
 
         let submit_info = vk::SubmitInfo::builder()
