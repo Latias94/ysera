@@ -129,7 +129,7 @@ impl Instance {
             } else {
                 None
             };
-        log::info!("Vulkan instance created.");
+        log::debug!("Vulkan instance created.");
 
         let flags = desc.flags;
 

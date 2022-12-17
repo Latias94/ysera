@@ -158,7 +158,7 @@ impl Swapchain {
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
 
-        let pipeline = Pipeline::new(device, render_pass.raw(), extent, shader)?;
+        let pipeline = Pipeline::new(device, render_pass.raw(), shader)?;
 
         // let command_buffer_allocator =
         //     CommandBufferAllocator::new(device, command_pool, desc.graphics_queue);
@@ -349,7 +349,7 @@ impl Swapchain {
             .build();
         let swapchain_loader = khr::Swapchain::new(instance.raw(), device.raw());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
-        log::info!("Vulkan swapchain created.");
+        log::debug!("Vulkan swapchain created.");
 
         Ok((swapchain_loader, swapchain, properties, swapchain_support))
     }

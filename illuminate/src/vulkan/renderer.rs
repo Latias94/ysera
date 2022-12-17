@@ -59,7 +59,7 @@ impl VulkanRenderer {
             None => panic!("Cannot find the require device."),
             Some(adapter) => adapter,
         };
-        log::info!("Find the require device.");
+        log::debug!("Find the require device.");
         let debug_utils = instance.debug_utils().clone();
 
         let indices = utils::get_queue_family_indices(instance.raw(), adapter.raw(), &surface)?;

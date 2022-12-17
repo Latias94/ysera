@@ -25,19 +25,13 @@ impl Pipeline {
     pub fn new(
         device: &Rc<Device>,
         render_pass: vk::RenderPass,
-        swapchain_extent: vk::Extent2D,
         // msaa_samples: vk::SampleCountFlags,
         shader: Shader,
     ) -> Result<Self, DeviceError> {
         let pipeline_layout = PipelineLayout::new(&device, &[])?;
         log::debug!("Vulkan pipeline layout created.");
-        let raw = Self::create_graphics_pipeline(
-            device,
-            render_pass,
-            swapchain_extent,
-            pipeline_layout.raw(),
-            shader,
-        )?[0];
+        let raw =
+            Self::create_graphics_pipeline(device, render_pass, pipeline_layout.raw(), shader)?[0];
         log::debug!("Vulkan pipelines created.");
 
         Ok(Self {
@@ -50,7 +44,6 @@ impl Pipeline {
     pub fn create_graphics_pipeline(
         device: &Rc<Device>,
         render_pass: vk::RenderPass,
-        swapchain_extent: vk::Extent2D,
         pipeline_layout: vk::PipelineLayout,
         // msaa_samples: vk::SampleCountFlags,
         shader: Shader,
@@ -91,21 +84,9 @@ impl Pipeline {
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .build();
 
-        let viewport = vk::Viewport::builder()
-            .x(0.0)
-            .y(0.0)
-            .width(swapchain_extent.width as f32)
-            .height(swapchain_extent.height as f32)
-            .min_depth(0.0)
-            .max_depth(1.0)
-            .build();
-        let scissor = vk::Rect2D::builder()
-            .offset(vk::Offset2D { x: 0, y: 0 })
-            .extent(swapchain_extent)
-            .build();
         let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
-            .scissors(&[scissor])
-            .viewports(&[viewport])
+            .scissor_count(1)
+            .viewport_count(1)
             .build();
 
         let rasterization_state_create_info = vk::PipelineRasterizationStateCreateInfo::builder()
@@ -120,19 +101,18 @@ impl Pipeline {
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(vk::CullModeFlags::BACK)
-            // 由于我们在投影矩阵中做了 Y 方向的翻转，顶点现在是以逆时针顺序而不是顺时针顺序被绘制的。
-            // 这导致了背面剔除的启动，并阻止了任何几何体的绘制。
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .front_face(vk::FrontFace::CLOCKWISE)
             // 光栅化器可以通过添加一个常数值或根据片段的斜率偏置它们来改变深度值。这有时用于阴影映射，但我们不会使用它。
             .depth_bias_enable(false)
             .build();
 
-        // let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
-        //     // .sample_shading_enable(true)
-        //     // .min_sample_shading(0.2)
-        //     // .rasterization_samples(msaa_samples)
-        //     .sample_shading_enable(false)
-        //     .build();
+        let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
+            // .sample_shading_enable(true)
+            // .min_sample_shading(0.2)
+            // .rasterization_samples(msaa_samples)
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .sample_shading_enable(false)
+            .build();
 
         // let stencil_state = vk::StencilOpState {
         //     fail_op: vk::StencilOp::KEEP,
@@ -198,7 +178,7 @@ impl Pipeline {
             .input_assembly_state(&vertex_input_assembly_state_info)
             .viewport_state(&viewport_state_create_info)
             .rasterization_state(&rasterization_state_create_info)
-            // .multisample_state(&multisample_state_create_info)
+            .multisample_state(&multisample_state_create_info)
             // .depth_stencil_state(&depth_stencil_state_create_info)
             .color_blend_state(&color_blend_state_create_info)
             .dynamic_state(&dynamic_state_create_info)

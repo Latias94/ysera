@@ -44,6 +44,7 @@ impl Shader {
     pub fn new(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
         let vert_shader = Self::create_shader_module(desc.label, desc.device, desc.vert_bytes)?;
         let frag_shader = Self::create_shader_module(desc.label, desc.device, desc.frag_bytes)?;
+        log::debug!("shader module created.");
 
         Ok(Self {
             device: desc.device.clone(),
@@ -97,5 +98,6 @@ impl Drop for Shader {
     fn drop(&mut self) {
         self.device.destroy_shader_module(self.vert_shader);
         self.device.destroy_shader_module(self.frag_shader);
+        log::debug!("shader module destroyed.");
     }
 }

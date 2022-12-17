@@ -111,7 +111,7 @@ impl Adapter {
         let ash_device: ash::Device =
             unsafe { instance_raw.create_device(self.raw, &device_create_info, None)? };
 
-        log::info!("Vulkan logical device created.");
+        log::debug!("Vulkan logical device created.");
 
         let device = Device::new(ash_device, debug_utils);
         Ok(device)
