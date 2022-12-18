@@ -236,10 +236,13 @@ impl VulkanRenderer {
             present_queue: self.present_queue,
             allocator: &self.allocator,
         };
-
         let swapchain = Swapchain::new(&swapchain_desc)?;
         self.swapchain = Some(swapchain);
-        log::debug!("==== Swapchain recreated.====");
+        self.extent = vk::Extent2D {
+            width: inner_size.width,
+            height: inner_size.height,
+        };
+        log::debug!("======== Swapchain recreated.========");
         Ok(())
     }
 }

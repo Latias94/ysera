@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod command_buffer;
+pub mod command_buffer_allocator;
 pub mod conv;
 pub mod debug;
 pub mod device;
@@ -12,5 +13,6 @@ pub mod renderer;
 pub mod shader;
 pub mod surface;
 pub mod swapchain;
+pub mod texture;
 pub mod texture_view;
 pub mod utils;

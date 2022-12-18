@@ -1,4 +1,5 @@
 use crate::vulkan::adapter::Adapter;
+use crate::vulkan::command_buffer::CommandBuffer;
 use crate::vulkan::conv;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
@@ -6,8 +7,9 @@ use crate::vulkan::pipeline::Pipeline;
 use crate::vulkan::render_pass::RenderPass;
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
+use crate::vulkan::texture::Texture;
 use crate::vulkan::texture_view::TextureView;
-use crate::{DeviceError, QueueFamilyIndices, SurfaceError};
+use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 use ash::extensions::khr;
 use ash::vk;
 use gpu_allocator::vulkan::Allocator;
@@ -23,11 +25,12 @@ pub struct Swapchain {
     textures: Vec<vk::Image>,
     texture_views: Vec<TextureView>,
     surface_format: vk::SurfaceFormatKHR,
+    depth_format: vk::Format,
     extent: vk::Extent2D,
     capabilities: vk::SurfaceCapabilitiesKHR,
     render_pass: RenderPass,
     pipeline: Pipeline,
-    command_buffers: Vec<vk::CommandBuffer>,
+    command_buffers: Vec<CommandBuffer>,
     framebuffers: Vec<vk::Framebuffer>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
@@ -42,7 +45,7 @@ struct SwapchainProperties {
 
 struct SwapChainSupportDetail {
     pub capabilities: vk::SurfaceCapabilitiesKHR,
-    pub formats: Vec<vk::SurfaceFormatKHR>,
+    pub surface_formats: Vec<vk::SurfaceFormatKHR>,
     pub present_modes: Vec<vk::PresentModeKHR>,
 }
 
@@ -88,10 +91,6 @@ impl Swapchain {
         &self.render_pass
     }
 
-    pub fn command_buffers(&self) -> &Vec<vk::CommandBuffer> {
-        &self.command_buffers
-    }
-
     pub fn pipeline(&self) -> &Pipeline {
         &self.pipeline
     }
@@ -128,8 +127,22 @@ impl Swapchain {
             })
             .collect::<Vec<TextureView>>();
 
+        let depth_format = Self::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
+        let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
+        let rect2d = math::Rect2D {
+            x: 0.0,
+            y: 0.0,
+            width: extent.width as f32,
+            height: extent.height as f32,
+        };
         let map = Default::default();
-        let render_pass = RenderPass::new(device, properties.surface_format.format)?;
+        let render_pass = RenderPass::new(
+            device,
+            properties.surface_format.format,
+            depth_format,
+            rect2d,
+            clear_color,
+        )?;
         let framebuffers = texture_views
             .iter()
             .map(|i| {
@@ -169,7 +182,11 @@ impl Swapchain {
                 .command_buffer_count(texture_views.len() as u32)
                 .level(vk::CommandBufferLevel::PRIMARY)
                 .build();
-            device.allocate_command_buffers(&create_info)?
+            device
+                .allocate_command_buffers(&create_info)?
+                .iter()
+                .map(|x| CommandBuffer::new(*x))
+                .collect()
         };
 
         // // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
@@ -206,6 +223,7 @@ impl Swapchain {
             family_index: desc.queue_family,
             textures: swapchain_textures,
             surface_format: properties.surface_format,
+            depth_format,
             extent: properties.extent,
             capabilities,
             texture_views,
@@ -223,37 +241,19 @@ impl Swapchain {
         command_buffer_index: usize,
         image_index: usize,
     ) -> Result<vk::CommandBuffer, DeviceError> {
-        let command_buffer = self.command_buffers[command_buffer_index];
+        let command_buffer = &self.command_buffers[command_buffer_index];
         let framebuffer = self.framebuffers[image_index];
 
         self.device
-            .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
+            .reset_command_buffer(command_buffer.raw(), vk::CommandBufferResetFlags::empty())?;
         self.device.begin_command_buffer(
-            command_buffer,
+            command_buffer.raw(),
             &vk::CommandBufferBeginInfo::builder().build(),
         )?;
 
-        let color_clear_value = vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.65, 0.8, 0.9, 1.0],
-            },
-        };
-        let color_clear_values = &[color_clear_value];
-        let render_area = vk::Rect2D::builder()
-            .offset(vk::Offset2D::default())
-            .extent(self.extent)
-            .build();
-
-        let begin_info = vk::RenderPassBeginInfo::builder()
-            .render_pass(self.render_pass.raw())
-            .framebuffer(framebuffer)
-            .render_area(render_area)
-            .clear_values(color_clear_values)
-            .build();
-        self.device
-            .cmd_begin_render_pass(command_buffer, &begin_info, vk::SubpassContents::INLINE);
+        self.render_pass.begin(command_buffer, framebuffer);
         self.device.cmd_bind_pipeline(
-            command_buffer,
+            command_buffer.raw(),
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline.raw(),
         );
@@ -264,15 +264,15 @@ impl Swapchain {
             height: self.extent.height as f32,
         };
 
-        self.device.cmd_set_viewport(command_buffer, rect2d);
+        self.device.cmd_set_viewport(command_buffer.raw(), rect2d);
         self.device
-            .cmd_set_scissor(command_buffer, 0, &[conv::convert_rect2d(rect2d)]);
+            .cmd_set_scissor(command_buffer.raw(), 0, &[conv::convert_rect2d(rect2d)]);
 
-        self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
-        self.device.cmd_end_render_pass(command_buffer);
-        self.device.end_command_buffer(command_buffer)?;
+        self.device.cmd_draw(command_buffer.raw(), 3, 1, 0, 0);
+        self.device.cmd_end_render_pass(command_buffer.raw());
+        self.device.end_command_buffer(command_buffer.raw())?;
 
-        Ok(command_buffer)
+        Ok(command_buffer.raw())
     }
 
     fn create_swapchain(
@@ -407,6 +407,25 @@ impl Swapchain {
             },
         }
     }
+
+    fn get_depth_format(
+        instance: &ash::Instance,
+        adapter: vk::PhysicalDevice,
+    ) -> Result<vk::Format, DeviceError> {
+        let formats = &[
+            vk::Format::D32_SFLOAT,
+            vk::Format::D32_SFLOAT_S8_UINT,
+            vk::Format::D24_UNORM_S8_UINT,
+        ];
+
+        Texture::get_supported_format(
+            instance,
+            adapter,
+            formats,
+            vk::ImageTiling::OPTIMAL,
+            vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
+        )
+    }
 }
 
 impl SwapChainSupportDetail {
@@ -417,13 +436,14 @@ impl SwapChainSupportDetail {
     ) -> Result<SwapChainSupportDetail, DeviceError> {
         let capabilities =
             surface.get_physical_device_surface_capabilities(physical_device, surface_khr)?;
-        let formats = surface.get_physical_device_surface_formats(physical_device, surface_khr)?;
+        let surface_formats =
+            surface.get_physical_device_surface_formats(physical_device, surface_khr)?;
         let present_modes =
             surface.get_physical_device_surface_present_modes(physical_device, surface_khr)?;
 
         Ok(SwapChainSupportDetail {
             capabilities,
-            formats,
+            surface_formats,
             present_modes,
         })
     }
@@ -432,7 +452,7 @@ impl SwapChainSupportDetail {
         &self,
         preferred_dimensions: [u32; 2],
     ) -> SwapchainProperties {
-        let format = Self::choose_swapchain_format(&self.formats);
+        let format = Self::choose_swapchain_format(&self.surface_formats);
         let present_mode = Self::choose_swapchain_present_mode(&self.present_modes);
         let extent = Self::choose_swapchain_extent(&self.capabilities, preferred_dimensions);
         SwapchainProperties {

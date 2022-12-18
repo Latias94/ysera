@@ -1,3 +1,4 @@
+use crate::Color;
 use ash::vk;
 
 pub fn convert_rect2d(rect: math::Rect2D) -> vk::Rect2D {
@@ -11,4 +12,12 @@ pub fn convert_rect2d(rect: math::Rect2D) -> vk::Rect2D {
             y: rect.y as i32,
         })
         .build()
+}
+
+pub fn convert_clear_color(color: Color) -> vk::ClearValue {
+    vk::ClearValue {
+        color: vk::ClearColorValue {
+            float32: [color.r, color.g, color.b, color.a],
+        },
+    }
 }

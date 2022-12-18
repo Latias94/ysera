@@ -18,6 +18,7 @@ raw-window-handle.workspace = true
 log.workspace = true
 num.workspace = true
 thiserror.workspace = true
+anyhow.workspace = true
 profiling.workspace = true
 typed-builder.workspace = true
 bitflags.workspace = true
@@ -25,6 +26,7 @@ winit.workspace = true
 fxhash.workspace = true
 parking_lot.workspace = true
 gpu-allocator.workspace = true
+nalgebra-glm.workspace = true
 #vk-mem.workspace = true
 naga = { workspace = true, features = ["clone"] }
 
