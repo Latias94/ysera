@@ -1,17 +1,18 @@
 use crate::vulkan::command_buffer::CommandBuffer;
 use crate::vulkan::conv;
 use crate::vulkan::device::Device;
-use crate::vulkan::render_pass::RenderPassState::InRenderPass;
+use crate::vulkan::render_pass::RenderPassState::{InRenderPass, Recording};
 use crate::{Color, DeviceError};
 use ash::vk;
 use std::rc::Rc;
+use typed_builder::TypedBuilder;
 
 pub struct RenderPass {
     raw: vk::RenderPass,
     device: Rc<Device>,
     state: RenderPassState,
     render_area: math::Rect2D,
-    clear_color: Color,
+    clear_values: Vec<vk::ClearValue>,
 }
 
 pub enum RenderPassState {
@@ -28,23 +29,28 @@ pub enum RenderPassState {
     NotAllocated,
 }
 
+#[derive(Clone, TypedBuilder)]
+pub struct RenderPassDescriptor<'a> {
+    pub device: &'a Rc<Device>,
+    pub surface_format: vk::Format,
+    pub depth_format: vk::Format,
+    pub render_area: math::Rect2D,
+    pub clear_color: Color,
+    pub depth: f32,
+    pub stencil: u32,
+}
+
 impl RenderPass {
     pub fn raw(&self) -> vk::RenderPass {
         self.raw
     }
 
-    pub fn new(
-        device: &Rc<Device>,
-        surface_format: vk::Format,
-        depth_format: vk::Format,
-        render_area: math::Rect2D,
-        clear_color: Color,
-    ) -> Result<Self, DeviceError> {
+    pub fn new(desc: &RenderPassDescriptor) -> Result<Self, DeviceError> {
         profiling::scope!("create_render_pass");
 
         // todo configurable
         let color_attachment = vk::AttachmentDescription::builder()
-            .format(surface_format)
+            .format(desc.surface_format)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::STORE)
@@ -65,7 +71,7 @@ impl RenderPass {
         // 这是因为多采样图像不能直接呈现。我们首先需要将它们解析为普通图像。这个要求并不适用于深度缓冲区，
         // 因为它不会在任何时候被呈现。因此，我们只需要为颜色添加一个新的附件，这是一个 resolve attachment。
         let depth_stencil_attachment = vk::AttachmentDescription::builder()
-            .format(depth_format)
+            .format(desc.depth_format)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::DONT_CARE)
@@ -131,30 +137,37 @@ impl RenderPass {
             .subpasses(&subpasses)
             .attachments(attachments)
             .dependencies(&dependencies);
-        let raw = device.create_render_pass(&create_info)?;
-
+        let raw = desc.device.create_render_pass(&create_info)?;
+        let clear_values = vec![
+            conv::convert_clear_color(desc.clear_color),
+            conv::convert_clear_depth_stencil(desc.depth, desc.stencil),
+        ];
         Ok(Self {
             raw,
-            device: device.clone(),
+            device: desc.device.clone(),
             state: InRenderPass,
-            render_area,
-            clear_color,
+            render_area: desc.render_area,
+            clear_values,
         })
     }
 
-    pub fn begin(&self, command_buffer: &CommandBuffer, framebuffer: vk::Framebuffer) {
-        let clear_values = [conv::convert_clear_color(self.clear_color)];
+    pub fn begin(&mut self, command_buffer: &CommandBuffer, framebuffer: vk::Framebuffer) {
         let begin_info = vk::RenderPassBeginInfo::builder()
             .render_pass(self.raw)
             .framebuffer(framebuffer)
             .render_area(conv::convert_rect2d(self.render_area))
-            .clear_values(&clear_values)
+            .clear_values(&self.clear_values)
             .build();
         self.device.cmd_begin_render_pass(
             command_buffer.raw(),
             &begin_info,
             vk::SubpassContents::INLINE,
         );
+        self.state = InRenderPass;
+    }
+    pub fn end(&mut self, command_buffer: &CommandBuffer) {
+        self.device.cmd_end_render_pass(command_buffer.raw());
+        self.state = Recording;
     }
 }
 
