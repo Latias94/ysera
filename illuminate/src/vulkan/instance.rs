@@ -1,11 +1,12 @@
 use super::debug::DebugUtils;
 use super::{adapter::Adapter, surface::Surface};
 use crate::vulkan::{debug, platforms};
-use crate::InstanceDescriptor;
+use crate::{InstanceDescriptor, InstanceError};
 use ash::{extensions::*, vk};
 use log::LevelFilter;
 use raw_window_handle::RawWindowHandle;
 use std::ffi::{c_void, CStr, CString};
+use std::rc::Rc;
 
 bitflags::bitflags! {
     pub struct InstanceFlags: u16 {
@@ -53,7 +54,7 @@ impl Instance {
         &self.debug_utils
     }
 
-    pub unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, crate::InstanceError> {
+    pub unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, InstanceError> {
         let entry = ash::Entry::linked();
 
         let app_name = CString::new(desc.name).unwrap();
@@ -63,8 +64,7 @@ impl Instance {
             .engine_version(vk::make_api_version(0, 1, 0, 0))
             .application_name(app_name.as_c_str())
             .engine_name(engine_name.as_c_str())
-            .api_version(vk::API_VERSION_1_3)
-            .build();
+            .api_version(vk::API_VERSION_1_3);
         let enable_validation = desc.flags.contains(InstanceFlags::VALIDATION);
         let mut required_layers = vec![];
         if enable_validation {
@@ -100,13 +100,12 @@ impl Instance {
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .enabled_layer_names(enable_layer_names.as_slice())
-            .enabled_extension_names(extension_names.as_slice())
-            .build();
+            .enabled_extension_names(extension_names.as_slice());
 
         log::debug!("Creating Vulkan instance...");
         let instance: ash::Instance = entry
             .create_instance(&create_info, None)
-            .map_err(crate::InstanceError::VulkanError)?;
+            .map_err(InstanceError::VulkanError)?;
 
         let debug_utils: Option<DebugUtils> =
             if extension_cstr_names.contains(&ext::DebugUtils::name()) {
@@ -129,7 +128,7 @@ impl Instance {
             } else {
                 None
             };
-        log::info!("Vulkan instance created.");
+        log::debug!("Vulkan instance created.");
 
         let flags = desc.flags;
 
@@ -142,11 +141,13 @@ impl Instance {
         })
     }
 
-    pub unsafe fn enumerate_adapters(&self) -> Result<Vec<Adapter>, crate::InstanceError> {
+    pub fn enumerate_adapters(&self) -> Result<Vec<Adapter>, InstanceError> {
         let instance = &self.raw;
-        let adapters = instance
-            .enumerate_physical_devices()
-            .map_err(crate::InstanceError::VulkanError)?;
+        let adapters = unsafe {
+            instance
+                .enumerate_physical_devices()
+                .map_err(InstanceError::VulkanError)?
+        };
         log::info!(
             "{} devices (GPU) found with vulkan support.",
             adapters.len()
@@ -165,22 +166,26 @@ impl Instance {
         &self,
         display_handle: raw_window_handle::RawDisplayHandle,
         window_handle: RawWindowHandle,
-    ) -> Result<Surface, crate::InstanceError> {
+    ) -> Result<Surface, InstanceError> {
         let surface = match (window_handle, display_handle) {
             #[cfg(windows)]
             (RawWindowHandle::Win32(handle), _) => {
                 self.create_surface_from_hwnd(handle.hinstance, handle.hwnd)
             }
             _ => todo!(),
-        };
+        }?;
         Ok(surface)
     }
 }
 
 impl Instance {
-    fn create_surface_from_hwnd(&self, hinstance: *mut c_void, hwnd: *mut c_void) -> Surface {
+    fn create_surface_from_hwnd(
+        &self,
+        hinstance: *mut c_void,
+        hwnd: *mut c_void,
+    ) -> Result<Surface, InstanceError> {
         if !self.extensions.contains(&khr::Win32Surface::name()) {
-            panic!("Vulkan driver does not support VK_KHR_WIN32_SURFACE");
+            panic!("Vulkan driver does not support `VK_KHR_WIN32_SURFACE`");
         }
 
         let surface = {
@@ -189,14 +194,10 @@ impl Instance {
                 .hinstance(hinstance)
                 .hwnd(hwnd);
             let win32_loader = khr::Win32Surface::new(&self.entry, &self.raw);
-            unsafe {
-                win32_loader
-                    .create_win32_surface(&info, None)
-                    .expect("Unable to create Win32 surface")
-            }
+            unsafe { win32_loader.create_win32_surface(&info, None)? }
         };
 
         let surface_loader = khr::Surface::new(&self.entry, &self.raw);
-        Surface::new(surface, surface_loader)
+        Ok(Surface::new(surface, surface_loader))
     }
 }

@@ -51,6 +51,226 @@ impl Device {
         unsafe { self.raw.get_device_queue(queue_family_index, queue_index) }
     }
 
+    pub fn create_render_pass(
+        &self,
+        create_info: &vk::RenderPassCreateInfo,
+    ) -> Result<vk::RenderPass, DeviceError> {
+        Ok(unsafe { self.raw.create_render_pass(create_info, None)? })
+    }
+
+    pub fn destroy_render_pass(&self, render_pass: vk::RenderPass) {
+        unsafe { self.raw.destroy_render_pass(render_pass, None) }
+    }
+
+    pub fn create_framebuffer(
+        &self,
+        create_info: &vk::FramebufferCreateInfo,
+    ) -> Result<vk::Framebuffer, DeviceError> {
+        Ok(unsafe { self.raw.create_framebuffer(create_info, None)? })
+    }
+
+    pub fn destroy_framebuffer(&self, framebuffer: vk::Framebuffer) {
+        unsafe { self.raw.destroy_framebuffer(framebuffer, None) }
+    }
+
+    pub fn create_pipeline_layout(
+        &self,
+        create_info: &vk::PipelineLayoutCreateInfo,
+    ) -> Result<vk::PipelineLayout, DeviceError> {
+        Ok(unsafe { self.raw.create_pipeline_layout(create_info, None)? })
+    }
+
+    pub fn destroy_pipeline_layout(&self, pipeline_layout: vk::PipelineLayout) {
+        unsafe { self.raw.destroy_pipeline_layout(pipeline_layout, None) }
+    }
+
+    pub fn create_graphics_pipelines(
+        &self,
+        create_infos: &[vk::GraphicsPipelineCreateInfo],
+    ) -> Result<Vec<vk::Pipeline>, DeviceError> {
+        Ok(unsafe {
+            self.raw
+                .create_graphics_pipelines(vk::PipelineCache::default(), create_infos, None)
+                .map_err(|e| e.1)?
+        })
+    }
+
+    pub fn destroy_pipeline(&self, pipeline: vk::Pipeline) {
+        unsafe { self.raw.destroy_pipeline(pipeline, None) }
+    }
+
+    pub fn create_command_pool(
+        &self,
+        create_info: &vk::CommandPoolCreateInfo,
+    ) -> Result<vk::CommandPool, DeviceError> {
+        Ok(unsafe { self.raw.create_command_pool(create_info, None)? })
+    }
+
+    pub fn destroy_command_pool(&self, command_pool: vk::CommandPool) {
+        unsafe { self.raw.destroy_command_pool(command_pool, None) }
+    }
+
+    pub fn allocate_command_buffers(
+        &self,
+        allocate_info: &vk::CommandBufferAllocateInfo,
+    ) -> Result<Vec<vk::CommandBuffer>, DeviceError> {
+        Ok(unsafe { self.raw.allocate_command_buffers(allocate_info)? })
+    }
+
+    pub fn begin_command_buffer(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        begin_info: &vk::CommandBufferBeginInfo,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.begin_command_buffer(command_buffer, begin_info)? };
+        Ok(())
+    }
+
+    pub fn end_command_buffer(&self, command_buffer: vk::CommandBuffer) -> Result<(), DeviceError> {
+        unsafe { self.raw.end_command_buffer(command_buffer)? };
+        Ok(())
+    }
+
+    pub fn reset_command_buffer(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        flags: vk::CommandBufferResetFlags,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.reset_command_buffer(command_buffer, flags)? };
+        Ok(())
+    }
+
+    pub fn queue_submit(
+        &self,
+        queue: vk::Queue,
+        submits: &[vk::SubmitInfo],
+        fence: vk::Fence,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.queue_submit(queue, submits, fence)? };
+        Ok(())
+    }
+
+    pub fn queue_wait_idle(&self, queue: vk::Queue) -> Result<(), DeviceError> {
+        unsafe { self.raw.queue_wait_idle(queue)? };
+        Ok(())
+    }
+
+    pub fn free_command_buffers(
+        &self,
+        command_pool: vk::CommandPool,
+        command_buffers: &[vk::CommandBuffer],
+    ) {
+        unsafe { self.raw.free_command_buffers(command_pool, command_buffers) }
+    }
+
+    pub fn cmd_begin_render_pass(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        begin_info: &vk::RenderPassBeginInfo,
+        contents: vk::SubpassContents,
+    ) {
+        unsafe {
+            self.raw
+                .cmd_begin_render_pass(command_buffer, begin_info, contents);
+        }
+    }
+
+    pub fn cmd_end_render_pass(&self, command_buffer: vk::CommandBuffer) {
+        unsafe { self.raw.cmd_end_render_pass(command_buffer) }
+    }
+
+    pub fn cmd_set_viewport(&self, command_buffer: vk::CommandBuffer, viewport: math::Rect2D) {
+        unsafe {
+            let vp = vk::Viewport::builder()
+                .x(viewport.x)
+                .y(viewport.y)
+                .width(viewport.width)
+                .height(viewport.height)
+                .min_depth(0f32)
+                .max_depth(1f32)
+                .build();
+            self.raw.cmd_set_viewport(command_buffer, 0, &[vp])
+        }
+    }
+    pub fn cmd_set_scissor(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        first_scissor: u32,
+        scissors: &[vk::Rect2D],
+    ) {
+        unsafe {
+            self.raw
+                .cmd_set_scissor(command_buffer, first_scissor, scissors)
+        }
+    }
+
+    pub fn cmd_bind_pipeline(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        pipeline_bind_point: vk::PipelineBindPoint,
+        pipeline: vk::Pipeline,
+    ) {
+        unsafe {
+            self.raw
+                .cmd_bind_pipeline(command_buffer, pipeline_bind_point, pipeline);
+        }
+    }
+
+    pub fn cmd_draw(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) {
+        unsafe {
+            self.raw.cmd_draw(
+                command_buffer,
+                vertex_count,
+                instance_count,
+                first_vertex,
+                first_instance,
+            );
+        }
+    }
+
+    pub fn create_semaphore(
+        &self,
+        create_info: &vk::SemaphoreCreateInfo,
+    ) -> Result<vk::Semaphore, DeviceError> {
+        Ok(unsafe { self.raw.create_semaphore(create_info, None)? })
+    }
+
+    pub fn destroy_semaphore(&self, semaphore: vk::Semaphore) {
+        unsafe { self.raw.destroy_semaphore(semaphore, None) }
+    }
+
+    pub fn create_fence(
+        &self,
+        create_info: &vk::FenceCreateInfo,
+    ) -> Result<vk::Fence, DeviceError> {
+        Ok(unsafe { self.raw.create_fence(create_info, None)? })
+    }
+
+    pub fn destroy_fence(&self, fence: vk::Fence) {
+        unsafe { self.raw.destroy_fence(fence, None) }
+    }
+
+    pub fn wait_for_fence(
+        &self,
+        fences: &[vk::Fence],
+        wait_all: bool,
+        timeout: u64,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.wait_for_fences(fences, wait_all, timeout)? };
+        Ok(())
+    }
+    pub fn reset_fence(&self, fences: &[vk::Fence]) -> Result<(), DeviceError> {
+        unsafe { self.raw.reset_fences(fences)? };
+        Ok(())
+    }
+
     pub unsafe fn set_object_name(
         &self,
         object_type: vk::ObjectType,

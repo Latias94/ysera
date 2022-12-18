@@ -1,11 +1,19 @@
 use crate::vulkan::adapter::Adapter;
+use crate::vulkan::command_buffer::CommandBuffer;
+use crate::vulkan::conv;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
+use crate::vulkan::pipeline::Pipeline;
+use crate::vulkan::render_pass::RenderPass;
+use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
+use crate::vulkan::texture::Texture;
 use crate::vulkan::texture_view::TextureView;
-use crate::{DeviceError, QueueFamilyIndices};
+use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 use ash::extensions::khr;
 use ash::vk;
+use gpu_allocator::vulkan::Allocator;
+use parking_lot::Mutex;
 use std::rc::Rc;
 use typed_builder::TypedBuilder;
 
@@ -17,8 +25,15 @@ pub struct Swapchain {
     textures: Vec<vk::Image>,
     texture_views: Vec<TextureView>,
     surface_format: vk::SurfaceFormatKHR,
+    depth_format: vk::Format,
     extent: vk::Extent2D,
     capabilities: vk::SurfaceCapabilitiesKHR,
+    render_pass: RenderPass,
+    pipeline: Pipeline,
+    command_buffers: Vec<CommandBuffer>,
+    framebuffers: Vec<vk::Framebuffer>,
+    graphics_queue: vk::Queue,
+    present_queue: vk::Queue,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -30,7 +45,7 @@ struct SwapchainProperties {
 
 struct SwapChainSupportDetail {
     pub capabilities: vk::SurfaceCapabilitiesKHR,
-    pub formats: Vec<vk::SurfaceFormatKHR>,
+    pub surface_formats: Vec<vk::SurfaceFormatKHR>,
     pub present_modes: Vec<vk::PresentModeKHR>,
 }
 
@@ -40,9 +55,19 @@ pub struct SwapchainDescriptor<'a> {
     pub surface: &'a Surface,
     pub instance: &'a Instance,
     pub device: &'a Rc<Device>,
-    pub queue: vk::Queue,
+    pub graphics_queue: vk::Queue,
+    pub present_queue: vk::Queue,
     pub queue_family: QueueFamilyIndices,
     pub dimensions: [u32; 2],
+    pub command_pool: vk::CommandPool,
+    pub allocator: &'a Allocator,
+}
+
+#[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
+pub struct FramebufferDescriptor {
+    render_pass: vk::RenderPass,
+    texture_views: Vec<vk::ImageView>,
+    swapchain_extent: vk::Extent2D,
 }
 
 impl Swapchain {
@@ -54,15 +79,33 @@ impl Swapchain {
         &self.loader
     }
 
+    pub fn surface_format(&self) -> vk::SurfaceFormatKHR {
+        self.surface_format
+    }
+
+    pub fn extent(&self) -> vk::Extent2D {
+        self.extent
+    }
+
+    pub fn render_pass(&self) -> &RenderPass {
+        &self.render_pass
+    }
+
+    pub fn pipeline(&self) -> &Pipeline {
+        &self.pipeline
+    }
+
     pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
+        let device = desc.device;
         let (swapchain_loader, swapchain, properties, support) = Self::create_swapchain(
             desc.adapter,
             desc.surface,
             desc.instance,
-            desc.device,
+            device,
             &desc.queue_family,
             desc.dimensions,
         )?;
+        let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
         let swapchain_textures = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
 
@@ -76,13 +119,76 @@ impl Swapchain {
             .map(|i| {
                 TextureView::new_color_texture_view(
                     Some("swapchain texture view"),
-                    desc.device,
+                    device,
                     *i,
                     properties.surface_format.format,
                 )
                 .unwrap()
             })
-            .collect();
+            .collect::<Vec<TextureView>>();
+
+        let depth_format = Self::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
+        let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
+        let rect2d = math::Rect2D {
+            x: 0.0,
+            y: 0.0,
+            width: extent.width as f32,
+            height: extent.height as f32,
+        };
+        let map = Default::default();
+        let render_pass = RenderPass::new(
+            device,
+            properties.surface_format.format,
+            depth_format,
+            rect2d,
+            clear_color,
+        )?;
+        let framebuffers = texture_views
+            .iter()
+            .map(|i| {
+                let image_view = i.raw();
+                let framebuffer_desc = FramebufferDescriptor::builder()
+                    .texture_views(vec![image_view])
+                    .swapchain_extent(extent)
+                    .render_pass(render_pass.raw())
+                    .build();
+                Self::create_framebuffer(device, &map, framebuffer_desc)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let command_pool = desc.command_pool;
+
+        let shader_desc = ShaderDescriptor {
+            label: Some("Triangle"),
+            device,
+            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_0.vert"),
+            vert_entry_name: "main",
+            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_0.frag"),
+            frag_entry_name: "main",
+        };
+        let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
+
+        let pipeline = Pipeline::new(device, render_pass.raw(), shader)?;
+
+        // let command_buffer_allocator =
+        //     CommandBufferAllocator::new(device, command_pool, desc.graphics_queue);
+        // for framebuffer in framebuffers {
+        //     command_buffer_allocator.create_single_use(|device, command_buffer| {})?;
+        // }
+
+        let command_buffers = {
+            let create_info = vk::CommandBufferAllocateInfo::builder()
+                .command_pool(command_pool)
+                .command_buffer_count(texture_views.len() as u32)
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .build();
+            device
+                .allocate_command_buffers(&create_info)?
+                .iter()
+                .map(|x| CommandBuffer::new(*x))
+                .collect()
+        };
+
         // // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
         // // 如专用 VRAM 和当 VRAM 耗尽时 RAM 中的交换空间。不同类型的内存存在于这些堆中。现在我们只关心内存的类型，
         // // 而不关心它来自的堆，但是可以想象这可能会影响性能。
@@ -117,10 +223,56 @@ impl Swapchain {
             family_index: desc.queue_family,
             textures: swapchain_textures,
             surface_format: properties.surface_format,
+            depth_format,
             extent: properties.extent,
             capabilities,
             texture_views,
+            framebuffers,
+            render_pass,
+            pipeline,
+            command_buffers,
+            graphics_queue: desc.graphics_queue,
+            present_queue: desc.present_queue,
         })
+    }
+
+    pub fn render(
+        &self,
+        command_buffer_index: usize,
+        image_index: usize,
+    ) -> Result<vk::CommandBuffer, DeviceError> {
+        let command_buffer = &self.command_buffers[command_buffer_index];
+        let framebuffer = self.framebuffers[image_index];
+
+        self.device
+            .reset_command_buffer(command_buffer.raw(), vk::CommandBufferResetFlags::empty())?;
+        self.device.begin_command_buffer(
+            command_buffer.raw(),
+            &vk::CommandBufferBeginInfo::builder().build(),
+        )?;
+
+        self.render_pass.begin(command_buffer, framebuffer);
+        self.device.cmd_bind_pipeline(
+            command_buffer.raw(),
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline.raw(),
+        );
+        let rect2d = math::Rect2D {
+            x: 0.0,
+            y: 0.0,
+            width: self.extent.width as f32,
+            height: self.extent.height as f32,
+        };
+
+        self.device.cmd_set_viewport(command_buffer.raw(), rect2d);
+        self.device
+            .cmd_set_scissor(command_buffer.raw(), 0, &[conv::convert_rect2d(rect2d)]);
+
+        self.device.cmd_draw(command_buffer.raw(), 3, 1, 0, 0);
+        self.device.cmd_end_render_pass(command_buffer.raw());
+        self.device.end_command_buffer(command_buffer.raw())?;
+
+        Ok(command_buffer.raw())
     }
 
     fn create_swapchain(
@@ -196,9 +348,83 @@ impl Swapchain {
             .build();
         let swapchain_loader = khr::Swapchain::new(instance.raw(), device.raw());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
-        log::info!("Vulkan swapchain created.");
+        log::debug!("Vulkan swapchain created.");
 
         Ok((swapchain_loader, swapchain, properties, swapchain_support))
+    }
+
+    pub fn create_framebuffer(
+        device: &Device,
+        map: &Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
+        desc: FramebufferDescriptor,
+    ) -> Result<vk::Framebuffer, DeviceError> {
+        use std::collections::hash_map::Entry;
+        Ok(match map.lock().entry(desc) {
+            Entry::Occupied(e) => *e.get(),
+            Entry::Vacant(e) => {
+                let desc = e.key();
+                let create_info = vk::FramebufferCreateInfo::builder()
+                    .render_pass(desc.render_pass)
+                    .attachments(&desc.texture_views)
+                    .width(desc.swapchain_extent.width)
+                    .height(desc.swapchain_extent.height)
+                    .layers(1)
+                    .build();
+                device.create_framebuffer(&create_info)?
+            }
+        })
+    }
+
+    pub fn acquire_next_image(
+        &self,
+        timeout: u64,
+        semaphore: vk::Semaphore,
+    ) -> Result<(u32, bool), SurfaceError> {
+        match unsafe {
+            self.loader
+                .acquire_next_image(self.raw, timeout, semaphore, vk::Fence::null())
+        } {
+            Ok(pair) => Ok(pair),
+            Err(error) => match error {
+                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
+                    Err(SurfaceError::OutOfDate)
+                }
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
+                other => Err(DeviceError::from(other).into()),
+            },
+        }
+    }
+
+    pub fn queue_present(&self, present_info: &vk::PresentInfoKHR) -> Result<bool, SurfaceError> {
+        match unsafe { self.loader.queue_present(self.present_queue, present_info) } {
+            Ok(suboptimal) => Ok(suboptimal),
+            Err(error) => match error {
+                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
+                    Err(SurfaceError::OutOfDate)
+                }
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
+                other => Err(DeviceError::from(other).into()),
+            },
+        }
+    }
+
+    fn get_depth_format(
+        instance: &ash::Instance,
+        adapter: vk::PhysicalDevice,
+    ) -> Result<vk::Format, DeviceError> {
+        let formats = &[
+            vk::Format::D32_SFLOAT,
+            vk::Format::D32_SFLOAT_S8_UINT,
+            vk::Format::D24_UNORM_S8_UINT,
+        ];
+
+        Texture::get_supported_format(
+            instance,
+            adapter,
+            formats,
+            vk::ImageTiling::OPTIMAL,
+            vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
+        )
     }
 }
 
@@ -210,13 +436,14 @@ impl SwapChainSupportDetail {
     ) -> Result<SwapChainSupportDetail, DeviceError> {
         let capabilities =
             surface.get_physical_device_surface_capabilities(physical_device, surface_khr)?;
-        let formats = surface.get_physical_device_surface_formats(physical_device, surface_khr)?;
+        let surface_formats =
+            surface.get_physical_device_surface_formats(physical_device, surface_khr)?;
         let present_modes =
             surface.get_physical_device_surface_present_modes(physical_device, surface_khr)?;
 
         Ok(SwapChainSupportDetail {
             capabilities,
-            formats,
+            surface_formats,
             present_modes,
         })
     }
@@ -225,7 +452,7 @@ impl SwapChainSupportDetail {
         &self,
         preferred_dimensions: [u32; 2],
     ) -> SwapchainProperties {
-        let format = Self::choose_swapchain_format(&self.formats);
+        let format = Self::choose_swapchain_format(&self.surface_formats);
         let present_mode = Self::choose_swapchain_present_mode(&self.present_modes);
         let extent = Self::choose_swapchain_extent(&self.capabilities, preferred_dimensions);
         SwapchainProperties {
@@ -303,9 +530,13 @@ impl SwapChainSupportDetail {
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
+        self.framebuffers
+            .iter()
+            .for_each(|e| self.device.destroy_framebuffer(*e));
+
         unsafe {
             self.loader.destroy_swapchain(self.raw, None);
         }
-        log::debug!("swapchain destroyed.");
+        log::debug!("Swapchain destroyed.");
     }
 }

@@ -1,4 +1,3 @@
-use std::borrow::{Borrow, Cow};
 use std::time::Instant;
 
 use illuminate::vulkan::renderer::VulkanRenderer;
@@ -13,7 +12,7 @@ fn main() {
     std::env::set_var("RUST_BACKTRACE", "full");
     std::env::set_var("RUST_LOG", "debug");
 
-    profiling::tracy_client::Client::start();
+    // profiling::tracy_client::Client::start();
 
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).unwrap();
@@ -32,11 +31,14 @@ struct State {
 impl State {
     fn new(window: &Window) -> Self {
         let renderer = VulkanRenderer::new(window).unwrap();
-
         Self { renderer }
     }
 
-    fn resize(&mut self, new_size: PhysicalSize<u32>) {}
+    fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.renderer.recreate_swapchain(new_size).unwrap();
+        }
+    }
 
     fn input(&mut self, _event: &WindowEvent) -> bool {
         false
@@ -44,7 +46,9 @@ impl State {
 
     fn update(&mut self) {}
 
-    fn render(&mut self) {}
+    fn render(&mut self) {
+        self.renderer.render().unwrap();
+    }
 
     fn exit(mut self) {}
 }
@@ -57,7 +61,7 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
     let (mut frame_count, mut accum_time) = (0, 0.0);
     // workaround of vulkan window resize warning https://github.com/rust-windowing/winit/issues/2094
     let mut is_init = false;
-
+    let mut minimized = false;
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             ref event,
@@ -76,12 +80,17 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
                             },
                         ..
                     } => *control_flow = ControlFlow::Exit,
-                    WindowEvent::Resized(physical_size) => {
+                    WindowEvent::Resized(size) => {
                         if is_init {
                             return;
                         }
+                        if size.width == 0 || size.height == 0 {
+                            minimized = true;
+                        } else {
+                            minimized = false;
+                        }
                         let app = state.as_mut().unwrap();
-                        app.resize(*physical_size);
+                        app.resize(*size);
                     }
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         let app = state.as_mut().unwrap();
@@ -108,7 +117,9 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
                 }
             }
             app.update();
-            app.render();
+            if !minimized {
+                app.render();
+            }
 
             profiling::finish_frame!();
             // match state.render() {
