@@ -164,8 +164,6 @@ impl Swapchain {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let command_pool = desc.command_pool;
-
         let shader_desc = ShaderDescriptor {
             label: Some("Triangle"),
             device,
@@ -177,12 +175,6 @@ impl Swapchain {
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
 
         let pipeline = Pipeline::new(device, render_pass.raw(), shader)?;
-
-        // let command_buffer_allocator =
-        //     CommandBufferAllocator::new(device, command_pool, desc.graphics_queue);
-        // for framebuffer in framebuffers {
-        //     command_buffer_allocator.create_single_use(|device, command_buffer| {})?;
-        // }
 
         let command_buffers = desc
             .command_buffer_allocator
