@@ -3,6 +3,7 @@ use super::instance::Instance;
 use super::surface::Surface;
 use super::swapchain::Swapchain;
 use crate::vulkan::adapter::Adapter;
+use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
@@ -32,6 +33,7 @@ pub struct VulkanRenderer {
     render_finished_semaphores: Vec<vk::Semaphore>,
     in_flight_fences: Vec<vk::Fence>,
     indices: QueueFamilyIndices,
+    command_buffer_allocator: CommandBufferAllocator,
     frame: usize,
 }
 
@@ -49,7 +51,7 @@ impl VulkanRenderer {
                 .create_surface(window.raw_display_handle(), window.raw_window_handle())
                 .unwrap()
         };
-        let adapters = unsafe { instance.enumerate_adapters().unwrap() };
+        let adapters = instance.enumerate_adapters().unwrap();
         assert!(!adapters.is_empty());
 
         let requirements = AdapterRequirements::builder()
@@ -108,6 +110,9 @@ impl VulkanRenderer {
             .build();
         let command_pool = device.create_command_pool(&command_pool_create_info)?;
 
+        let command_buffer_allocator =
+            CommandBufferAllocator::new(&device, command_pool, graphics_queue);
+
         let swapchain_desc = SwapchainDescriptor {
             adapter: &adapter,
             surface: &surface,
@@ -119,6 +124,7 @@ impl VulkanRenderer {
             graphics_queue,
             present_queue,
             allocator: &allocator,
+            command_buffer_allocator: &command_buffer_allocator,
         };
 
         let swapchain = Swapchain::new(&swapchain_desc)?;
@@ -152,6 +158,7 @@ impl VulkanRenderer {
             render_finished_semaphores,
             in_flight_fences,
             indices,
+            command_buffer_allocator,
             frame: 0,
         })
     }
@@ -199,6 +206,7 @@ impl VulkanRenderer {
 
         self.device
             .queue_submit(self.graphics_queue, &[submit_info], in_flight_fence)?;
+        swapchain.update_submitted_command_buffer(self.frame);
 
         let swapchains = [swapchain.raw()];
         let image_indices = [image_index];
@@ -235,6 +243,7 @@ impl VulkanRenderer {
             graphics_queue: self.graphics_queue,
             present_queue: self.present_queue,
             allocator: &self.allocator,
+            command_buffer_allocator: &self.command_buffer_allocator,
         };
         let swapchain = Swapchain::new(&swapchain_desc)?;
         self.swapchain = Some(swapchain);

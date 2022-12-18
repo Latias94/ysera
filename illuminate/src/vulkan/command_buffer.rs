@@ -1,4 +1,3 @@
-use crate::vulkan::command_buffer::CommandBufferState::Ready;
 use ash::vk;
 use std::ops::Deref;
 
@@ -22,8 +21,15 @@ impl CommandBuffer {
         self.raw
     }
 
+    pub fn set_state(&mut self, state: CommandBufferState) {
+        self.state = state;
+    }
+
     pub fn new(raw: vk::CommandBuffer) -> Self {
-        Self { raw, state: Ready }
+        Self {
+            raw,
+            state: CommandBufferState::Ready,
+        }
     }
 }
 

@@ -1,10 +1,11 @@
 use crate::vulkan::adapter::Adapter;
-use crate::vulkan::command_buffer::CommandBuffer;
+use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
+use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::pipeline::Pipeline;
-use crate::vulkan::render_pass::RenderPass;
+use crate::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
 use crate::vulkan::texture::Texture;
@@ -34,6 +35,7 @@ pub struct Swapchain {
     framebuffers: Vec<vk::Framebuffer>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
+    command_buffer_allocator: CommandBufferAllocator,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -61,6 +63,7 @@ pub struct SwapchainDescriptor<'a> {
     pub dimensions: [u32; 2],
     pub command_pool: vk::CommandPool,
     pub allocator: &'a Allocator,
+    pub command_buffer_allocator: &'a CommandBufferAllocator,
 }
 
 #[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
@@ -136,13 +139,18 @@ impl Swapchain {
             height: extent.height as f32,
         };
         let map = Default::default();
-        let render_pass = RenderPass::new(
+
+        let render_pass_desc = RenderPassDescriptor {
             device,
-            properties.surface_format.format,
+            surface_format: properties.surface_format.format,
             depth_format,
-            rect2d,
+            render_area: rect2d,
             clear_color,
-        )?;
+            depth: 1.0,
+            stencil: 0,
+        };
+        let render_pass = RenderPass::new(&render_pass_desc)?;
+
         let framebuffers = texture_views
             .iter()
             .map(|i| {
@@ -176,18 +184,9 @@ impl Swapchain {
         //     command_buffer_allocator.create_single_use(|device, command_buffer| {})?;
         // }
 
-        let command_buffers = {
-            let create_info = vk::CommandBufferAllocateInfo::builder()
-                .command_pool(command_pool)
-                .command_buffer_count(texture_views.len() as u32)
-                .level(vk::CommandBufferLevel::PRIMARY)
-                .build();
-            device
-                .allocate_command_buffers(&create_info)?
-                .iter()
-                .map(|x| CommandBuffer::new(*x))
-                .collect()
-        };
+        let command_buffers = desc
+            .command_buffer_allocator
+            .allocate_command_buffers(true, texture_views.len() as u32)?;
 
         // // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
         // // 如专用 VRAM 和当 VRAM 耗尽时 RAM 中的交换空间。不同类型的内存存在于这些堆中。现在我们只关心内存的类型，
@@ -233,11 +232,12 @@ impl Swapchain {
             command_buffers,
             graphics_queue: desc.graphics_queue,
             present_queue: desc.present_queue,
+            command_buffer_allocator: desc.command_buffer_allocator.clone(),
         })
     }
 
     pub fn render(
-        &self,
+        &mut self,
         command_buffer_index: usize,
         image_index: usize,
     ) -> Result<vk::CommandBuffer, DeviceError> {
@@ -269,10 +269,15 @@ impl Swapchain {
             .cmd_set_scissor(command_buffer.raw(), 0, &[conv::convert_rect2d(rect2d)]);
 
         self.device.cmd_draw(command_buffer.raw(), 3, 1, 0, 0);
-        self.device.cmd_end_render_pass(command_buffer.raw());
+        self.render_pass.end(command_buffer);
         self.device.end_command_buffer(command_buffer.raw())?;
 
         Ok(command_buffer.raw())
+    }
+
+    pub fn update_submitted_command_buffer(&mut self, command_buffer_index: usize) {
+        let command_buffer = &mut self.command_buffers[command_buffer_index];
+        command_buffer.set_state(CommandBufferState::Submitted);
     }
 
     fn create_swapchain(
