@@ -22,6 +22,43 @@ impl Device {
         unsafe { self.raw.device_wait_idle().unwrap() }
     }
 
+    pub fn get_image_memory_requirements(&self, image: vk::Image) -> vk::MemoryRequirements {
+        unsafe { self.raw.get_image_memory_requirements(image) }
+    }
+
+    pub unsafe fn bind_buffer_memory(
+        &self,
+        buffer: vk::Buffer,
+        device_memory: vk::DeviceMemory,
+        offset: vk::DeviceSize,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.bind_buffer_memory(buffer, device_memory, offset)? };
+        Ok(())
+    }
+
+    pub unsafe fn bind_image_memory(
+        &self,
+        image: vk::Image,
+        device_memory: vk::DeviceMemory,
+        offset: vk::DeviceSize,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.bind_image_memory(image, device_memory, offset)? };
+        Ok(())
+    }
+
+    pub fn create_texture(
+        &self,
+        create_info: &vk::ImageCreateInfo,
+    ) -> Result<vk::Image, DeviceError> {
+        Ok(unsafe { self.raw.create_image(create_info, None)? })
+    }
+
+    pub fn destroy_texture(&self, image: vk::Image) {
+        unsafe {
+            self.raw.destroy_image(image, None);
+        }
+    }
+
     pub fn create_texture_view(
         &self,
         create_info: &vk::ImageViewCreateInfo,
@@ -34,6 +71,7 @@ impl Device {
             self.raw.destroy_image_view(image_view, None);
         }
     }
+
     pub fn create_shader_module(
         &self,
         create_info: &vk::ShaderModuleCreateInfo,

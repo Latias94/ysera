@@ -6,7 +6,6 @@ use ash::{extensions::*, vk};
 use log::LevelFilter;
 use raw_window_handle::RawWindowHandle;
 use std::ffi::{c_void, CStr, CString};
-use std::rc::Rc;
 
 bitflags::bitflags! {
     pub struct InstanceFlags: u16 {
