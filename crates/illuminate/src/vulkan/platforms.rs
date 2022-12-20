@@ -9,7 +9,6 @@ use ash::extensions::khr::XlibSurface;
 #[cfg(target_os = "macos")]
 use ash::extensions::mvk::MacOSSurface;
 use ash::vk;
-use winit::platform::unix::WindowExtUnix;
 
 #[cfg(target_os = "macos")]
 use cocoa::appkit::{NSView, NSWindow};
