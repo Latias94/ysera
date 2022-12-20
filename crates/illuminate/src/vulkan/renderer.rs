@@ -49,7 +49,7 @@ impl VulkanRenderer {
         let instance = unsafe { Instance::init(&instance_desc).unwrap() };
         let surface = unsafe {
             instance
-                .create_surface(window.raw_display_handle(), window.raw_window_handle())
+                .create_surface(window)
                 .unwrap()
         };
         let adapters = instance.enumerate_adapters().unwrap();
