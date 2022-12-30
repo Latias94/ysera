@@ -81,6 +81,7 @@ impl Shader {
 
     pub fn load_pre_compiled_spv_bytes_from_name(shader_file_name: &str) -> Vec<u32> {
         let path = format!("{}/{}.spv", env!("OUT_DIR"), shader_file_name);
+        log::debug!("load shader spv file from: {}", path);
         Self::load_pre_compiled_spv_bytes_from_path(Path::new(&path))
     }
 

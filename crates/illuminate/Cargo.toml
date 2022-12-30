@@ -32,3 +32,10 @@ naga = { workspace = true, features = ["clone"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_Foundation"] }
+
+[build-dependencies]
+naga = { workspace = true, features = ["clone", "spv-out", "wgsl-out", "glsl-in"] }
+anyhow.workspace = true
+rayon.workspace = true
+glob.workspace = true
+fs_extra.workspace = true

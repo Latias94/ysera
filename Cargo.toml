@@ -32,6 +32,9 @@ naga = "0.10"
 windows = "0.43"
 fxhash = "0.2"
 parking_lot = "0.12"
+rayon = "1"
+glob = "0.3"
+fs_extra = "1"
 
 # Vulkan
 ash = "0.37"
