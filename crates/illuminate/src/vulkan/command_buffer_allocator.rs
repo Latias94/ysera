@@ -62,6 +62,7 @@ impl CommandBufferAllocator {
             .free_command_buffers(self.command_pool, &command_buffers);
         command_buffer.set_state(CommandBufferState::NotAllocated)
     }
+
     pub fn begin_command_buffer(
         &self,
         command_buffer: &mut CommandBuffer,

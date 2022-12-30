@@ -264,12 +264,8 @@ impl Swapchain {
         })
     }
 
-    pub fn render(
-        &mut self,
-        command_buffer_index: usize,
-        image_index: usize,
-    ) -> Result<vk::CommandBuffer, DeviceError> {
-        let command_buffer = &self.command_buffers[command_buffer_index];
+    pub fn render(&mut self, image_index: usize) -> Result<vk::CommandBuffer, DeviceError> {
+        let command_buffer = &self.command_buffers[image_index];
         let framebuffer = self.framebuffers[image_index];
 
         self.device
@@ -285,16 +281,27 @@ impl Swapchain {
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline.raw(),
         );
-        let rect2d = math::Rect2D {
+        // 改为左手坐标系 NDC
+        let viewport_rect2d = math::Rect2D {
+            x: 0.0,
+            y: self.extent.height as f32,
+            width: self.extent.width as f32,
+            height: -(self.extent.height as f32),
+        };
+        self.device
+            .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
+
+        let scissor_rect2d = math::Rect2D {
             x: 0.0,
             y: 0.0,
             width: self.extent.width as f32,
             height: self.extent.height as f32,
         };
-
-        self.device.cmd_set_viewport(command_buffer.raw(), rect2d);
-        self.device
-            .cmd_set_scissor(command_buffer.raw(), 0, &[conv::convert_rect2d(rect2d)]);
+        self.device.cmd_set_scissor(
+            command_buffer.raw(),
+            0,
+            &[conv::convert_rect2d(scissor_rect2d)],
+        );
 
         self.device.cmd_draw(command_buffer.raw(), 3, 1, 0, 0);
         self.render_pass.end(command_buffer);

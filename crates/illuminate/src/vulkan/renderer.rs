@@ -47,11 +47,7 @@ impl VulkanRenderer {
             // .debug_level_filter(log::LevelFilter::Info)
             .build();
         let instance = unsafe { Instance::init(&instance_desc).unwrap() };
-        let surface = unsafe {
-            instance
-                .create_surface(window)
-                .unwrap()
-        };
+        let surface = unsafe { instance.create_surface(window).unwrap() };
         let adapters = instance.enumerate_adapters().unwrap();
         assert!(!adapters.is_empty());
 
@@ -193,7 +189,7 @@ impl VulkanRenderer {
         };
         self.device.reset_fence(&in_flight_fences)?;
 
-        let command_buffer = swapchain.render(self.frame, image_index as usize)?;
+        let command_buffer = swapchain.render(image_index as usize)?;
 
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
 
@@ -217,8 +213,7 @@ impl VulkanRenderer {
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(signal_semaphores)
             .swapchains(&swapchains)
-            .image_indices(&image_indices)
-            .build();
+            .image_indices(&image_indices);
 
         match swapchain.queue_present(&present_info) {
             Ok(suboptimal) => suboptimal,
