@@ -26,7 +26,8 @@ winit.workspace = true
 fxhash.workspace = true
 parking_lot.workspace = true
 gpu-allocator.workspace = true
-nalgebra-glm.workspace = true
+lazy_static.workspace = true
+rand.workspace = true
 #vk-mem.workspace = true
 naga = { workspace = true, features = ["clone"] }
 
