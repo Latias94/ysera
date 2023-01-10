@@ -1,10 +1,13 @@
-use super::{device::Device, pipeline_layout::PipelineLayout};
-use crate::vulkan::shader::Shader;
-use crate::{DeviceError, Label};
-use ash::vk;
 use std::ffi::CString;
 use std::rc::Rc;
+
+use ash::vk;
 use typed_builder::TypedBuilder;
+
+use crate::vulkan::shader::Shader;
+use crate::{DeviceError, Label};
+
+use super::{device::Device, pipeline_layout::PipelineLayout};
 
 pub struct Pipeline {
     raw: vk::Pipeline,
@@ -67,12 +70,11 @@ impl Pipeline {
                 .build(),
         ];
 
-        // let binding_descriptions = &[shader.get_binding_description()];
-        // let attribute_descriptions = Vertex::attribute_descriptions();
-        let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder()
-            // .vertex_binding_descriptions(binding_descriptions)
-            // .vertex_attribute_descriptions(&attribute_descriptions)
-            .build();
+        let binding_descriptions = &[shader.get_binding_description()];
+        let attribute_descriptions = shader.get_attribute_descriptions();
+        let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder();
+        // .vertex_binding_descriptions(binding_descriptions)
+        // .vertex_attribute_descriptions(&attribute_descriptions);
 
         let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
             // Normally, the vertices are loaded from the vertex buffer by index in sequential order,

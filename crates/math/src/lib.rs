@@ -1,6 +1,10 @@
-mod rect;
+pub use nalgebra_glm::*;
 
 pub use rect::*;
+pub use vertex::*;
+
+mod rect;
+mod vertex;
 
 pub const PI: f32 = std::f32::consts::PI;
 pub const PI_2: f32 = 2.0f32 * PI;
@@ -24,13 +28,10 @@ pub fn is_power_of_2(value: u64) -> bool {
     (value != 0) && ((value & (value - 1)) == 0)
 }
 
-pub type Quaternion = Vec4;
-
 pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
-        BVec2, BVec3, BVec4, IVec2, IVec3, IVec4, Mat2, Mat3, Mat4, Quat, Quaternion, Rect2D,
-        UVec2, UVec3, UVec4, Vec2, Vec3, Vec4,
+        BVec2, BVec3, BVec4, IVec2, IVec3, IVec4, Mat2, Mat3, Mat4, Quat, Rect2D, UVec2, UVec3,
+        UVec4, Vec2, Vec3, Vec4, Vertex3D,
     };
 }
-pub use nalgebra_glm::*;
