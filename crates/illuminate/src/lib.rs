@@ -9,6 +9,7 @@ use typed_builder::TypedBuilder;
 
 mod error;
 pub mod vulkan;
+
 use crate::vulkan::instance::InstanceFlags;
 pub use error::*;
 

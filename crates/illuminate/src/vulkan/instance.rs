@@ -6,7 +6,6 @@ use ash::{extensions::*, vk};
 use log::LevelFilter;
 use raw_window_handle::RawWindowHandle;
 use std::ffi::{c_void, CStr, CString};
-use std::rc::Rc;
 
 bitflags::bitflags! {
     pub struct InstanceFlags: u16 {
@@ -164,21 +163,16 @@ impl Instance {
     }
     pub unsafe fn create_surface(
         &self,
-        display_handle: raw_window_handle::RawDisplayHandle,
-        window_handle: RawWindowHandle,
+        window: &winit::window::Window,
     ) -> Result<Surface, InstanceError> {
-        let surface = match (window_handle, display_handle) {
-            #[cfg(windows)]
-            (RawWindowHandle::Win32(handle), _) => {
-                self.create_surface_from_hwnd(handle.hinstance, handle.hwnd)
-            }
-            _ => todo!(),
-        }?;
-        Ok(surface)
+        let surface = platforms::create_surface(&self.entry, self.raw(), window)?;
+        let surface_loader = khr::Surface::new(&self.entry, &self.raw);
+        Ok(Surface::new(surface, surface_loader))
     }
 }
 
 impl Instance {
+    #[cfg(target_os = "windows")]
     fn create_surface_from_hwnd(
         &self,
         hinstance: *mut c_void,

@@ -1,10 +1,15 @@
-use crate::vulkan::device::Device;
-use crate::{Label, ShaderError};
-use ash::vk;
 use std::borrow::Cow;
+use std::mem::size_of;
 use std::path::Path;
 use std::rc::Rc;
+
+use ash::vk;
 use typed_builder::TypedBuilder;
+
+use math::{Vec3, Vertex3D};
+
+use crate::vulkan::device::Device;
+use crate::{Label, ShaderError};
 
 pub struct Shader {
     device: Rc<Device>,
@@ -74,13 +79,31 @@ impl Shader {
     pub fn get_binding_description(&self) -> vk::VertexInputBindingDescription {
         vk::VertexInputBindingDescription::builder()
             .binding(0)
-            // .stride() // todo vert layout
+            .stride(size_of::<Vertex3D>() as u32)
             .input_rate(vk::VertexInputRate::VERTEX)
             .build()
     }
 
+    // todo: reflect shader
+    pub fn get_attribute_descriptions(&self) -> [vk::VertexInputAttributeDescription; 2] {
+        let pos = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(0)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset(0)
+            .build();
+        let color = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(1)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset(size_of::<Vec3>() as u32)
+            .build();
+        [pos, color]
+    }
+
     pub fn load_pre_compiled_spv_bytes_from_name(shader_file_name: &str) -> Vec<u32> {
         let path = format!("{}/{}.spv", env!("OUT_DIR"), shader_file_name);
+        log::debug!("load shader spv file from: {}", path);
         Self::load_pre_compiled_spv_bytes_from_path(Path::new(&path))
     }
 

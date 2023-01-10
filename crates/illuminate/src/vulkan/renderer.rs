@@ -12,6 +12,7 @@ use crate::{
 };
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+use parking_lot::Mutex;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::rc::Rc;
 use winit::dpi::PhysicalSize;
@@ -22,7 +23,7 @@ pub struct VulkanRenderer {
     instance: Rc<Instance>,
     surface: Rc<Surface>,
     device: Rc<Device>,
-    allocator: Rc<Allocator>,
+    allocator: Rc<Mutex<Allocator>>,
     swapchain: Option<Swapchain>,
     debug_utils: Option<DebugUtils>,
     present_queue: vk::Queue,
@@ -46,11 +47,7 @@ impl VulkanRenderer {
             // .debug_level_filter(log::LevelFilter::Info)
             .build();
         let instance = unsafe { Instance::init(&instance_desc).unwrap() };
-        let surface = unsafe {
-            instance
-                .create_surface(window.raw_display_handle(), window.raw_window_handle())
-                .unwrap()
-        };
+        let surface = unsafe { instance.create_surface(window).unwrap() };
         let adapters = instance.enumerate_adapters().unwrap();
         assert!(!adapters.is_empty());
 
@@ -87,7 +84,8 @@ impl VulkanRenderer {
             device: device.raw().clone(),
             physical_device: adapter.raw(),
             debug_settings: Default::default(),
-            buffer_device_address: true, // Ideally, check the BufferDeviceAddressFeatures struct.
+            // check https://stackoverflow.com/questions/73341075/rust-gpu-allocator-bufferdeviceaddress-must-be-enabbled
+            buffer_device_address: false,
         });
 
         let allocator = match allocator {
@@ -113,6 +111,7 @@ impl VulkanRenderer {
         let command_buffer_allocator =
             CommandBufferAllocator::new(&device, command_pool, graphics_queue);
 
+        let allocator = Rc::new(Mutex::new(allocator));
         let swapchain_desc = SwapchainDescriptor {
             adapter: &adapter,
             surface: &surface,
@@ -123,8 +122,9 @@ impl VulkanRenderer {
             command_pool,
             graphics_queue,
             present_queue,
-            allocator: &allocator,
+            allocator: allocator.clone(),
             command_buffer_allocator: &command_buffer_allocator,
+            old_swapchain: None,
         };
 
         let swapchain = Swapchain::new(&swapchain_desc)?;
@@ -147,7 +147,7 @@ impl VulkanRenderer {
             instance: Rc::new(instance),
             surface: Rc::new(surface),
             device,
-            allocator: Rc::new(allocator),
+            allocator,
             extent: swapchain.extent(),
             swapchain: Some(swapchain),
             debug_utils,
@@ -189,7 +189,7 @@ impl VulkanRenderer {
         };
         self.device.reset_fence(&in_flight_fences)?;
 
-        let command_buffer = swapchain.render(self.frame, image_index as usize)?;
+        let command_buffer = swapchain.render(image_index as usize)?;
 
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
 
@@ -213,8 +213,7 @@ impl VulkanRenderer {
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(signal_semaphores)
             .swapchains(&swapchains)
-            .image_indices(&image_indices)
-            .build();
+            .image_indices(&image_indices);
 
         match swapchain.queue_present(&present_info) {
             Ok(suboptimal) => suboptimal,
@@ -230,8 +229,12 @@ impl VulkanRenderer {
 
     pub fn recreate_swapchain(&mut self, inner_size: PhysicalSize<u32>) -> Result<(), DeviceError> {
         self.device.wait_idle();
-        self.swapchain = None;
+        log::debug!("======== Swapchain start recreate.========");
 
+        let mut old_swapchain = None;
+        if let Some(swapchain) = &self.swapchain {
+            old_swapchain = Some(swapchain.raw())
+        }
         let swapchain_desc = SwapchainDescriptor {
             adapter: &self.adapter,
             surface: &self.surface,
@@ -242,9 +245,11 @@ impl VulkanRenderer {
             command_pool: self.command_pool,
             graphics_queue: self.graphics_queue,
             present_queue: self.present_queue,
-            allocator: &self.allocator,
+            allocator: self.allocator.clone(),
             command_buffer_allocator: &self.command_buffer_allocator,
+            old_swapchain,
         };
+
         let swapchain = Swapchain::new(&swapchain_desc)?;
         self.swapchain = Some(swapchain);
         self.extent = vk::Extent2D {

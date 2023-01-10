@@ -8,7 +8,7 @@ use crate::vulkan::pipeline::Pipeline;
 use crate::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
-use crate::vulkan::texture::Texture;
+use crate::vulkan::texture::{Texture, TextureDescriptor};
 use crate::vulkan::texture_view::TextureView;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 use ash::extensions::khr;
@@ -36,6 +36,8 @@ pub struct Swapchain {
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
     command_buffer_allocator: CommandBufferAllocator,
+    depth_texture: Texture,
+    depth_texture_view: TextureView,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -62,8 +64,9 @@ pub struct SwapchainDescriptor<'a> {
     pub queue_family: QueueFamilyIndices,
     pub dimensions: [u32; 2],
     pub command_pool: vk::CommandPool,
-    pub allocator: &'a Allocator,
+    pub allocator: Rc<Mutex<Allocator>>,
     pub command_buffer_allocator: &'a CommandBufferAllocator,
+    pub old_swapchain: Option<vk::SwapchainKHR>,
 }
 
 #[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
@@ -107,6 +110,7 @@ impl Swapchain {
             device,
             &desc.queue_family,
             desc.dimensions,
+            desc.old_swapchain,
         )?;
         let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
@@ -130,7 +134,37 @@ impl Swapchain {
             })
             .collect::<Vec<TextureView>>();
 
+        // let memory_properties = unsafe {
+        //     desc.instance
+        //         .raw()
+        //         .get_physical_device_memory_properties(desc.adapter.raw())
+        // };
+
         let depth_format = Self::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
+
+        let texture_desc = TextureDescriptor {
+            device,
+            image_type: vk::ImageType::TYPE_2D,
+            format: depth_format,
+            dimension: [extent.width, extent.height],
+            mip_levels: 4,
+            array_layers: 1,
+            samples: vk::SampleCountFlags::TYPE_1,
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            allocator: desc.allocator.clone(),
+        };
+        let depth_texture = Texture::new(texture_desc)?;
+
+        let depth_texture_view = TextureView::new_depth_texture_view(
+            Some("depth"),
+            &device,
+            depth_texture.raw(),
+            depth_format,
+        )?;
+
         let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
         let rect2d = math::Rect2D {
             x: 0.0,
@@ -225,15 +259,13 @@ impl Swapchain {
             graphics_queue: desc.graphics_queue,
             present_queue: desc.present_queue,
             command_buffer_allocator: desc.command_buffer_allocator.clone(),
+            depth_texture,
+            depth_texture_view,
         })
     }
 
-    pub fn render(
-        &mut self,
-        command_buffer_index: usize,
-        image_index: usize,
-    ) -> Result<vk::CommandBuffer, DeviceError> {
-        let command_buffer = &self.command_buffers[command_buffer_index];
+    pub fn render(&mut self, image_index: usize) -> Result<vk::CommandBuffer, DeviceError> {
+        let command_buffer = &self.command_buffers[image_index];
         let framebuffer = self.framebuffers[image_index];
 
         self.device
@@ -249,16 +281,27 @@ impl Swapchain {
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline.raw(),
         );
-        let rect2d = math::Rect2D {
+        // 改为左手坐标系 NDC
+        let viewport_rect2d = math::Rect2D {
+            x: 0.0,
+            y: self.extent.height as f32,
+            width: self.extent.width as f32,
+            height: -(self.extent.height as f32),
+        };
+        self.device
+            .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
+
+        let scissor_rect2d = math::Rect2D {
             x: 0.0,
             y: 0.0,
             width: self.extent.width as f32,
             height: self.extent.height as f32,
         };
-
-        self.device.cmd_set_viewport(command_buffer.raw(), rect2d);
-        self.device
-            .cmd_set_scissor(command_buffer.raw(), 0, &[conv::convert_rect2d(rect2d)]);
+        self.device.cmd_set_scissor(
+            command_buffer.raw(),
+            0,
+            &[conv::convert_rect2d(scissor_rect2d)],
+        );
 
         self.device.cmd_draw(command_buffer.raw(), 3, 1, 0, 0);
         self.render_pass.end(command_buffer);
@@ -279,6 +322,7 @@ impl Swapchain {
         device: &Device,
         queue_family: &QueueFamilyIndices,
         dimensions: [u32; 2],
+        old_swapchain: Option<vk::SwapchainKHR>,
     ) -> Result<
         (
             khr::Swapchain,
@@ -321,6 +365,12 @@ impl Swapchain {
                 // 这一模式下性能表现最佳。
                 (vk::SharingMode::EXCLUSIVE, vec![])
             };
+
+        let old_swapchain = match old_swapchain {
+            None => vk::SwapchainKHR::null(),
+            Some(swapchain) => swapchain,
+        };
+
         let create_info = vk::SwapchainCreateInfoKHR::builder()
             .surface(surface.raw())
             .min_image_count(image_count)
@@ -342,7 +392,8 @@ impl Swapchain {
             .clipped(true)
             // 对于 VR 相关的应用程序来说，会使用更多的层次。
             .image_array_layers(1)
-            .build();
+            .old_swapchain(old_swapchain);
+
         let swapchain_loader = khr::Swapchain::new(instance.raw(), device.raw());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
         log::debug!("Vulkan swapchain created.");
@@ -422,6 +473,28 @@ impl Swapchain {
             vk::ImageTiling::OPTIMAL,
             vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
         )
+    }
+
+    pub fn get_memory_type_index(
+        memory_properties: vk::PhysicalDeviceMemoryProperties,
+        properties: vk::MemoryPropertyFlags,
+        requirements: vk::MemoryRequirements,
+    ) -> u32 {
+        // 我们首先找到适合缓冲区本身的内存类型
+        // 来自 requirements 参数的内存类型位字段将用于指定合适的内存类型的位字段。
+        // 这意味着我们可以通过简单地遍历它们并检查相应的位是否设置为 1 来找到合适的内存类型的索引。
+
+        // 然而，我们不只是对适合顶点缓冲区的内存类型感兴趣。我们还需要能够将我们的顶点数据写入该内存中。
+        // memory_types 数组由 vk::MemoryType 结构组成，指定每种类型的内存的堆和属性。属性定义了内存的特殊功能，
+        // 比如能够映射它，所以我们可以从 CPU 写到它。这个属性用 vk::MemoryPropertyFlags::HOST_VISIBLE 表示，
+        // 但是我们也需要使用 vk::MemoryPropertyFlags::HOST_COHERENT 属性。我们将在映射内存时看到原因。
+        (0..memory_properties.memory_type_count)
+            .find(|i| {
+                let suitable = (requirements.memory_type_bits & (1 << i)) != 0;
+                let memory_type = memory_properties.memory_types[*i as usize];
+                suitable && memory_type.property_flags.contains(properties)
+            })
+            .expect("Failed to find suitable memory type!")
     }
 }
 
