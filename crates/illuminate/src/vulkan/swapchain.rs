@@ -1,4 +1,16 @@
+use std::rc::Rc;
+
+use ash::extensions::khr;
+use ash::vk;
+use gpu_allocator::vulkan::Allocator;
+use lazy_static::lazy_static;
+use parking_lot::Mutex;
+use typed_builder::TypedBuilder;
+
+use math::prelude::*;
+
 use crate::vulkan::adapter::Adapter;
+use crate::vulkan::buffer::{Buffer, VertexBufferDescriptor};
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
@@ -11,12 +23,14 @@ use crate::vulkan::surface::Surface;
 use crate::vulkan::texture::{Texture, TextureDescriptor};
 use crate::vulkan::texture_view::TextureView;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
-use ash::extensions::khr;
-use ash::vk;
-use gpu_allocator::vulkan::Allocator;
-use parking_lot::Mutex;
-use std::rc::Rc;
-use typed_builder::TypedBuilder;
+
+lazy_static! {
+    pub static ref VERTICES: Vec<Vertex3D> = vec![
+        Vertex3D::new(vec3(0.5, -0.5, 0.0), vec3(1.0, 0.0, 0.0)),
+        Vertex3D::new(vec3(0.0, 0.5, 0.0), vec3(0.0, 1.0, 0.0)),
+        Vertex3D::new(vec3(-0.5, -0.5, 0.0), vec3(0.0, 0.0, 1.0)),
+    ];
+}
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
@@ -38,6 +52,7 @@ pub struct Swapchain {
     command_buffer_allocator: CommandBufferAllocator,
     depth_texture: Texture,
     depth_texture_view: TextureView,
+    vertex_buffer: Buffer,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -201,12 +216,20 @@ impl Swapchain {
         let shader_desc = ShaderDescriptor {
             label: Some("Triangle"),
             device,
-            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_0.vert"),
+            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_1.vert"),
             vert_entry_name: "main",
-            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_0.frag"),
+            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_1.frag"),
             frag_entry_name: "main",
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
+
+        let vertex_buffer_desc = VertexBufferDescriptor {
+            label: Some("Vertex Buffer"),
+            device,
+            allocator: desc.allocator.clone(),
+            elements: &VERTICES,
+        };
+        let vertex_buffer = Buffer::new_vertex_buffer(vertex_buffer_desc)?;
 
         let pipeline = Pipeline::new(device, render_pass.raw(), shader)?;
 
@@ -261,6 +284,7 @@ impl Swapchain {
             command_buffer_allocator: desc.command_buffer_allocator.clone(),
             depth_texture,
             depth_texture_view,
+            vertex_buffer,
         })
     }
 
@@ -301,6 +325,13 @@ impl Swapchain {
             command_buffer.raw(),
             0,
             &[conv::convert_rect2d(scissor_rect2d)],
+        );
+
+        self.device.cmd_bind_vertex_buffers(
+            command_buffer.raw(),
+            0,
+            &[self.vertex_buffer.raw()],
+            &[0],
         );
 
         self.device.cmd_draw(command_buffer.raw(), 3, 1, 0, 0);

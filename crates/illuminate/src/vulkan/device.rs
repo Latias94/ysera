@@ -1,7 +1,9 @@
+use std::ffi::CStr;
+
+use ash::vk;
+
 use crate::vulkan::debug::DebugUtils;
 use crate::DeviceError;
-use ash::vk;
-use std::ffi::CStr;
 
 pub struct Device {
     /// Loads device local functions.
@@ -24,6 +26,10 @@ impl Device {
 
     pub fn get_image_memory_requirements(&self, image: vk::Image) -> vk::MemoryRequirements {
         unsafe { self.raw.get_image_memory_requirements(image) }
+    }
+
+    pub fn get_buffer_memory_requirements(&self, buffer: vk::Buffer) -> vk::MemoryRequirements {
+        unsafe { self.raw.get_buffer_memory_requirements(buffer) }
     }
 
     pub unsafe fn bind_buffer_memory(
@@ -201,6 +207,33 @@ impl Device {
         unsafe { self.raw.free_command_buffers(command_pool, command_buffers) }
     }
 
+    pub fn create_buffer(
+        &self,
+        create_info: &vk::BufferCreateInfo,
+    ) -> Result<vk::Buffer, DeviceError> {
+        Ok(unsafe { self.raw.create_buffer(create_info, None)? })
+    }
+
+    pub fn destroy_buffer(&self, buffer: vk::Buffer) {
+        unsafe {
+            self.raw.destroy_buffer(buffer, None);
+        }
+    }
+
+    pub fn map_memory(
+        &self,
+        memory: vk::DeviceMemory,
+        offset: vk::DeviceSize,
+        size: vk::DeviceSize,
+        flags: vk::MemoryMapFlags,
+    ) -> Result<*mut std::ffi::c_void, DeviceError> {
+        Ok(unsafe { self.raw.map_memory(memory, offset, size, flags)? })
+    }
+
+    pub fn unmap_memory(&self, memory: vk::DeviceMemory) {
+        unsafe { self.raw.unmap_memory(memory) }
+    }
+
     pub fn cmd_begin_render_pass(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -270,6 +303,19 @@ impl Device {
                 first_vertex,
                 first_instance,
             );
+        }
+    }
+
+    pub fn cmd_bind_vertex_buffers(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        first_binding: u32,
+        buffers: &[vk::Buffer],
+        offsets: &[vk::DeviceSize],
+    ) {
+        unsafe {
+            self.raw
+                .cmd_bind_vertex_buffers(command_buffer, first_binding, buffers, offsets);
         }
     }
 

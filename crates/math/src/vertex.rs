@@ -6,7 +6,7 @@ pub struct Vertex3D {
 }
 
 impl Vertex3D {
-    fn new(position: Vec3, color: Vec3) -> Self {
+    pub fn new(position: Vec3, color: Vec3) -> Self {
         Self { position, color }
     }
 }

@@ -1,11 +1,15 @@
-use super::{device::Device, instance::Instance, surface::Surface, utils};
+use alloc::ffi::CString;
+use std::collections::HashSet;
+use std::ffi::c_char;
+
+use ash::extensions::khr;
+use ash::vk;
+
 use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::instance::InstanceFlags;
 use crate::{AdapterRequirements, QueueFamilyIndices};
-use ash::extensions::khr;
-use ash::vk;
-use std::collections::HashSet;
-use std::ffi::{c_char, CString};
+
+use super::{device::Device, instance::Instance, surface::Surface, utils};
 
 pub struct Adapter {
     raw: vk::PhysicalDevice,

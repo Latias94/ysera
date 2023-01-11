@@ -1,7 +1,12 @@
-use super::device::Device;
-use super::instance::Instance;
-use super::surface::Surface;
-use super::swapchain::Swapchain;
+use std::rc::Rc;
+
+use ash::vk;
+use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+
+use parking_lot::Mutex;
+use winit::dpi::PhysicalSize;
+use winit::window::Window;
+
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::debug::DebugUtils;
@@ -10,13 +15,11 @@ use crate::vulkan::utils;
 use crate::{
     AdapterRequirements, DeviceError, InstanceDescriptor, QueueFamilyIndices, SurfaceError,
 };
-use ash::vk;
-use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
-use parking_lot::Mutex;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use std::rc::Rc;
-use winit::dpi::PhysicalSize;
-use winit::window::Window;
+
+use super::device::Device;
+use super::instance::Instance;
+use super::surface::Surface;
+use super::swapchain::Swapchain;
 
 pub struct VulkanRenderer {
     adapter: Rc<Adapter>,
