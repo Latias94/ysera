@@ -1,6 +1,5 @@
 use alloc::rc::Rc;
 use std::mem::size_of;
-use std::ptr::copy_nonoverlapping as memcpy;
 
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
@@ -8,9 +7,11 @@ use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
+use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::Device;
 use crate::DeviceError;
 
+#[derive(Clone)]
 pub enum BufferType {
     Index = 0,
     Vertex = 1,
@@ -49,31 +50,18 @@ pub struct BufferDescriptor<'a> {
 }
 
 #[derive(Clone, TypedBuilder)]
-pub struct VertexBufferDescriptor<'a, T> {
+pub struct StagingBufferDescriptor<'a, T> {
     pub label: crate::Label<'a>,
     pub device: &'a Rc<Device>,
     pub allocator: Rc<Mutex<Allocator>>,
     pub elements: &'a [T],
+    pub buffer_type: BufferType,
+    pub command_buffer_allocator: &'a CommandBufferAllocator,
 }
 
 impl Buffer {
     pub fn raw(&self) -> vk::Buffer {
         self.raw
-    }
-
-    pub fn new_vertex_buffer<T>(desc: VertexBufferDescriptor<T>) -> Result<Buffer, DeviceError> {
-        let buffer_desc = BufferDescriptor {
-            label: desc.label,
-            device: desc.device,
-            allocator: desc.allocator,
-            element_size: size_of::<T>(),
-            element_count: desc.elements.len() as u32,
-            buffer_usage: vk::BufferUsageFlags::VERTEX_BUFFER,
-            memory_location: MemoryLocation::CpuToGpu,
-        };
-        let vertex_buffer = Self::new(buffer_desc)?;
-        vertex_buffer.copy_memory(desc.elements);
-        Ok(vertex_buffer)
     }
 
     pub fn new(desc: BufferDescriptor) -> Result<Buffer, DeviceError> {
@@ -111,13 +99,56 @@ impl Buffer {
         })
     }
 
+    // https://developer.nvidia.com/vulkan-memory-management
+    // recommend that you also store multiple buffers, like the vertex and index buffer,
+    // into a single vk::Buffer and use offsets in commands like cmd_bind_vertex_buffers.
+    pub fn new_staging_buffer<T>(desc: StagingBufferDescriptor<T>) -> Result<Buffer, DeviceError> {
+        let staging_buffer_desc = BufferDescriptor {
+            label: Some("Staging Buffer"),
+            device: desc.device,
+            allocator: desc.allocator.clone(),
+            element_size: size_of::<T>(),
+            element_count: desc.elements.len() as u32,
+            buffer_usage: vk::BufferUsageFlags::TRANSFER_SRC,
+            memory_location: MemoryLocation::CpuToGpu,
+        };
+        let staging_buffer = Self::new(staging_buffer_desc)?;
+        staging_buffer.copy_memory(desc.elements);
+
+        let buffer_desc = BufferDescriptor {
+            label: desc.label,
+            device: desc.device,
+            allocator: desc.allocator,
+            element_size: size_of::<T>(),
+            element_count: desc.elements.len() as u32,
+            buffer_usage: vk::BufferUsageFlags::TRANSFER_DST | desc.buffer_type.to_buffer_usage(),
+            memory_location: MemoryLocation::GpuOnly,
+        };
+        let buffer = Self::new(buffer_desc)?;
+        staging_buffer.copy_buffer(&buffer, desc.command_buffer_allocator)?;
+        Ok(buffer)
+    }
+
     pub fn copy_memory<T>(&self, data: &[T]) {
         if let Some(allocation) = &self.allocation {
             let dst = allocation.mapped_ptr().unwrap().cast().as_ptr();
             unsafe {
+                use std::ptr::copy_nonoverlapping as memcpy;
                 memcpy(data.as_ptr(), dst, data.len());
             }
         }
+    }
+
+    pub fn copy_buffer(
+        &self,
+        destination: &Buffer,
+        command_buffer_allocator: &CommandBufferAllocator,
+    ) -> Result<(), DeviceError> {
+        command_buffer_allocator.create_single_use(|device, command_buffer| {
+            let regions = [vk::BufferCopy::builder().size(self.buffer_size).build()];
+            device.cmd_copy_buffer(command_buffer.raw(), self.raw, destination.raw, &regions);
+        })?;
+        Ok(())
     }
 }
 
@@ -128,5 +159,6 @@ impl Drop for Buffer {
             self.allocator.lock().free(allocation).unwrap();
         }
         self.device.destroy_buffer(self.raw);
+        log::debug!("destroy buffer");
     }
 }

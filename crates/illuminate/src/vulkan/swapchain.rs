@@ -10,7 +10,7 @@ use typed_builder::TypedBuilder;
 use math::prelude::*;
 
 use crate::vulkan::adapter::Adapter;
-use crate::vulkan::buffer::{Buffer, VertexBufferDescriptor};
+use crate::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor};
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
@@ -26,11 +26,14 @@ use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 
 lazy_static! {
     pub static ref VERTICES: Vec<Vertex3D> = vec![
-        Vertex3D::new(vec3(0.5, -0.5, 0.0), vec3(1.0, 0.0, 0.0)),
-        Vertex3D::new(vec3(0.0, 0.5, 0.0), vec3(0.0, 1.0, 0.0)),
-        Vertex3D::new(vec3(-0.5, -0.5, 0.0), vec3(0.0, 0.0, 1.0)),
+        Vertex3D::new(vec3(-0.5, -0.5, 0.0), vec3(1.0, 0.0, 0.0)),
+        Vertex3D::new(vec3(0.5, -0.5, 0.0), vec3(0.0, 1.0, 0.0)),
+        Vertex3D::new(vec3(0.5, 0.5, 0.0), vec3(0.0, 1.0, 0.0)),
+        Vertex3D::new(vec3(-0.5, 0.5, 0.0), vec3(1.0, 1.0, 1.0)),
     ];
 }
+
+pub const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
@@ -53,6 +56,7 @@ pub struct Swapchain {
     depth_texture: Texture,
     depth_texture_view: TextureView,
     vertex_buffer: Buffer,
+    index_buffer: Buffer,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -223,13 +227,24 @@ impl Swapchain {
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
 
-        let vertex_buffer_desc = VertexBufferDescriptor {
+        let vertex_buffer_desc = StagingBufferDescriptor {
             label: Some("Vertex Buffer"),
             device,
             allocator: desc.allocator.clone(),
             elements: &VERTICES,
+            buffer_type: BufferType::Vertex,
+            command_buffer_allocator: desc.command_buffer_allocator,
         };
-        let vertex_buffer = Buffer::new_vertex_buffer(vertex_buffer_desc)?;
+        let vertex_buffer = Buffer::new_staging_buffer(vertex_buffer_desc)?;
+        let index_buffer_desc = StagingBufferDescriptor {
+            label: Some("Index Buffer"),
+            device,
+            allocator: desc.allocator.clone(),
+            elements: &INDICES,
+            buffer_type: BufferType::Index,
+            command_buffer_allocator: desc.command_buffer_allocator,
+        };
+        let index_buffer = Buffer::new_staging_buffer(index_buffer_desc)?;
 
         let pipeline = Pipeline::new(device, render_pass.raw(), shader)?;
 
@@ -285,6 +300,7 @@ impl Swapchain {
             depth_texture,
             depth_texture_view,
             vertex_buffer,
+            index_buffer,
         })
     }
 
@@ -334,7 +350,15 @@ impl Swapchain {
             &[0],
         );
 
-        self.device.cmd_draw(command_buffer.raw(), 3, 1, 0, 0);
+        self.device.cmd_bind_index_buffer(
+            command_buffer.raw(),
+            self.index_buffer.raw(),
+            0,
+            vk::IndexType::UINT16,
+        );
+
+        self.device
+            .cmd_draw_indexed(command_buffer.raw(), INDICES.len() as u32, 1, 0, 0, 0);
         self.render_pass.end(command_buffer);
         self.device.end_command_buffer(command_buffer.raw())?;
 

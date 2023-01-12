@@ -306,6 +306,27 @@ impl Device {
         }
     }
 
+    pub fn cmd_draw_indexed(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) {
+        unsafe {
+            self.raw.cmd_draw_indexed(
+                command_buffer,
+                index_count,
+                instance_count,
+                first_index,
+                vertex_offset,
+                first_instance,
+            );
+        }
+    }
+
     pub fn cmd_bind_vertex_buffers(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -316,6 +337,32 @@ impl Device {
         unsafe {
             self.raw
                 .cmd_bind_vertex_buffers(command_buffer, first_binding, buffers, offsets);
+        }
+    }
+
+    pub fn cmd_bind_index_buffer(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        buffer: vk::Buffer,
+        offset: vk::DeviceSize,
+        index_type: vk::IndexType,
+    ) {
+        unsafe {
+            self.raw
+                .cmd_bind_index_buffer(command_buffer, buffer, offset, index_type);
+        }
+    }
+
+    pub fn cmd_copy_buffer(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        src_buffer: vk::Buffer,
+        dst_buffer: vk::Buffer,
+        regions: &[vk::BufferCopy],
+    ) {
+        unsafe {
+            self.raw
+                .cmd_copy_buffer(command_buffer, src_buffer, dst_buffer, regions);
         }
     }
 
