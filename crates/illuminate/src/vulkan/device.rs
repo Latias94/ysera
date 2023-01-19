@@ -215,9 +215,7 @@ impl Device {
     }
 
     pub fn destroy_buffer(&self, buffer: vk::Buffer) {
-        unsafe {
-            self.raw.destroy_buffer(buffer, None);
-        }
+        unsafe { self.raw.destroy_buffer(buffer, None) }
     }
 
     pub fn map_memory(
@@ -232,6 +230,46 @@ impl Device {
 
     pub fn unmap_memory(&self, memory: vk::DeviceMemory) {
         unsafe { self.raw.unmap_memory(memory) }
+    }
+
+    pub fn create_descriptor_set_layout(
+        &self,
+        create_info: &vk::DescriptorSetLayoutCreateInfo,
+    ) -> Result<vk::DescriptorSetLayout, DeviceError> {
+        Ok(unsafe { self.raw.create_descriptor_set_layout(create_info, None)? })
+    }
+
+    pub fn destroy_descriptor_set_layout(&self, layout: vk::DescriptorSetLayout) {
+        unsafe { self.raw.destroy_descriptor_set_layout(layout, None) }
+    }
+
+    pub fn create_descriptor_pool(
+        &self,
+        create_info: &vk::DescriptorPoolCreateInfo,
+    ) -> Result<vk::DescriptorPool, DeviceError> {
+        Ok(unsafe { self.raw.create_descriptor_pool(create_info, None)? })
+    }
+
+    pub fn destroy_descriptor_pool(&self, pool: vk::DescriptorPool) {
+        unsafe { self.raw.destroy_descriptor_pool(pool, None) }
+    }
+
+    pub fn allocate_descriptor_sets(
+        &self,
+        create_info: &vk::DescriptorSetAllocateInfo,
+    ) -> Result<Vec<vk::DescriptorSet>, DeviceError> {
+        Ok(unsafe { self.raw.allocate_descriptor_sets(create_info)? })
+    }
+
+    pub fn update_descriptor_sets(
+        &self,
+        descriptor_writes: &[vk::WriteDescriptorSet],
+        descriptor_copies: &[vk::CopyDescriptorSet],
+    ) {
+        unsafe {
+            self.raw
+                .update_descriptor_sets(descriptor_writes, descriptor_copies)
+        }
     }
 
     pub fn cmd_begin_render_pass(

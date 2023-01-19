@@ -1,8 +1,8 @@
 use std::rc::Rc;
+use std::time::Instant;
 
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
-
 use parking_lot::Mutex;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
@@ -38,7 +38,9 @@ pub struct VulkanRenderer {
     in_flight_fences: Vec<vk::Fence>,
     indices: QueueFamilyIndices,
     command_buffer_allocator: CommandBufferAllocator,
+    // descriptor_set_allocator: DescriptorSetAllocator,
     frame: usize,
+    instant: Instant,
 }
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
@@ -115,6 +117,7 @@ impl VulkanRenderer {
             CommandBufferAllocator::new(&device, command_pool, graphics_queue);
 
         let allocator = Rc::new(Mutex::new(allocator));
+        let instant = Instant::now();
         let swapchain_desc = SwapchainDescriptor {
             adapter: &adapter,
             surface: &surface,
@@ -128,6 +131,7 @@ impl VulkanRenderer {
             allocator: allocator.clone(),
             command_buffer_allocator: &command_buffer_allocator,
             old_swapchain: None,
+            instant,
         };
 
         let swapchain = Swapchain::new(&swapchain_desc)?;
@@ -163,6 +167,7 @@ impl VulkanRenderer {
             indices,
             command_buffer_allocator,
             frame: 0,
+            instant,
         })
     }
 
@@ -251,6 +256,7 @@ impl VulkanRenderer {
             allocator: self.allocator.clone(),
             command_buffer_allocator: &self.command_buffer_allocator,
             old_swapchain,
+            instant: self.instant,
         };
 
         let swapchain = Swapchain::new(&swapchain_desc)?;

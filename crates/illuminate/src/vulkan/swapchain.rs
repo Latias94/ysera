@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::time::Instant;
 
 use ash::extensions::khr;
 use ash::vk;
@@ -10,10 +11,11 @@ use typed_builder::TypedBuilder;
 use math::prelude::*;
 
 use crate::vulkan::adapter::Adapter;
-use crate::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor};
+use crate::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor, UniformBufferDescriptor};
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
+use crate::vulkan::descriptor_set_layout::{DescriptorSetLayout, DescriptorSetLayoutCreateInfo};
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::pipeline::Pipeline;
@@ -22,6 +24,7 @@ use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
 use crate::vulkan::texture::{Texture, TextureDescriptor};
 use crate::vulkan::texture_view::TextureView;
+use crate::vulkan::uniform_buffer::UniformBufferObject;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 
 lazy_static! {
@@ -57,6 +60,8 @@ pub struct Swapchain {
     depth_texture_view: TextureView,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
+    uniform_buffers: Vec<Buffer>,
+    instant: Instant,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -86,6 +91,7 @@ pub struct SwapchainDescriptor<'a> {
     pub allocator: Rc<Mutex<Allocator>>,
     pub command_buffer_allocator: &'a CommandBufferAllocator,
     pub old_swapchain: Option<vk::SwapchainKHR>,
+    pub instant: Instant,
 }
 
 #[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
@@ -185,7 +191,7 @@ impl Swapchain {
         )?;
 
         let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
-        let rect2d = math::Rect2D {
+        let rect2d = Rect2D {
             x: 0.0,
             y: 0.0,
             width: extent.width as f32,
@@ -236,6 +242,7 @@ impl Swapchain {
             command_buffer_allocator: desc.command_buffer_allocator,
         };
         let vertex_buffer = Buffer::new_staging_buffer(vertex_buffer_desc)?;
+
         let index_buffer_desc = StagingBufferDescriptor {
             label: Some("Index Buffer"),
             device,
@@ -246,7 +253,29 @@ impl Swapchain {
         };
         let index_buffer = Buffer::new_staging_buffer(index_buffer_desc)?;
 
-        let pipeline = Pipeline::new(device, render_pass.raw(), shader)?;
+        let uniform_buffer_desc = UniformBufferDescriptor {
+            label: Some("Uniform Buffer"),
+            device,
+            allocator: desc.allocator.clone(),
+            elements: &[Default::default()] as &[UniformBufferObject],
+            buffer_type: BufferType::Uniform,
+            command_buffer_allocator: desc.command_buffer_allocator,
+        };
+
+        let uniform_buffers = texture_views
+            .iter()
+            .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let descriptor_set_layouts_desc = DescriptorSetLayoutCreateInfo {
+            device,
+            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+            descriptor_count: 1,
+            shader_stage_flags: vk::ShaderStageFlags::VERTEX,
+        };
+        let descriptor_set_layouts = vec![DescriptorSetLayout::new(descriptor_set_layouts_desc)?];
+
+        let pipeline = Pipeline::new(device, render_pass.raw(), &descriptor_set_layouts, shader)?;
 
         let command_buffers = desc
             .command_buffer_allocator
@@ -301,10 +330,14 @@ impl Swapchain {
             depth_texture_view,
             vertex_buffer,
             index_buffer,
+            uniform_buffers,
+            instant: desc.instant,
         })
     }
 
     pub fn render(&mut self, image_index: usize) -> Result<vk::CommandBuffer, DeviceError> {
+        self.update_uniform_buffer(image_index);
+
         let command_buffer = &self.command_buffers[image_index];
         let framebuffer = self.framebuffers[image_index];
 
@@ -321,8 +354,9 @@ impl Swapchain {
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline.raw(),
         );
+
         // 改为左手坐标系 NDC
-        let viewport_rect2d = math::Rect2D {
+        let viewport_rect2d = Rect2D {
             x: 0.0,
             y: self.extent.height as f32,
             width: self.extent.width as f32,
@@ -331,7 +365,7 @@ impl Swapchain {
         self.device
             .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
 
-        let scissor_rect2d = math::Rect2D {
+        let scissor_rect2d = Rect2D {
             x: 0.0,
             y: 0.0,
             width: self.extent.width as f32,
@@ -363,6 +397,35 @@ impl Swapchain {
         self.device.end_command_buffer(command_buffer.raw())?;
 
         Ok(command_buffer.raw())
+    }
+
+    pub fn update_uniform_buffer(&mut self, image_index: usize) {
+        let time = self.instant.elapsed().as_secs_f32();
+        let model = math::rotate(
+            &math::identity(),
+            time * math::radians(&math::vec1(90.0))[0],
+            &vec3(0.0, 0.0, 1.0),
+        );
+        let view = math::look_at(
+            &vec3(2.0, 2.0, 2.0),
+            &vec3(0.0, 0.0, 0.0),
+            &vec3(0.0, 0.0, 1.0),
+        );
+        let projection = math::perspective(
+            self.extent.width as f32 / self.extent.height as f32,
+            math::radians(&math::vec1(45.0))[0],
+            0.1,
+            10.0,
+        );
+        // projection[(1, 1)] *= -1.0; // openGL clip space y 和 vulkan 相反，不过我们在 cmd_set_viewport 处理了
+        let ubo = UniformBufferObject {
+            model,
+            view,
+            projection,
+        };
+
+        let uniform_buffer = &mut self.uniform_buffers[image_index];
+        uniform_buffer.copy_memory(&[ubo]);
     }
 
     pub fn update_submitted_command_buffer(&mut self, command_buffer_index: usize) {
@@ -404,6 +467,7 @@ impl Swapchain {
         } else {
             image_count
         };
+
         let (image_sharing_mode, queue_family_indices) =
             if queue_family.graphics_family != queue_family.present_family {
                 (
@@ -451,7 +515,7 @@ impl Swapchain {
 
         let swapchain_loader = khr::Swapchain::new(instance.raw(), device.raw());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
-        log::debug!("Vulkan swapchain created.");
+        log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 
         Ok((swapchain_loader, swapchain, properties, swapchain_support))
     }

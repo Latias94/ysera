@@ -59,6 +59,16 @@ pub struct StagingBufferDescriptor<'a, T> {
     pub command_buffer_allocator: &'a CommandBufferAllocator,
 }
 
+#[derive(Clone, TypedBuilder)]
+pub struct UniformBufferDescriptor<'a, T> {
+    pub label: crate::Label<'a>,
+    pub device: &'a Rc<Device>,
+    pub allocator: Rc<Mutex<Allocator>>,
+    pub elements: &'a [T],
+    pub buffer_type: BufferType,
+    pub command_buffer_allocator: &'a CommandBufferAllocator,
+}
+
 impl Buffer {
     pub fn raw(&self) -> vk::Buffer {
         self.raw
@@ -112,7 +122,7 @@ impl Buffer {
             buffer_usage: vk::BufferUsageFlags::TRANSFER_SRC,
             memory_location: MemoryLocation::CpuToGpu,
         };
-        let staging_buffer = Self::new(staging_buffer_desc)?;
+        let mut staging_buffer = Self::new(staging_buffer_desc)?;
         staging_buffer.copy_memory(desc.elements);
 
         let buffer_desc = BufferDescriptor {
@@ -129,7 +139,21 @@ impl Buffer {
         Ok(buffer)
     }
 
-    pub fn copy_memory<T>(&self, data: &[T]) {
+    pub fn new_uniform_buffer<T>(desc: &UniformBufferDescriptor<T>) -> Result<Buffer, DeviceError> {
+        let buffer_desc = BufferDescriptor {
+            label: Some("Uniform Buffer"),
+            device: desc.device,
+            allocator: desc.allocator.clone(),
+            element_size: size_of::<T>(),
+            element_count: desc.elements.len() as u32,
+            buffer_usage: vk::BufferUsageFlags::UNIFORM_BUFFER,
+            memory_location: MemoryLocation::CpuToGpu,
+        };
+        let buffer = Self::new(buffer_desc)?;
+        Ok(buffer)
+    }
+
+    pub fn copy_memory<T>(&mut self, data: &[T]) {
         if let Some(allocation) = &self.allocation {
             let dst = allocation.mapped_ptr().unwrap().cast().as_ptr();
             unsafe {
@@ -159,6 +183,5 @@ impl Drop for Buffer {
             self.allocator.lock().free(allocation).unwrap();
         }
         self.device.destroy_buffer(self.raw);
-        log::debug!("destroy buffer");
     }
 }

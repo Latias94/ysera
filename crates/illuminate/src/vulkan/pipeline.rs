@@ -4,6 +4,7 @@ use std::rc::Rc;
 use ash::vk;
 use typed_builder::TypedBuilder;
 
+use crate::vulkan::descriptor_set_layout::DescriptorSetLayout;
 use crate::vulkan::shader::Shader;
 use crate::{DeviceError, Label};
 
@@ -29,9 +30,10 @@ impl Pipeline {
         device: &Rc<Device>,
         render_pass: vk::RenderPass,
         // msaa_samples: vk::SampleCountFlags,
+        descriptor_set_layouts: &[DescriptorSetLayout],
         shader: Shader,
     ) -> Result<Self, DeviceError> {
-        let pipeline_layout = PipelineLayout::new(&device, &[])?;
+        let pipeline_layout = PipelineLayout::new(device, descriptor_set_layouts)?;
         log::debug!("Vulkan pipeline layout created.");
         let raw =
             Self::create_graphics_pipeline(device, render_pass, pipeline_layout.raw(), shader)?[0];

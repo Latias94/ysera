@@ -1,7 +1,10 @@
+use std::rc::Rc;
+
+use ash::vk;
+
+use crate::vulkan::descriptor_set_layout::DescriptorSetLayout;
 use crate::vulkan::device::Device;
 use crate::DeviceError;
-use ash::vk;
-use std::rc::Rc;
 
 pub struct PipelineLayout {
     raw: vk::PipelineLayout,
@@ -13,11 +16,9 @@ impl PipelineLayout {
         self.raw
     }
 
-    pub fn new(
-        device: &Rc<Device>,
-        layouts: &[vk::DescriptorSetLayout],
-    ) -> Result<Self, DeviceError> {
-        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(layouts);
+    pub fn new(device: &Rc<Device>, layouts: &[DescriptorSetLayout]) -> Result<Self, DeviceError> {
+        let raw_layouts: Vec<vk::DescriptorSetLayout> = layouts.iter().map(|x| x.raw()).collect();
+        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&raw_layouts);
 
         let raw = device.create_pipeline_layout(&create_info)?;
         Ok(Self {
