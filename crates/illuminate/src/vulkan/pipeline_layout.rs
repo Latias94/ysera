@@ -16,11 +16,14 @@ impl PipelineLayout {
         self.raw
     }
 
-    pub fn new(device: &Rc<Device>, layouts: &[DescriptorSetLayout]) -> Result<Self, DeviceError> {
-        let raw_layouts: Vec<vk::DescriptorSetLayout> = layouts.iter().map(|x| x.raw()).collect();
-        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&raw_layouts);
+    pub fn new(
+        device: &Rc<Device>,
+        layouts: &[vk::DescriptorSetLayout],
+    ) -> Result<Self, DeviceError> {
+        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(layouts);
 
         let raw = device.create_pipeline_layout(&create_info)?;
+        log::debug!("Vulkan pipeline layout created.");
         Ok(Self {
             raw,
             device: device.clone(),

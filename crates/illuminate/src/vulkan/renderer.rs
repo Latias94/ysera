@@ -10,6 +10,7 @@ use winit::window::Window;
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::debug::DebugUtils;
+use crate::vulkan::descriptor_set_allocator::DescriptorSetAllocator;
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
 use crate::{
@@ -37,8 +38,8 @@ pub struct VulkanRenderer {
     render_finished_semaphores: Vec<vk::Semaphore>,
     in_flight_fences: Vec<vk::Fence>,
     indices: QueueFamilyIndices,
-    command_buffer_allocator: CommandBufferAllocator,
-    // descriptor_set_allocator: DescriptorSetAllocator,
+    command_buffer_allocator: Rc<CommandBufferAllocator>,
+    descriptor_set_allocator: Rc<DescriptorSetAllocator>,
     frame: usize,
     instant: Instant,
 }
@@ -113,8 +114,12 @@ impl VulkanRenderer {
             .build();
         let command_pool = device.create_command_pool(&command_pool_create_info)?;
 
-        let command_buffer_allocator =
-            CommandBufferAllocator::new(&device, command_pool, graphics_queue);
+        let command_buffer_allocator = Rc::new(CommandBufferAllocator::new(
+            &device,
+            command_pool,
+            graphics_queue,
+        ));
+        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(&device, 3)?);
 
         let allocator = Rc::new(Mutex::new(allocator));
         let instant = Instant::now();
@@ -129,7 +134,8 @@ impl VulkanRenderer {
             graphics_queue,
             present_queue,
             allocator: allocator.clone(),
-            command_buffer_allocator: &command_buffer_allocator,
+            command_buffer_allocator: command_buffer_allocator.clone(),
+            descriptor_set_allocator: descriptor_set_allocator.clone(),
             old_swapchain: None,
             instant,
         };
@@ -166,6 +172,7 @@ impl VulkanRenderer {
             in_flight_fences,
             indices,
             command_buffer_allocator,
+            descriptor_set_allocator,
             frame: 0,
             instant,
         })
@@ -254,7 +261,8 @@ impl VulkanRenderer {
             graphics_queue: self.graphics_queue,
             present_queue: self.present_queue,
             allocator: self.allocator.clone(),
-            command_buffer_allocator: &self.command_buffer_allocator,
+            command_buffer_allocator: self.command_buffer_allocator.clone(),
+            descriptor_set_allocator: self.descriptor_set_allocator.clone(),
             old_swapchain,
             instant: self.instant,
         };

@@ -26,18 +26,20 @@ impl Pipeline {
         self.raw
     }
 
+    pub fn raw_pipeline_layout(&self) -> vk::PipelineLayout {
+        self.pipeline_layout.raw()
+    }
+
     pub fn new(
         device: &Rc<Device>,
         render_pass: vk::RenderPass,
         // msaa_samples: vk::SampleCountFlags,
-        descriptor_set_layouts: &[DescriptorSetLayout],
+        descriptor_set_layouts: &[vk::DescriptorSetLayout],
         shader: Shader,
     ) -> Result<Self, DeviceError> {
         let pipeline_layout = PipelineLayout::new(device, descriptor_set_layouts)?;
-        log::debug!("Vulkan pipeline layout created.");
         let raw =
             Self::create_graphics_pipeline(device, render_pass, pipeline_layout.raw(), shader)?[0];
-        log::debug!("Vulkan pipelines created.");
 
         Ok(Self {
             raw,
@@ -187,7 +189,9 @@ impl Pipeline {
             .build();
 
         let graphic_pipeline_create_infos = [graphic_pipeline_create_info];
-        device.create_graphics_pipelines(&graphic_pipeline_create_infos)
+        let pipelines = device.create_graphics_pipelines(&graphic_pipeline_create_infos)?;
+        log::debug!("Vulkan pipelines created.");
+        Ok(pipelines)
     }
 }
 

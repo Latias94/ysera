@@ -391,6 +391,27 @@ impl Device {
         }
     }
 
+    pub fn cmd_bind_descriptor_sets(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        pipeline_bind_point: vk::PipelineBindPoint,
+        layout: vk::PipelineLayout,
+        first_set: u32,
+        descriptor_sets: &[vk::DescriptorSet],
+        dynamic_offsets: &[u32],
+    ) {
+        unsafe {
+            self.raw.cmd_bind_descriptor_sets(
+                command_buffer,
+                pipeline_bind_point,
+                layout,
+                first_set,
+                descriptor_sets,
+                dynamic_offsets,
+            );
+        }
+    }
+
     pub fn cmd_copy_buffer(
         &self,
         command_buffer: vk::CommandBuffer,

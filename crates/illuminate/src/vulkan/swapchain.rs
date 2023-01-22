@@ -15,7 +15,10 @@ use crate::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor, Uniform
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
-use crate::vulkan::descriptor_set_layout::{DescriptorSetLayout, DescriptorSetLayoutCreateInfo};
+use crate::vulkan::descriptor_set_allocator::{DescriptorSetAllocator, DescriptorSetsCreateInfo};
+use crate::vulkan::descriptor_set_layout::{
+    DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
+};
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::pipeline::Pipeline;
@@ -55,12 +58,14 @@ pub struct Swapchain {
     framebuffers: Vec<vk::Framebuffer>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
-    command_buffer_allocator: CommandBufferAllocator,
+    command_buffer_allocator: Rc<CommandBufferAllocator>,
+    descriptor_set_allocator: Rc<DescriptorSetAllocator>,
     depth_texture: Texture,
     depth_texture_view: TextureView,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     uniform_buffers: Vec<Buffer>,
+    per_frame_descriptor_sets: Vec<vk::DescriptorSet>,
     instant: Instant,
 }
 
@@ -89,7 +94,8 @@ pub struct SwapchainDescriptor<'a> {
     pub dimensions: [u32; 2],
     pub command_pool: vk::CommandPool,
     pub allocator: Rc<Mutex<Allocator>>,
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
+    pub command_buffer_allocator: Rc<CommandBufferAllocator>,
+    pub descriptor_set_allocator: Rc<DescriptorSetAllocator>,
     pub old_swapchain: Option<vk::SwapchainKHR>,
     pub instant: Instant,
 }
@@ -226,9 +232,9 @@ impl Swapchain {
         let shader_desc = ShaderDescriptor {
             label: Some("Triangle"),
             device,
-            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_1.vert"),
+            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.vert"),
             vert_entry_name: "main",
-            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_1.frag"),
+            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.frag"),
             frag_entry_name: "main",
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
@@ -239,7 +245,7 @@ impl Swapchain {
             allocator: desc.allocator.clone(),
             elements: &VERTICES,
             buffer_type: BufferType::Vertex,
-            command_buffer_allocator: desc.command_buffer_allocator,
+            command_buffer_allocator: &desc.command_buffer_allocator,
         };
         let vertex_buffer = Buffer::new_staging_buffer(vertex_buffer_desc)?;
 
@@ -247,9 +253,9 @@ impl Swapchain {
             label: Some("Index Buffer"),
             device,
             allocator: desc.allocator.clone(),
-            elements: &INDICES,
+            elements: INDICES,
             buffer_type: BufferType::Index,
-            command_buffer_allocator: desc.command_buffer_allocator,
+            command_buffer_allocator: &desc.command_buffer_allocator,
         };
         let index_buffer = Buffer::new_staging_buffer(index_buffer_desc)?;
 
@@ -259,7 +265,7 @@ impl Swapchain {
             allocator: desc.allocator.clone(),
             elements: &[Default::default()] as &[UniformBufferObject],
             buffer_type: BufferType::Uniform,
-            command_buffer_allocator: desc.command_buffer_allocator,
+            command_buffer_allocator: &desc.command_buffer_allocator,
         };
 
         let uniform_buffers = texture_views
@@ -267,47 +273,22 @@ impl Swapchain {
             .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let descriptor_set_layouts_desc = DescriptorSetLayoutCreateInfo {
-            device,
-            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-            descriptor_count: 1,
-            shader_stage_flags: vk::ShaderStageFlags::VERTEX,
-        };
-        let descriptor_set_layouts = vec![DescriptorSetLayout::new(descriptor_set_layouts_desc)?];
+        let descriptor_set_layouts = &[desc.descriptor_set_allocator.raw_per_frame_layout()];
 
-        let pipeline = Pipeline::new(device, render_pass.raw(), &descriptor_set_layouts, shader)?;
+        let pipeline = Pipeline::new(device, render_pass.raw(), descriptor_set_layouts, shader)?;
 
         let command_buffers = desc
             .command_buffer_allocator
             .allocate_command_buffers(true, texture_views.len() as u32)?;
 
-        // // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
-        // // 如专用 VRAM 和当 VRAM 耗尽时 RAM 中的交换空间。不同类型的内存存在于这些堆中。现在我们只关心内存的类型，
-        // // 而不关心它来自的堆，但是可以想象这可能会影响性能。
-        // let mem_properties = {
-        //     // profiling::scope!("vkGetPhysicalDeviceMemoryProperties");
-        //     instance_fp.get_physical_device_memory_properties(self.raw)
-        // };
-        // // 我们首先找到适合缓冲区本身的内存类型
-        // // 来自 requirements 参数的内存类型位字段将用于指定合适的内存类型的位字段。
-        // // 这意味着我们可以通过简单地遍历它们并检查相应的位是否设置为 1 来找到合适的内存类型的索引。
-        // let memory_types =
-        //     &mem_properties.memory_types[..mem_properties.memory_type_count as usize];
-        // let valid_memory_types: u32 = memory_types.iter().enumerate().fold(0, |u, (i, mem)| {
-        //     if self.known_memory_flags.contains(mem.property_flags) {
-        //         u | (1 << i)
-        //     } else {
-        //         u
-        //     }
-        // });
-        // let swapchain_loader = khr::Swapchain::new(&instance_fp, &ash_device);
-        // let queue_family_index = indices.graphics_family.unwrap();
-        // let raw_queue = {
-        //     profiling::scope!("vkGetDeviceQueue");
-        //     // queueFamilyIndex is the index of the queue family to which the queue belongs.
-        //     // queueIndex is the index within this queue family of the queue to retrieve.
-        //     ash_device.get_device_queue(queue_family_index, 0)
-        // };
+        let descriptor_sets_create_info = DescriptorSetsCreateInfo {
+            uniform_buffers: &uniform_buffers,
+        };
+
+        let per_frame_descriptor_sets = desc
+            .descriptor_set_allocator
+            .allocate_per_frame_descriptor_sets(&descriptor_sets_create_info)?;
+
         Ok(Self {
             raw: swapchain,
             loader: swapchain_loader,
@@ -326,11 +307,13 @@ impl Swapchain {
             graphics_queue: desc.graphics_queue,
             present_queue: desc.present_queue,
             command_buffer_allocator: desc.command_buffer_allocator.clone(),
+            descriptor_set_allocator: desc.descriptor_set_allocator.clone(),
             depth_texture,
             depth_texture_view,
             vertex_buffer,
             index_buffer,
             uniform_buffers,
+            per_frame_descriptor_sets,
             instant: desc.instant,
         })
     }
@@ -389,6 +372,15 @@ impl Swapchain {
             self.index_buffer.raw(),
             0,
             vk::IndexType::UINT16,
+        );
+
+        self.device.cmd_bind_descriptor_sets(
+            command_buffer.raw(),
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline.raw_pipeline_layout(),
+            0,
+            &[self.per_frame_descriptor_sets[image_index]],
+            &[],
         );
 
         self.device

@@ -35,6 +35,7 @@ impl DescriptorPool {
             .pool_sizes(pool_sizes)
             .max_sets(desc.max_sets);
         let raw = device.create_descriptor_pool(&info)?;
+        log::debug!("Descriptor Pool created.");
         Ok(Self {
             raw,
             device: device.clone(),
@@ -45,5 +46,6 @@ impl DescriptorPool {
 impl Drop for DescriptorPool {
     fn drop(&mut self) {
         self.device.destroy_descriptor_pool(self.raw);
+        log::debug!("Descriptor Pool destroyed.");
     }
 }
