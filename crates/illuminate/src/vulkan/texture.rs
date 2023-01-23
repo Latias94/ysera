@@ -13,7 +13,9 @@ use parking_lot::Mutex;
 
 use std::path::Path;
 use std::rc::Rc;
+use typed_builder::TypedBuilder;
 
+#[derive(Clone, TypedBuilder)]
 pub struct VulkanTextureDescriptor<'a> {
     pub device: &'a Rc<Device>,
     pub allocator: Rc<Mutex<Allocator>>,

@@ -10,7 +10,6 @@ use winit::window::Window;
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::debug::DebugUtils;
-use crate::vulkan::descriptor_set_allocator::DescriptorSetAllocator;
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
 use crate::{
@@ -46,14 +45,14 @@ pub struct VulkanRenderer {
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 impl VulkanRenderer {
-    pub fn new(window: &Window) -> Result<Self, DeviceError> {
+    pub fn new(window: &Window) -> anyhow::Result<Self> {
         let instance_desc = InstanceDescriptor::builder()
             // .flags(crate::vulkan::instance::InstanceFlags::empty())
             // .debug_level_filter(log::LevelFilter::Info)
             .build();
-        let instance = unsafe { Instance::init(&instance_desc).unwrap() };
-        let surface = unsafe { instance.create_surface(window).unwrap() };
-        let adapters = instance.enumerate_adapters().unwrap();
+        let instance = unsafe { Instance::init(&instance_desc)? };
+        let surface = unsafe { instance.create_surface(window)? };
+        let adapters = instance.enumerate_adapters()?;
         assert!(!adapters.is_empty());
 
         let requirements = AdapterRequirements::builder()
@@ -78,11 +77,8 @@ impl VulkanRenderer {
         let indices = utils::get_queue_family_indices(instance.raw(), adapter.raw(), &surface)?;
         indices.log_debug();
 
-        let device = unsafe {
-            adapter
-                .open(&instance, indices, &requirements, debug_utils.clone())
-                .unwrap()
-        };
+        let device =
+            unsafe { adapter.open(&instance, indices, &requirements, debug_utils.clone())? };
 
         let allocator = Allocator::new(&AllocatorCreateDesc {
             instance: instance.raw().clone(),
@@ -174,7 +170,7 @@ impl VulkanRenderer {
         })
     }
 
-    pub fn render(&mut self) -> Result<(), DeviceError> {
+    pub fn render(&mut self) -> anyhow::Result<()> {
         if self.swapchain.is_none() {
             self.recreate_swapchain(PhysicalSize {
                 width: self.extent.width,
@@ -238,7 +234,7 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    pub fn recreate_swapchain(&mut self, inner_size: PhysicalSize<u32>) -> Result<(), DeviceError> {
+    pub fn recreate_swapchain(&mut self, inner_size: PhysicalSize<u32>) -> anyhow::Result<()> {
         self.device.wait_idle();
         log::debug!("======== Swapchain start recreate.========");
 

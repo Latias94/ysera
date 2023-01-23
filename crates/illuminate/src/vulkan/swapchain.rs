@@ -4,7 +4,6 @@ use std::time::Instant;
 use ash::extensions::khr;
 use ash::vk;
 use gpu_allocator::vulkan::Allocator;
-use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
@@ -24,27 +23,9 @@ use crate::vulkan::pipeline::Pipeline;
 use crate::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
-use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
 use crate::vulkan::uniform_buffer::UniformBufferObject;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
-
-lazy_static! {
-    pub static ref VERTICES: Vec<Vertex3D> = vec![
-        Vertex3D::new(vec3(-0.5, -0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(0.0, 1.0)),
-        Vertex3D::new(vec3(0.5, -0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(1.0, 1.0)),
-        Vertex3D::new(vec3(0.5, 0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(1.0, 0.0)),
-        Vertex3D::new(vec3(-0.5, 0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(0.0, 0.0)),
-        Vertex3D::new(vec3(-0.5, -0.5, -0.5), vec3(1.0, 1.0, 1.0), vec2(0.0, 1.0)),
-        Vertex3D::new(vec3(0.5, -0.5, -0.5), vec3(1.0, 1.0, 1.0), vec2(1.0, 1.0)),
-        Vertex3D::new(vec3(0.5, 0.5, -0.5), vec3(1.0, 1.0, 1.0), vec2(1.0, 0.0)),
-        Vertex3D::new(vec3(-0.5, 0.5, -0.5), vec3(1.0, 1.0, 1.0), vec2(0.0, 0.0)),
-    ];
-}
-
-pub const INDICES: &[u16] = &[
-    0, 1, 2, 2, 3, 0, //
-    4, 5, 6, 6, 7, 4,
-];
+use crate::vulkan::model::{Model, ModelDescriptor};
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
@@ -71,7 +52,7 @@ pub struct Swapchain {
     index_buffer: Buffer,
     uniform_buffers: Vec<Buffer>,
     per_frame_descriptor_sets: Vec<vk::DescriptorSet>,
-    texture: VulkanTexture,
+    model: Model,
     instant: Instant,
 }
 
@@ -137,7 +118,7 @@ impl Swapchain {
         &self.pipeline
     }
 
-    pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
+    pub fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
         let device = desc.device;
         let (swapchain_loader, swapchain, properties, support) = Self::create_swapchain(
             desc.adapter,
@@ -222,11 +203,19 @@ impl Swapchain {
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
 
+        let model_desc = ModelDescriptor{
+            file_name: "viking_room",
+            device,
+            allocator: desc.allocator.clone(),
+            command_buffer_allocator: &desc.command_buffer_allocator,
+        };
+        let model = Model::load_obj(&model_desc)?;
+
         let vertex_buffer_desc = StagingBufferDescriptor {
             label: Some("Vertex Buffer"),
             device,
             allocator: desc.allocator.clone(),
-            elements: &VERTICES,
+            elements: model.vertices(),
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
         let vertex_buffer =
@@ -236,7 +225,7 @@ impl Swapchain {
             label: Some("Index Buffer"),
             device,
             allocator: desc.allocator.clone(),
-            elements: INDICES,
+            elements: model.indices(),
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
         let index_buffer =
@@ -265,21 +254,11 @@ impl Swapchain {
             .command_buffer_allocator
             .allocate_command_buffers(true, image_views.len() as u32)?;
 
-        let mut texture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        texture_path.push("../../resources/textures/texture.png");
-        let texture_desc = VulkanTextureDescriptor {
-            device,
-            allocator: desc.allocator.clone(),
-            command_buffer_allocator: &desc.command_buffer_allocator,
-            path: &texture_path,
-        };
-
-        let texture = VulkanTexture::new(&texture_desc)?;
-
+        let model_texture = model.texture();
         let descriptor_sets_create_info = DescriptorSetsCreateInfo {
             uniform_buffers: &uniform_buffers,
-            texture_image_view: texture.raw_image_view(),
-            texture_sampler: texture.raw_sampler(),
+            texture_image_view: model_texture.raw_image_view(),
+            texture_sampler: model_texture.raw_sampler(),
         };
 
         let per_frame_descriptor_sets = descriptor_set_allocator
@@ -310,7 +289,7 @@ impl Swapchain {
             index_buffer,
             uniform_buffers,
             per_frame_descriptor_sets,
-            texture,
+            model,
             instant: desc.instant,
         })
     }
@@ -368,7 +347,7 @@ impl Swapchain {
             command_buffer.raw(),
             self.index_buffer.raw(),
             0,
-            vk::IndexType::UINT16,
+            vk::IndexType::UINT32, // Model.indices
         );
 
         self.device.cmd_bind_descriptor_sets(
@@ -381,7 +360,7 @@ impl Swapchain {
         );
 
         self.device
-            .cmd_draw_indexed(command_buffer.raw(), INDICES.len() as u32, 1, 0, 0, 0);
+            .cmd_draw_indexed(command_buffer.raw(), self.model.indices().len() as u32, 1, 0, 0, 0);
         self.render_pass.end(command_buffer);
         self.device.end_command_buffer(command_buffer.raw())?;
 

@@ -29,6 +29,7 @@ gpu-allocator.workspace = true
 lazy_static.workspace = true
 rand.workspace = true
 image.workspace = true
+tobj.workspace = true
 #vk-mem.workspace = true
 naga = { workspace = true, features = ["clone"] }
 

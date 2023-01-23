@@ -29,17 +29,21 @@ nalgebra-glm = "0.18"
 typed-builder = "0.11"
 bitflags = "1"
 winapi = "0.3"
-naga = "0.10"
 windows = "0.44"
 fxhash = "0.2"
 parking_lot = "0.12"
 rayon = "1"
 glob = "0.3"
 fs_extra = "1"
+#ordered-float = "3.4.0"
+
+# model
+gltf = "1"
+tobj = "3.2"
 
 # Vulkan
 ash = "0.37"
-# Vulkan allocator
+naga = "0.10"
 gpu-allocator = "0.21"
 #vk-mem = { git = "https://github.com/gwihlidal/vk-mem-rs", version = "0.2.3" } # wait for update
 

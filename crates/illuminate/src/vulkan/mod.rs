@@ -23,3 +23,4 @@ pub mod swapchain;
 pub mod texture;
 pub mod uniform_buffer;
 pub mod utils;
+pub mod model;
