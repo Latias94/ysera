@@ -1,7 +1,12 @@
-use super::device::Device;
-use super::instance::Instance;
-use super::surface::Surface;
-use super::swapchain::Swapchain;
+use std::rc::Rc;
+use std::time::Instant;
+
+use ash::vk;
+use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+use parking_lot::Mutex;
+use winit::dpi::PhysicalSize;
+use winit::window::Window;
+
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::debug::DebugUtils;
@@ -10,13 +15,11 @@ use crate::vulkan::utils;
 use crate::{
     AdapterRequirements, DeviceError, InstanceDescriptor, QueueFamilyIndices, SurfaceError,
 };
-use ash::vk;
-use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
-use parking_lot::Mutex;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use std::rc::Rc;
-use winit::dpi::PhysicalSize;
-use winit::window::Window;
+
+use super::device::Device;
+use super::instance::Instance;
+use super::surface::Surface;
+use super::swapchain::Swapchain;
 
 pub struct VulkanRenderer {
     adapter: Rc<Adapter>,
@@ -34,21 +37,22 @@ pub struct VulkanRenderer {
     render_finished_semaphores: Vec<vk::Semaphore>,
     in_flight_fences: Vec<vk::Fence>,
     indices: QueueFamilyIndices,
-    command_buffer_allocator: CommandBufferAllocator,
+    command_buffer_allocator: Rc<CommandBufferAllocator>,
     frame: usize,
+    instant: Instant,
 }
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 impl VulkanRenderer {
-    pub fn new(window: &Window) -> Result<Self, DeviceError> {
+    pub fn new(window: &Window) -> anyhow::Result<Self> {
         let instance_desc = InstanceDescriptor::builder()
             // .flags(crate::vulkan::instance::InstanceFlags::empty())
             // .debug_level_filter(log::LevelFilter::Info)
             .build();
-        let instance = unsafe { Instance::init(&instance_desc).unwrap() };
-        let surface = unsafe { instance.create_surface(window).unwrap() };
-        let adapters = instance.enumerate_adapters().unwrap();
+        let instance = unsafe { Instance::init(&instance_desc)? };
+        let surface = unsafe { instance.create_surface(window)? };
+        let adapters = instance.enumerate_adapters()?;
         assert!(!adapters.is_empty());
 
         let requirements = AdapterRequirements::builder()
@@ -73,11 +77,8 @@ impl VulkanRenderer {
         let indices = utils::get_queue_family_indices(instance.raw(), adapter.raw(), &surface)?;
         indices.log_debug();
 
-        let device = unsafe {
-            adapter
-                .open(&instance, indices, &requirements, debug_utils.clone())
-                .unwrap()
-        };
+        let device =
+            unsafe { adapter.open(&instance, indices, &requirements, debug_utils.clone())? };
 
         let allocator = Allocator::new(&AllocatorCreateDesc {
             instance: instance.raw().clone(),
@@ -108,10 +109,14 @@ impl VulkanRenderer {
             .build();
         let command_pool = device.create_command_pool(&command_pool_create_info)?;
 
-        let command_buffer_allocator =
-            CommandBufferAllocator::new(&device, command_pool, graphics_queue);
+        let command_buffer_allocator = Rc::new(CommandBufferAllocator::new(
+            &device,
+            command_pool,
+            graphics_queue,
+        ));
 
         let allocator = Rc::new(Mutex::new(allocator));
+        let instant = Instant::now();
         let swapchain_desc = SwapchainDescriptor {
             adapter: &adapter,
             surface: &surface,
@@ -123,8 +128,9 @@ impl VulkanRenderer {
             graphics_queue,
             present_queue,
             allocator: allocator.clone(),
-            command_buffer_allocator: &command_buffer_allocator,
+            command_buffer_allocator: command_buffer_allocator.clone(),
             old_swapchain: None,
+            instant,
         };
 
         let swapchain = Swapchain::new(&swapchain_desc)?;
@@ -160,10 +166,11 @@ impl VulkanRenderer {
             indices,
             command_buffer_allocator,
             frame: 0,
+            instant,
         })
     }
 
-    pub fn render(&mut self) -> Result<(), DeviceError> {
+    pub fn render(&mut self) -> anyhow::Result<()> {
         if self.swapchain.is_none() {
             self.recreate_swapchain(PhysicalSize {
                 width: self.extent.width,
@@ -227,7 +234,7 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    pub fn recreate_swapchain(&mut self, inner_size: PhysicalSize<u32>) -> Result<(), DeviceError> {
+    pub fn recreate_swapchain(&mut self, inner_size: PhysicalSize<u32>) -> anyhow::Result<()> {
         self.device.wait_idle();
         log::debug!("======== Swapchain start recreate.========");
 
@@ -246,8 +253,9 @@ impl VulkanRenderer {
             graphics_queue: self.graphics_queue,
             present_queue: self.present_queue,
             allocator: self.allocator.clone(),
-            command_buffer_allocator: &self.command_buffer_allocator,
+            command_buffer_allocator: self.command_buffer_allocator.clone(),
             old_swapchain,
+            instant: self.instant,
         };
 
         let swapchain = Swapchain::new(&swapchain_desc)?;

@@ -1,10 +1,11 @@
-use std::ffi::CString;
+use alloc::ffi::CString;
 use std::rc::Rc;
 
 use ash::vk;
+use math::Vertex3D;
 use typed_builder::TypedBuilder;
 
-use crate::vulkan::shader::Shader;
+use crate::vulkan::shader::{Shader, ShaderPropertyInfo};
 use crate::{DeviceError, Label};
 
 use super::{device::Device, pipeline_layout::PipelineLayout};
@@ -25,17 +26,20 @@ impl Pipeline {
         self.raw
     }
 
+    pub fn raw_pipeline_layout(&self) -> vk::PipelineLayout {
+        self.pipeline_layout.raw()
+    }
+
     pub fn new(
         device: &Rc<Device>,
         render_pass: vk::RenderPass,
         // msaa_samples: vk::SampleCountFlags,
+        descriptor_set_layouts: &[vk::DescriptorSetLayout],
         shader: Shader,
     ) -> Result<Self, DeviceError> {
-        let pipeline_layout = PipelineLayout::new(&device, &[])?;
-        log::debug!("Vulkan pipeline layout created.");
+        let pipeline_layout = PipelineLayout::new(device, descriptor_set_layouts)?;
         let raw =
             Self::create_graphics_pipeline(device, render_pass, pipeline_layout.raw(), shader)?[0];
-        log::debug!("Vulkan pipelines created.");
 
         Ok(Self {
             raw,
@@ -70,11 +74,11 @@ impl Pipeline {
                 .build(),
         ];
 
-        let binding_descriptions = &[shader.get_binding_description()];
-        let attribute_descriptions = shader.get_attribute_descriptions();
-        let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder();
-        // .vertex_binding_descriptions(binding_descriptions)
-        // .vertex_attribute_descriptions(&attribute_descriptions);
+        let binding_descriptions = Vertex3D::get_binding_descriptions();
+        let attribute_descriptions = Vertex3D::get_attribute_descriptions();
+        let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder()
+            .vertex_binding_descriptions(&binding_descriptions)
+            .vertex_attribute_descriptions(&attribute_descriptions);
 
         let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
             // Normally, the vertices are loaded from the vertex buffer by index in sequential order,
@@ -122,24 +126,24 @@ impl Pipeline {
         //     reference: 0,
         // };
 
-        // let depth_stencil_state_create_info = vk::PipelineDepthStencilStateCreateInfo::builder()
-        //     // depth_test_enable 字段指定是否应将新片段的深度与深度缓冲区进行比较，看它们是否应被丢弃。
-        //     .depth_test_enable(true)
-        //     // depth_write_enable 字段指定是否应将通过深度测试的新片段的深度实际写入深度缓冲区。
-        //     .depth_write_enable(true)
-        //     // depth_compare_op 字段指定了为保留或丢弃片段所进行的比较。我们坚持较低的深度 = 较近的惯例，所以新片段的深度应该较小。
-        //     .depth_compare_op(vk::CompareOp::LESS)
-        //     // depth_bounds_test_enable、min_depth_bounds 和 max_depth_bounds 字段用于可选的深度边界测试。
-        //     // 基本上，这允许你只保留落在指定深度范围内的片段。我们将不会使用这个功能。
-        //     .depth_bounds_test_enable(false)
-        //     .min_depth_bounds(0.0) // Optional.
-        //     .max_depth_bounds(1.0) // Optional.
-        //     // 最后三个字段配置了模板缓冲区的操作，
-        //     // 如果你想使用这些操作，那么你必须确保深度 / 模板图像的格式包含一个模板组件。
-        //     .stencil_test_enable(false)
-        //     // .front(/* vk::StencilOpState */) // Optional.
-        //     // .back(/* vk::StencilOpState */); // Optional.
-        //     .build();
+        let depth_stencil_state_create_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+            // depth_test_enable 字段指定是否应将新片段的深度与深度缓冲区进行比较，看它们是否应被丢弃。
+            .depth_test_enable(true)
+            // depth_write_enable 字段指定是否应将通过深度测试的新片段的深度实际写入深度缓冲区。
+            .depth_write_enable(true)
+            // depth_compare_op 字段指定了为保留或丢弃片段所进行的比较。我们坚持较低的深度 = 较近的惯例，所以新片段的深度应该较小。
+            .depth_compare_op(vk::CompareOp::LESS)
+            // depth_bounds_test_enable、min_depth_bounds 和 max_depth_bounds 字段用于可选的深度边界测试。
+            // 基本上，这允许你只保留落在指定深度范围内的片段。我们将不会使用这个功能。
+            .depth_bounds_test_enable(false)
+            .min_depth_bounds(0.0) // Optional.
+            .max_depth_bounds(1.0) // Optional.
+            // 最后三个字段配置了模板缓冲区的操作，
+            // 如果你想使用这些操作，那么你必须确保深度 / 模板图像的格式包含一个模板组件。
+            .stencil_test_enable(false)
+            // .front(/* vk::StencilOpState */) // Optional.
+            // .back(/* vk::StencilOpState */); // Optional.
+            .build();
 
         // pseudocode:
         // if blend_enable {
@@ -176,7 +180,7 @@ impl Pipeline {
             .viewport_state(&viewport_state_create_info)
             .rasterization_state(&rasterization_state_create_info)
             .multisample_state(&multisample_state_create_info)
-            // .depth_stencil_state(&depth_stencil_state_create_info)
+            .depth_stencil_state(&depth_stencil_state_create_info)
             .color_blend_state(&color_blend_state_create_info)
             .dynamic_state(&dynamic_state_create_info)
             .layout(pipeline_layout)
@@ -185,7 +189,9 @@ impl Pipeline {
             .build();
 
         let graphic_pipeline_create_infos = [graphic_pipeline_create_info];
-        device.create_graphics_pipelines(&graphic_pipeline_create_infos)
+        let pipelines = device.create_graphics_pipelines(&graphic_pipeline_create_infos)?;
+        log::debug!("Vulkan pipelines created.");
+        Ok(pipelines)
     }
 }
 

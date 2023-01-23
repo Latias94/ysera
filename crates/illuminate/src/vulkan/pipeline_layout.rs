@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
+use ash::vk;
+
 use crate::vulkan::device::Device;
 use crate::DeviceError;
-use ash::vk;
-use std::rc::Rc;
 
 pub struct PipelineLayout {
     raw: vk::PipelineLayout,
@@ -20,6 +22,7 @@ impl PipelineLayout {
         let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(layouts);
 
         let raw = device.create_pipeline_layout(&create_info)?;
+        log::debug!("Vulkan pipeline layout created.");
         Ok(Self {
             raw,
             device: device.clone(),

@@ -1,7 +1,9 @@
+use std::ffi::CStr;
+
+use ash::vk;
+
 use crate::vulkan::debug::DebugUtils;
 use crate::DeviceError;
-use ash::vk;
-use std::ffi::CStr;
 
 pub struct Device {
     /// Loads device local functions.
@@ -26,6 +28,10 @@ impl Device {
         unsafe { self.raw.get_image_memory_requirements(image) }
     }
 
+    pub fn get_buffer_memory_requirements(&self, buffer: vk::Buffer) -> vk::MemoryRequirements {
+        unsafe { self.raw.get_buffer_memory_requirements(buffer) }
+    }
+
     pub unsafe fn bind_buffer_memory(
         &self,
         buffer: vk::Buffer,
@@ -46,27 +52,27 @@ impl Device {
         Ok(())
     }
 
-    pub fn create_texture(
+    pub fn create_image(
         &self,
         create_info: &vk::ImageCreateInfo,
     ) -> Result<vk::Image, DeviceError> {
         Ok(unsafe { self.raw.create_image(create_info, None)? })
     }
 
-    pub fn destroy_texture(&self, image: vk::Image) {
+    pub fn destroy_image(&self, image: vk::Image) {
         unsafe {
             self.raw.destroy_image(image, None);
         }
     }
 
-    pub fn create_texture_view(
+    pub fn create_image_view(
         &self,
         create_info: &vk::ImageViewCreateInfo,
     ) -> Result<vk::ImageView, DeviceError> {
         Ok(unsafe { self.raw.create_image_view(create_info, None)? })
     }
 
-    pub fn destroy_texture_view(&self, image_view: vk::ImageView) {
+    pub fn destroy_image_view(&self, image_view: vk::ImageView) {
         unsafe {
             self.raw.destroy_image_view(image_view, None);
         }
@@ -109,6 +115,17 @@ impl Device {
 
     pub fn destroy_framebuffer(&self, framebuffer: vk::Framebuffer) {
         unsafe { self.raw.destroy_framebuffer(framebuffer, None) }
+    }
+
+    pub fn create_sampler(
+        &self,
+        create_info: &vk::SamplerCreateInfo,
+    ) -> Result<vk::Sampler, DeviceError> {
+        Ok(unsafe { self.raw.create_sampler(create_info, None)? })
+    }
+
+    pub fn destroy_sampler(&self, sampler: vk::Sampler) {
+        unsafe { self.raw.destroy_sampler(sampler, None) }
     }
 
     pub fn create_pipeline_layout(
@@ -201,6 +218,71 @@ impl Device {
         unsafe { self.raw.free_command_buffers(command_pool, command_buffers) }
     }
 
+    pub fn create_buffer(
+        &self,
+        create_info: &vk::BufferCreateInfo,
+    ) -> Result<vk::Buffer, DeviceError> {
+        Ok(unsafe { self.raw.create_buffer(create_info, None)? })
+    }
+
+    pub fn destroy_buffer(&self, buffer: vk::Buffer) {
+        unsafe { self.raw.destroy_buffer(buffer, None) }
+    }
+
+    pub fn map_memory(
+        &self,
+        memory: vk::DeviceMemory,
+        offset: vk::DeviceSize,
+        size: vk::DeviceSize,
+        flags: vk::MemoryMapFlags,
+    ) -> Result<*mut std::ffi::c_void, DeviceError> {
+        Ok(unsafe { self.raw.map_memory(memory, offset, size, flags)? })
+    }
+
+    pub fn unmap_memory(&self, memory: vk::DeviceMemory) {
+        unsafe { self.raw.unmap_memory(memory) }
+    }
+
+    pub fn create_descriptor_set_layout(
+        &self,
+        create_info: &vk::DescriptorSetLayoutCreateInfo,
+    ) -> Result<vk::DescriptorSetLayout, DeviceError> {
+        Ok(unsafe { self.raw.create_descriptor_set_layout(create_info, None)? })
+    }
+
+    pub fn destroy_descriptor_set_layout(&self, layout: vk::DescriptorSetLayout) {
+        unsafe { self.raw.destroy_descriptor_set_layout(layout, None) }
+    }
+
+    pub fn create_descriptor_pool(
+        &self,
+        create_info: &vk::DescriptorPoolCreateInfo,
+    ) -> Result<vk::DescriptorPool, DeviceError> {
+        Ok(unsafe { self.raw.create_descriptor_pool(create_info, None)? })
+    }
+
+    pub fn destroy_descriptor_pool(&self, pool: vk::DescriptorPool) {
+        unsafe { self.raw.destroy_descriptor_pool(pool, None) }
+    }
+
+    pub fn allocate_descriptor_sets(
+        &self,
+        create_info: &vk::DescriptorSetAllocateInfo,
+    ) -> Result<Vec<vk::DescriptorSet>, DeviceError> {
+        Ok(unsafe { self.raw.allocate_descriptor_sets(create_info)? })
+    }
+
+    pub fn update_descriptor_sets(
+        &self,
+        descriptor_writes: &[vk::WriteDescriptorSet],
+        descriptor_copies: &[vk::CopyDescriptorSet],
+    ) {
+        unsafe {
+            self.raw
+                .update_descriptor_sets(descriptor_writes, descriptor_copies)
+        }
+    }
+
     pub fn cmd_begin_render_pass(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -269,6 +351,130 @@ impl Device {
                 instance_count,
                 first_vertex,
                 first_instance,
+            );
+        }
+    }
+
+    pub fn cmd_draw_indexed(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) {
+        unsafe {
+            self.raw.cmd_draw_indexed(
+                command_buffer,
+                index_count,
+                instance_count,
+                first_index,
+                vertex_offset,
+                first_instance,
+            );
+        }
+    }
+
+    pub fn cmd_bind_vertex_buffers(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        first_binding: u32,
+        buffers: &[vk::Buffer],
+        offsets: &[vk::DeviceSize],
+    ) {
+        unsafe {
+            self.raw
+                .cmd_bind_vertex_buffers(command_buffer, first_binding, buffers, offsets);
+        }
+    }
+
+    pub fn cmd_bind_index_buffer(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        buffer: vk::Buffer,
+        offset: vk::DeviceSize,
+        index_type: vk::IndexType,
+    ) {
+        unsafe {
+            self.raw
+                .cmd_bind_index_buffer(command_buffer, buffer, offset, index_type);
+        }
+    }
+
+    pub fn cmd_bind_descriptor_sets(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        pipeline_bind_point: vk::PipelineBindPoint,
+        layout: vk::PipelineLayout,
+        first_set: u32,
+        descriptor_sets: &[vk::DescriptorSet],
+        dynamic_offsets: &[u32],
+    ) {
+        unsafe {
+            self.raw.cmd_bind_descriptor_sets(
+                command_buffer,
+                pipeline_bind_point,
+                layout,
+                first_set,
+                descriptor_sets,
+                dynamic_offsets,
+            );
+        }
+    }
+
+    pub fn cmd_copy_buffer(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        src_buffer: vk::Buffer,
+        dst_buffer: vk::Buffer,
+        regions: &[vk::BufferCopy],
+    ) {
+        unsafe {
+            self.raw
+                .cmd_copy_buffer(command_buffer, src_buffer, dst_buffer, regions);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn cmd_pipeline_barrier(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        src_stage_mask: vk::PipelineStageFlags,
+        dst_stage_mask: vk::PipelineStageFlags,
+        dependency_flags: vk::DependencyFlags,
+        memory_barriers: &[vk::MemoryBarrier],
+        buffer_memory_barriers: &[vk::BufferMemoryBarrier],
+        image_memory_barriers: &[vk::ImageMemoryBarrier],
+    ) {
+        unsafe {
+            self.raw.cmd_pipeline_barrier(
+                command_buffer,
+                src_stage_mask,
+                dst_stage_mask,
+                dependency_flags,
+                memory_barriers,
+                buffer_memory_barriers,
+                image_memory_barriers,
+            );
+        }
+    }
+
+    pub fn cmd_copy_buffer_to_image(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        src_buffer: vk::Buffer,
+        dst_image: vk::Image,
+        dst_image_layout: vk::ImageLayout,
+        regions: &[vk::BufferImageCopy],
+    ) {
+        unsafe {
+            self.raw.cmd_copy_buffer_to_image(
+                command_buffer,
+                src_buffer,
+                dst_image,
+                dst_image_layout,
+                regions,
             );
         }
     }

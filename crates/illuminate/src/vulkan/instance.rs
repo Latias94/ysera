@@ -1,11 +1,14 @@
-use super::debug::DebugUtils;
-use super::{adapter::Adapter, surface::Surface};
-use crate::vulkan::{debug, platforms};
-use crate::{InstanceDescriptor, InstanceError};
+use alloc::ffi::CString;
+use std::ffi::{c_void, CStr};
+
 use ash::{extensions::*, vk};
 use log::LevelFilter;
-use raw_window_handle::RawWindowHandle;
-use std::ffi::{c_void, CStr, CString};
+
+use crate::vulkan::{debug, platforms};
+use crate::{InstanceDescriptor, InstanceError};
+
+use super::debug::DebugUtils;
+use super::{adapter::Adapter, surface::Surface};
 
 bitflags::bitflags! {
     pub struct InstanceFlags: u16 {

@@ -1,22 +1,31 @@
+use std::rc::Rc;
+use std::time::Instant;
+
+use ash::extensions::khr;
+use ash::vk;
+use gpu_allocator::vulkan::Allocator;
+use parking_lot::Mutex;
+use typed_builder::TypedBuilder;
+
+use math::prelude::*;
+
 use crate::vulkan::adapter::Adapter;
+use crate::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor, UniformBufferDescriptor};
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
+use crate::vulkan::descriptor_set_allocator::{DescriptorSetAllocator, DescriptorSetsCreateInfo};
 use crate::vulkan::device::Device;
+use crate::vulkan::image::{Image, ImageDescriptor};
+use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::pipeline::Pipeline;
 use crate::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
-use crate::vulkan::texture::{Texture, TextureDescriptor};
-use crate::vulkan::texture_view::TextureView;
+use crate::vulkan::uniform_buffer::UniformBufferObject;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
-use ash::extensions::khr;
-use ash::vk;
-use gpu_allocator::vulkan::Allocator;
-use parking_lot::Mutex;
-use std::rc::Rc;
-use typed_builder::TypedBuilder;
+use crate::vulkan::model::{Model, ModelDescriptor};
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
@@ -24,7 +33,7 @@ pub struct Swapchain {
     device: Rc<Device>,
     family_index: QueueFamilyIndices,
     textures: Vec<vk::Image>,
-    texture_views: Vec<TextureView>,
+    texture_views: Vec<ImageView>,
     surface_format: vk::SurfaceFormatKHR,
     depth_format: vk::Format,
     extent: vk::Extent2D,
@@ -35,9 +44,16 @@ pub struct Swapchain {
     framebuffers: Vec<vk::Framebuffer>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
-    command_buffer_allocator: CommandBufferAllocator,
-    depth_texture: Texture,
-    depth_texture_view: TextureView,
+    command_buffer_allocator: Rc<CommandBufferAllocator>,
+    descriptor_set_allocator: Rc<DescriptorSetAllocator>,
+    depth_texture: Image,
+    depth_texture_view: ImageView,
+    vertex_buffer: Buffer,
+    index_buffer: Buffer,
+    uniform_buffers: Vec<Buffer>,
+    per_frame_descriptor_sets: Vec<vk::DescriptorSet>,
+    model: Model,
+    instant: Instant,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -65,8 +81,9 @@ pub struct SwapchainDescriptor<'a> {
     pub dimensions: [u32; 2],
     pub command_pool: vk::CommandPool,
     pub allocator: Rc<Mutex<Allocator>>,
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
+    pub command_buffer_allocator: Rc<CommandBufferAllocator>,
     pub old_swapchain: Option<vk::SwapchainKHR>,
+    pub instant: Instant,
 }
 
 #[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
@@ -101,7 +118,7 @@ impl Swapchain {
         &self.pipeline
     }
 
-    pub fn new(desc: &SwapchainDescriptor) -> Result<Self, DeviceError> {
+    pub fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
         let device = desc.device;
         let (swapchain_loader, swapchain, properties, support) = Self::create_swapchain(
             desc.adapter,
@@ -121,18 +138,17 @@ impl Swapchain {
         capabilities.current_extent.width = capabilities.current_extent.width.max(1);
         capabilities.current_extent.height = capabilities.current_extent.height.max(1);
 
-        let texture_views = swapchain_textures
+        let image_views = swapchain_textures
             .iter()
             .map(|i| {
-                TextureView::new_color_texture_view(
-                    Some("swapchain texture view"),
+                ImageView::new_color_image_view(
+                    Some("swapchain image view"),
                     device,
                     *i,
                     properties.surface_format.format,
                 )
-                .unwrap()
             })
-            .collect::<Vec<TextureView>>();
+            .collect::<Result<Vec<ImageView>, DeviceError>>()?;
 
         // let memory_properties = unsafe {
         //     desc.instance
@@ -140,38 +156,17 @@ impl Swapchain {
         //         .get_physical_device_memory_properties(desc.adapter.raw())
         // };
 
-        let depth_format = Self::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
-
-        let texture_desc = TextureDescriptor {
-            device,
-            image_type: vk::ImageType::TYPE_2D,
-            format: depth_format,
-            dimension: [extent.width, extent.height],
-            mip_levels: 4,
-            array_layers: 1,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::OPTIMAL,
-            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            allocator: desc.allocator.clone(),
-        };
-        let depth_texture = Texture::new(texture_desc)?;
-
-        let depth_texture_view = TextureView::new_depth_texture_view(
-            Some("depth"),
-            &device,
-            depth_texture.raw(),
-            depth_format,
-        )?;
+        let (depth_format, depth_image, depth_image_view) =
+            Self::create_depth_objects(desc, &device, extent)?;
 
         let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
-        let rect2d = math::Rect2D {
+        let rect2d = Rect2D {
             x: 0.0,
             y: 0.0,
             width: extent.width as f32,
             height: extent.height as f32,
         };
+
         let map = Default::default();
 
         let render_pass_desc = RenderPassDescriptor {
@@ -185,12 +180,12 @@ impl Swapchain {
         };
         let render_pass = RenderPass::new(&render_pass_desc)?;
 
-        let framebuffers = texture_views
+        let framebuffers = image_views
             .iter()
             .map(|i| {
                 let image_view = i.raw();
                 let framebuffer_desc = FramebufferDescriptor::builder()
-                    .texture_views(vec![image_view])
+                    .texture_views(vec![image_view, depth_image_view.raw()])
                     .swapchain_extent(extent)
                     .render_pass(render_pass.raw())
                     .build();
@@ -201,46 +196,74 @@ impl Swapchain {
         let shader_desc = ShaderDescriptor {
             label: Some("Triangle"),
             device,
-            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_0.vert"),
+            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.vert"),
             vert_entry_name: "main",
-            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_0.frag"),
+            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.frag"),
             frag_entry_name: "main",
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
 
-        let pipeline = Pipeline::new(device, render_pass.raw(), shader)?;
+        let model_desc = ModelDescriptor{
+            file_name: "viking_room",
+            device,
+            allocator: desc.allocator.clone(),
+            command_buffer_allocator: &desc.command_buffer_allocator,
+        };
+        let model = Model::load_obj(&model_desc)?;
+
+        let vertex_buffer_desc = StagingBufferDescriptor {
+            label: Some("Vertex Buffer"),
+            device,
+            allocator: desc.allocator.clone(),
+            elements: model.vertices(),
+            command_buffer_allocator: &desc.command_buffer_allocator,
+        };
+        let vertex_buffer =
+            Buffer::new_buffer_copy_from_staging_buffer(&vertex_buffer_desc, BufferType::Vertex)?;
+
+        let index_buffer_desc = StagingBufferDescriptor {
+            label: Some("Index Buffer"),
+            device,
+            allocator: desc.allocator.clone(),
+            elements: model.indices(),
+            command_buffer_allocator: &desc.command_buffer_allocator,
+        };
+        let index_buffer =
+            Buffer::new_buffer_copy_from_staging_buffer(&index_buffer_desc, BufferType::Index)?;
+
+        let uniform_buffer_desc = UniformBufferDescriptor {
+            label: Some("Uniform Buffer"),
+            device,
+            allocator: desc.allocator.clone(),
+            elements: &[Default::default()] as &[UniformBufferObject],
+            buffer_type: BufferType::Uniform,
+            command_buffer_allocator: &desc.command_buffer_allocator,
+        };
+        let uniform_buffers = image_views
+            .iter()
+            .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(&device, 3)?);
+
+        let descriptor_set_layouts = &[descriptor_set_allocator.raw_per_frame_layout()];
+
+        let pipeline = Pipeline::new(device, render_pass.raw(), descriptor_set_layouts, shader)?;
 
         let command_buffers = desc
             .command_buffer_allocator
-            .allocate_command_buffers(true, texture_views.len() as u32)?;
+            .allocate_command_buffers(true, image_views.len() as u32)?;
 
-        // // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
-        // // 如专用 VRAM 和当 VRAM 耗尽时 RAM 中的交换空间。不同类型的内存存在于这些堆中。现在我们只关心内存的类型，
-        // // 而不关心它来自的堆，但是可以想象这可能会影响性能。
-        // let mem_properties = {
-        //     // profiling::scope!("vkGetPhysicalDeviceMemoryProperties");
-        //     instance_fp.get_physical_device_memory_properties(self.raw)
-        // };
-        // // 我们首先找到适合缓冲区本身的内存类型
-        // // 来自 requirements 参数的内存类型位字段将用于指定合适的内存类型的位字段。
-        // // 这意味着我们可以通过简单地遍历它们并检查相应的位是否设置为 1 来找到合适的内存类型的索引。
-        // let memory_types =
-        //     &mem_properties.memory_types[..mem_properties.memory_type_count as usize];
-        // let valid_memory_types: u32 = memory_types.iter().enumerate().fold(0, |u, (i, mem)| {
-        //     if self.known_memory_flags.contains(mem.property_flags) {
-        //         u | (1 << i)
-        //     } else {
-        //         u
-        //     }
-        // });
-        // let swapchain_loader = khr::Swapchain::new(&instance_fp, &ash_device);
-        // let queue_family_index = indices.graphics_family.unwrap();
-        // let raw_queue = {
-        //     profiling::scope!("vkGetDeviceQueue");
-        //     // queueFamilyIndex is the index of the queue family to which the queue belongs.
-        //     // queueIndex is the index within this queue family of the queue to retrieve.
-        //     ash_device.get_device_queue(queue_family_index, 0)
-        // };
+        let model_texture = model.texture();
+        let descriptor_sets_create_info = DescriptorSetsCreateInfo {
+            uniform_buffers: &uniform_buffers,
+            texture_image_view: model_texture.raw_image_view(),
+            texture_sampler: model_texture.raw_sampler(),
+        };
+
+        let per_frame_descriptor_sets = descriptor_set_allocator
+            .allocate_per_frame_descriptor_sets(&descriptor_sets_create_info)?;
+
         Ok(Self {
             raw: swapchain,
             loader: swapchain_loader,
@@ -251,7 +274,7 @@ impl Swapchain {
             depth_format,
             extent: properties.extent,
             capabilities,
-            texture_views,
+            texture_views: image_views,
             framebuffers,
             render_pass,
             pipeline,
@@ -259,12 +282,21 @@ impl Swapchain {
             graphics_queue: desc.graphics_queue,
             present_queue: desc.present_queue,
             command_buffer_allocator: desc.command_buffer_allocator.clone(),
-            depth_texture,
-            depth_texture_view,
+            descriptor_set_allocator,
+            depth_texture: depth_image,
+            depth_texture_view: depth_image_view,
+            vertex_buffer,
+            index_buffer,
+            uniform_buffers,
+            per_frame_descriptor_sets,
+            model,
+            instant: desc.instant,
         })
     }
 
     pub fn render(&mut self, image_index: usize) -> Result<vk::CommandBuffer, DeviceError> {
+        self.update_uniform_buffer(image_index);
+
         let command_buffer = &self.command_buffers[image_index];
         let framebuffer = self.framebuffers[image_index];
 
@@ -281,8 +313,9 @@ impl Swapchain {
             vk::PipelineBindPoint::GRAPHICS,
             self.pipeline.raw(),
         );
+
         // 改为左手坐标系 NDC
-        let viewport_rect2d = math::Rect2D {
+        let viewport_rect2d = Rect2D {
             x: 0.0,
             y: self.extent.height as f32,
             width: self.extent.width as f32,
@@ -291,7 +324,7 @@ impl Swapchain {
         self.device
             .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
 
-        let scissor_rect2d = math::Rect2D {
+        let scissor_rect2d = Rect2D {
             x: 0.0,
             y: 0.0,
             width: self.extent.width as f32,
@@ -303,11 +336,64 @@ impl Swapchain {
             &[conv::convert_rect2d(scissor_rect2d)],
         );
 
-        self.device.cmd_draw(command_buffer.raw(), 3, 1, 0, 0);
+        self.device.cmd_bind_vertex_buffers(
+            command_buffer.raw(),
+            0,
+            &[self.vertex_buffer.raw()],
+            &[0],
+        );
+
+        self.device.cmd_bind_index_buffer(
+            command_buffer.raw(),
+            self.index_buffer.raw(),
+            0,
+            vk::IndexType::UINT32, // Model.indices
+        );
+
+        self.device.cmd_bind_descriptor_sets(
+            command_buffer.raw(),
+            vk::PipelineBindPoint::GRAPHICS,
+            self.pipeline.raw_pipeline_layout(),
+            0,
+            &[self.per_frame_descriptor_sets[image_index]],
+            &[],
+        );
+
+        self.device
+            .cmd_draw_indexed(command_buffer.raw(), self.model.indices().len() as u32, 1, 0, 0, 0);
         self.render_pass.end(command_buffer);
         self.device.end_command_buffer(command_buffer.raw())?;
 
         Ok(command_buffer.raw())
+    }
+
+    pub fn update_uniform_buffer(&mut self, image_index: usize) {
+        let time = self.instant.elapsed().as_secs_f32();
+        let model = math::rotate(
+            &math::identity(),
+            time * math::radians(&math::vec1(90.0))[0],
+            &vec3(0.0, 0.0, 1.0),
+        );
+        let view = math::look_at(
+            &vec3(2.0, 2.0, 2.0),
+            &vec3(0.0, 0.0, 0.0),
+            &vec3(0.0, 0.0, 1.0),
+        );
+        let projection = math::perspective_rh_zo(
+            self.extent.width as f32 / self.extent.height as f32,
+            math::radians(&math::vec1(45.0))[0],
+            0.1,
+            10.0,
+        );
+        // projection[(1, 1)] *= -1.0; // openGL clip space y 和 vulkan 相反，不过我们在 cmd_set_viewport 处理了
+        let ubo = UniformBufferObject {
+            model,
+            view,
+            projection,
+        };
+
+        let uniform_buffer = &mut self.uniform_buffers[image_index];
+        uniform_buffer.copy_memory(&[ubo]);
     }
 
     pub fn update_submitted_command_buffer(&mut self, command_buffer_index: usize) {
@@ -349,6 +435,7 @@ impl Swapchain {
         } else {
             image_count
         };
+
         let (image_sharing_mode, queue_family_indices) =
             if queue_family.graphics_family != queue_family.present_family {
                 (
@@ -396,7 +483,7 @@ impl Swapchain {
 
         let swapchain_loader = khr::Swapchain::new(instance.raw(), device.raw());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
-        log::debug!("Vulkan swapchain created.");
+        log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 
         Ok((swapchain_loader, swapchain, properties, swapchain_support))
     }
@@ -456,25 +543,6 @@ impl Swapchain {
         }
     }
 
-    fn get_depth_format(
-        instance: &ash::Instance,
-        adapter: vk::PhysicalDevice,
-    ) -> Result<vk::Format, DeviceError> {
-        let formats = &[
-            vk::Format::D32_SFLOAT,
-            vk::Format::D32_SFLOAT_S8_UINT,
-            vk::Format::D24_UNORM_S8_UINT,
-        ];
-
-        Texture::get_supported_format(
-            instance,
-            adapter,
-            formats,
-            vk::ImageTiling::OPTIMAL,
-            vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
-        )
-    }
-
     pub fn get_memory_type_index(
         memory_properties: vk::PhysicalDeviceMemoryProperties,
         properties: vk::MemoryPropertyFlags,
@@ -495,6 +563,45 @@ impl Swapchain {
                 suitable && memory_type.property_flags.contains(properties)
             })
             .expect("Failed to find suitable memory type!")
+    }
+
+    fn create_depth_objects(
+        desc: &SwapchainDescriptor,
+        device: &&Rc<Device>,
+        extent: vk::Extent2D,
+    ) -> Result<(vk::Format, Image, ImageView), DeviceError> {
+        let depth_format = Image::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
+
+        let depth_image_desc = ImageDescriptor {
+            device,
+            image_type: vk::ImageType::TYPE_2D,
+            format: depth_format,
+            dimension: [extent.width, extent.height],
+            mip_levels: 4,
+            array_layers: 1,
+            samples: vk::SampleCountFlags::TYPE_1,
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            allocator: desc.allocator.clone(),
+        };
+
+        let mut depth_image = Image::new(&depth_image_desc)?;
+
+        depth_image.transit_layout(
+            depth_format,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            &desc.command_buffer_allocator,
+        )?;
+
+        let depth_image_view = ImageView::new_depth_image_view(
+            Some("Depth Image View"),
+            device,
+            depth_image.raw(),
+            depth_format,
+        )?;
+        Ok((depth_format, depth_image, depth_image_view))
     }
 }
 
@@ -600,6 +707,7 @@ impl SwapChainSupportDetail {
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
+        log::debug!("Swapchain start destroy!");
         self.framebuffers
             .iter()
             .for_each(|e| self.device.destroy_framebuffer(*e));

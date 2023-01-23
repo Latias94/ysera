@@ -31,7 +31,8 @@ pub fn is_power_of_2(value: u64) -> bool {
 pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
-        BVec2, BVec3, BVec4, IVec2, IVec3, IVec4, Mat2, Mat3, Mat4, Quat, Rect2D, UVec2, UVec3,
-        UVec4, Vec2, Vec3, Vec4, Vertex3D,
+        mat2, mat2x2, mat2x3, mat2x4, mat3, mat3x2, mat3x3, mat3x4, mat4, mat4x2, mat4x3, mat4x4,
+        quat, vec2, vec3, vec4, BVec2, BVec3, BVec4, IVec2, IVec3, IVec4, Mat2, Mat3, Mat4, Quat,
+        Rect2D, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4, Vertex3D,
     };
 }

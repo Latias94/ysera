@@ -1,17 +1,20 @@
 #![allow(clippy::missing_safety_doc)]
 
+extern crate alloc;
 extern crate core;
 
-use log::LevelFilter;
 use std::ffi::CStr;
 use std::fmt::Debug;
+
+use log::LevelFilter;
 use typed_builder::TypedBuilder;
+
+pub use error::*;
+
+use crate::vulkan::instance::InstanceFlags;
 
 mod error;
 pub mod vulkan;
-
-use crate::vulkan::instance::InstanceFlags;
-pub use error::*;
 
 pub type Label<'a> = Option<&'a str>;
 

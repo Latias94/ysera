@@ -5,7 +5,7 @@ use std::rc::Rc;
 use typed_builder::TypedBuilder;
 
 #[derive(Clone, Debug, TypedBuilder)]
-pub struct TextureViewDescriptor<'a> {
+pub struct ImageViewDescriptor<'a> {
     pub label: Label<'a>,
     pub format: vk::Format,
     pub dimension: vk::ImageViewType,
@@ -14,23 +14,23 @@ pub struct TextureViewDescriptor<'a> {
     // pub range: vk::ImageSubresourceRange,
 }
 
-pub struct TextureView {
+pub struct ImageView {
     raw: vk::ImageView,
     device: Rc<Device>,
 }
 
-impl TextureView {
+impl ImageView {
     pub fn raw(&self) -> vk::ImageView {
         self.raw
     }
 
-    pub fn new_color_texture_view(
+    pub fn new_color_image_view(
         label: Label,
         device: &Rc<Device>,
         image: vk::Image,
         format: vk::Format,
-    ) -> Result<TextureView, crate::DeviceError> {
-        let desc = TextureViewDescriptor {
+    ) -> Result<ImageView, crate::DeviceError> {
+        let desc = ImageViewDescriptor {
             label,
             format,
             dimension: vk::ImageViewType::TYPE_2D,
@@ -39,13 +39,13 @@ impl TextureView {
         Self::new(device, image, &desc)
     }
 
-    pub fn new_depth_texture_view(
+    pub fn new_depth_image_view(
         label: Label,
         device: &Rc<Device>,
         image: vk::Image,
         format: vk::Format,
-    ) -> Result<TextureView, crate::DeviceError> {
-        let desc = TextureViewDescriptor {
+    ) -> Result<ImageView, crate::DeviceError> {
+        let desc = ImageViewDescriptor {
             label,
             format,
             dimension: vk::ImageViewType::TYPE_2D,
@@ -57,8 +57,8 @@ impl TextureView {
     fn new(
         device: &Rc<Device>,
         texture: vk::Image,
-        desc: &TextureViewDescriptor,
-    ) -> Result<TextureView, crate::DeviceError> {
+        desc: &ImageViewDescriptor,
+    ) -> Result<ImageView, crate::DeviceError> {
         let range = vk::ImageSubresourceRange::builder()
             .aspect_mask(desc.aspect_mask)
             .base_array_layer(0)
@@ -85,19 +85,20 @@ impl TextureView {
                 a: vk::ComponentSwizzle::IDENTITY,
             })
             .build();
-        let raw = device.create_texture_view(&info)?;
+        let raw = device.create_image_view(&info)?;
         if let Some(label) = desc.label {
             unsafe { device.set_object_name(vk::ObjectType::IMAGE_VIEW, raw, label) };
         }
-        Ok(TextureView {
+        Ok(ImageView {
             raw,
             device: device.clone(),
         })
     }
 }
 
-impl Drop for TextureView {
+impl Drop for ImageView {
     fn drop(&mut self) {
-        self.device.destroy_texture_view(self.raw);
+        self.device.destroy_image_view(self.raw);
+        log::debug!("ImageView destroyed.");
     }
 }
