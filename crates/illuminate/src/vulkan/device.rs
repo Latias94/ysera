@@ -52,27 +52,27 @@ impl Device {
         Ok(())
     }
 
-    pub fn create_texture(
+    pub fn create_image(
         &self,
         create_info: &vk::ImageCreateInfo,
     ) -> Result<vk::Image, DeviceError> {
         Ok(unsafe { self.raw.create_image(create_info, None)? })
     }
 
-    pub fn destroy_texture(&self, image: vk::Image) {
+    pub fn destroy_image(&self, image: vk::Image) {
         unsafe {
             self.raw.destroy_image(image, None);
         }
     }
 
-    pub fn create_texture_view(
+    pub fn create_image_view(
         &self,
         create_info: &vk::ImageViewCreateInfo,
     ) -> Result<vk::ImageView, DeviceError> {
         Ok(unsafe { self.raw.create_image_view(create_info, None)? })
     }
 
-    pub fn destroy_texture_view(&self, image_view: vk::ImageView) {
+    pub fn destroy_image_view(&self, image_view: vk::ImageView) {
         unsafe {
             self.raw.destroy_image_view(image_view, None);
         }
@@ -115,6 +115,17 @@ impl Device {
 
     pub fn destroy_framebuffer(&self, framebuffer: vk::Framebuffer) {
         unsafe { self.raw.destroy_framebuffer(framebuffer, None) }
+    }
+
+    pub fn create_sampler(
+        &self,
+        create_info: &vk::SamplerCreateInfo,
+    ) -> Result<vk::Sampler, DeviceError> {
+        Ok(unsafe { self.raw.create_sampler(create_info, None)? })
+    }
+
+    pub fn destroy_sampler(&self, sampler: vk::Sampler) {
+        unsafe { self.raw.destroy_sampler(sampler, None) }
     }
 
     pub fn create_pipeline_layout(
@@ -422,6 +433,49 @@ impl Device {
         unsafe {
             self.raw
                 .cmd_copy_buffer(command_buffer, src_buffer, dst_buffer, regions);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn cmd_pipeline_barrier(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        src_stage_mask: vk::PipelineStageFlags,
+        dst_stage_mask: vk::PipelineStageFlags,
+        dependency_flags: vk::DependencyFlags,
+        memory_barriers: &[vk::MemoryBarrier],
+        buffer_memory_barriers: &[vk::BufferMemoryBarrier],
+        image_memory_barriers: &[vk::ImageMemoryBarrier],
+    ) {
+        unsafe {
+            self.raw.cmd_pipeline_barrier(
+                command_buffer,
+                src_stage_mask,
+                dst_stage_mask,
+                dependency_flags,
+                memory_barriers,
+                buffer_memory_barriers,
+                image_memory_barriers,
+            );
+        }
+    }
+
+    pub fn cmd_copy_buffer_to_image(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        src_buffer: vk::Buffer,
+        dst_image: vk::Image,
+        dst_image_layout: vk::ImageLayout,
+        regions: &[vk::BufferImageCopy],
+    ) {
+        unsafe {
+            self.raw.cmd_copy_buffer_to_image(
+                command_buffer,
+                src_buffer,
+                dst_image,
+                dst_image_layout,
+                regions,
+            );
         }
     }
 

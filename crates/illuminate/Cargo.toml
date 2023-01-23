@@ -28,6 +28,7 @@ parking_lot.workspace = true
 gpu-allocator.workspace = true
 lazy_static.workspace = true
 rand.workspace = true
+image.workspace = true
 #vk-mem.workspace = true
 naga = { workspace = true, features = ["clone"] }
 

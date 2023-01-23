@@ -16,6 +16,8 @@ use crate::DeviceError;
 #[derive(TypedBuilder)]
 pub struct DescriptorSetsCreateInfo<'a> {
     pub uniform_buffers: &'a [Buffer],
+    pub texture_image_view: vk::ImageView,
+    pub texture_sampler: vk::Sampler,
 }
 
 /// https://vulkan.gpuinfo.org/displaydevicelimit.php?name=maxBoundDescriptorSets&platform=windows
@@ -43,15 +45,30 @@ impl DescriptorSetAllocator {
         };
         let pool = DescriptorPool::new(pool_create_info)?;
 
-        let descriptor_set_layout_binding_0 = DescriptorSetLayoutBinding {
+        let ubo_binding = DescriptorSetLayoutBinding {
             binding: 0,
             descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
             descriptor_count: 1,
             shader_stage_flags: vk::ShaderStageFlags::VERTEX,
         };
+
+        let image_binding = DescriptorSetLayoutBinding {
+            binding: 1,
+            descriptor_type: vk::DescriptorType::SAMPLED_IMAGE,
+            descriptor_count: 1,
+            shader_stage_flags: vk::ShaderStageFlags::FRAGMENT,
+        };
+
+        let sampler_binding = DescriptorSetLayoutBinding {
+            binding: 2,
+            descriptor_type: vk::DescriptorType::SAMPLER,
+            descriptor_count: 1,
+            shader_stage_flags: vk::ShaderStageFlags::FRAGMENT,
+        };
+
         let per_frame_layout_desc = DescriptorSetLayoutCreateInfo {
             device,
-            bindings: &[descriptor_set_layout_binding_0],
+            bindings: &[ubo_binding, image_binding, sampler_binding],
         };
         let per_frame_layout = DescriptorSetLayout::new(per_frame_layout_desc)?;
         log::debug!("Descriptor Set Allocator created.");
@@ -76,24 +93,55 @@ impl DescriptorSetAllocator {
         let descriptor_sets = self.device.allocate_descriptor_sets(&info)?;
 
         for i in 0..count {
-            let info = vk::DescriptorBufferInfo::builder()
+            // 将实际图像和采样器资源绑定到描述符集中的描述符
+            let buffer_info = vk::DescriptorBufferInfo::builder()
                 .buffer(desc.uniform_buffers[i].raw())
                 .offset(0)
                 .range(size_of::<UniformBufferObject>() as u64)
                 .build();
-            let buffer_info = [info];
-            let write_descriptor_set = vk::WriteDescriptorSet::builder()
+            let buffer_infos = [buffer_info];
+            let ubo_write = vk::WriteDescriptorSet::builder()
                 .dst_set(descriptor_sets[i])
                 .dst_binding(0)
                 // 描述符可以是数组，因此我们还需要指定要更新的数组中的第一个索引。我们没有使用数组，因此索引只是 0。
                 .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 // buffer_info 字段用于引用缓冲区数据的描述符
-                .buffer_info(&buffer_info)
+                .buffer_info(&buffer_infos)
                 // image_info 用于引用图像数据的描述符，texel_buffer_view 用于引用缓冲区视图的描述符。
                 .build();
-            self.device
-                .update_descriptor_sets(&[write_descriptor_set], &[] as &[vk::CopyDescriptorSet]);
+
+            let image_info = vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(desc.texture_image_view)
+                .build();
+
+            let image_infos = &[image_info];
+            let image_write = vk::WriteDescriptorSet::builder()
+                .dst_set(descriptor_sets[i])
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .image_info(image_infos)
+                .build();
+
+            let sampler_info = vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .sampler(desc.texture_sampler)
+                .build();
+
+            let sampler_infos = &[sampler_info];
+            let sampler_write = vk::WriteDescriptorSet::builder()
+                .dst_set(descriptor_sets[i])
+                .dst_binding(2)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::SAMPLER)
+                .image_info(sampler_infos)
+                .build();
+            self.device.update_descriptor_sets(
+                &[ubo_write, image_write, sampler_write],
+                &[] as &[vk::CopyDescriptorSet],
+            );
         }
         log::debug!("Per frame descriptor sets Allocated.");
 

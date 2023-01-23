@@ -16,26 +16,24 @@ use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
 use crate::vulkan::descriptor_set_allocator::{DescriptorSetAllocator, DescriptorSetsCreateInfo};
-use crate::vulkan::descriptor_set_layout::{
-    DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
-};
 use crate::vulkan::device::Device;
+use crate::vulkan::image::{Image, ImageDescriptor};
+use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::pipeline::Pipeline;
 use crate::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
-use crate::vulkan::texture::{Texture, TextureDescriptor};
-use crate::vulkan::texture_view::TextureView;
+use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
 use crate::vulkan::uniform_buffer::UniformBufferObject;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 
 lazy_static! {
     pub static ref VERTICES: Vec<Vertex3D> = vec![
-        Vertex3D::new(vec3(-0.5, -0.5, 0.0), vec3(1.0, 0.0, 0.0)),
-        Vertex3D::new(vec3(0.5, -0.5, 0.0), vec3(0.0, 1.0, 0.0)),
-        Vertex3D::new(vec3(0.5, 0.5, 0.0), vec3(0.0, 1.0, 0.0)),
-        Vertex3D::new(vec3(-0.5, 0.5, 0.0), vec3(1.0, 1.0, 1.0)),
+        Vertex3D::new(vec3(-0.5, -0.5, 0.0), vec3(1.0, 0.0, 0.0), vec2(0.0, 1.0)),
+        Vertex3D::new(vec3(0.5, -0.5, 0.0), vec3(0.0, 1.0, 0.0), vec2(1.0, 1.0)),
+        Vertex3D::new(vec3(0.5, 0.5, 0.0), vec3(0.0, 0.0, 1.0), vec2(1.0, 0.0)),
+        Vertex3D::new(vec3(-0.5, 0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(0.0, 0.0)),
     ];
 }
 
@@ -47,7 +45,7 @@ pub struct Swapchain {
     device: Rc<Device>,
     family_index: QueueFamilyIndices,
     textures: Vec<vk::Image>,
-    texture_views: Vec<TextureView>,
+    texture_views: Vec<ImageView>,
     surface_format: vk::SurfaceFormatKHR,
     depth_format: vk::Format,
     extent: vk::Extent2D,
@@ -60,12 +58,13 @@ pub struct Swapchain {
     present_queue: vk::Queue,
     command_buffer_allocator: Rc<CommandBufferAllocator>,
     descriptor_set_allocator: Rc<DescriptorSetAllocator>,
-    depth_texture: Texture,
-    depth_texture_view: TextureView,
+    depth_texture: Image,
+    depth_texture_view: ImageView,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     uniform_buffers: Vec<Buffer>,
     per_frame_descriptor_sets: Vec<vk::DescriptorSet>,
+    texture: VulkanTexture,
     instant: Instant,
 }
 
@@ -152,18 +151,17 @@ impl Swapchain {
         capabilities.current_extent.width = capabilities.current_extent.width.max(1);
         capabilities.current_extent.height = capabilities.current_extent.height.max(1);
 
-        let texture_views = swapchain_textures
+        let image_views = swapchain_textures
             .iter()
             .map(|i| {
-                TextureView::new_color_texture_view(
-                    Some("swapchain texture view"),
+                ImageView::new_color_image_view(
+                    Some("swapchain image view"),
                     device,
                     *i,
                     properties.surface_format.format,
                 )
-                .unwrap()
             })
-            .collect::<Vec<TextureView>>();
+            .collect::<Result<Vec<ImageView>, DeviceError>>()?;
 
         // let memory_properties = unsafe {
         //     desc.instance
@@ -171,9 +169,9 @@ impl Swapchain {
         //         .get_physical_device_memory_properties(desc.adapter.raw())
         // };
 
-        let depth_format = Self::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
+        let depth_format = Image::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
 
-        let texture_desc = TextureDescriptor {
+        let image_desc = ImageDescriptor {
             device,
             image_type: vk::ImageType::TYPE_2D,
             format: depth_format,
@@ -184,15 +182,15 @@ impl Swapchain {
             tiling: vk::ImageTiling::OPTIMAL,
             usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
-            properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
             allocator: desc.allocator.clone(),
         };
-        let depth_texture = Texture::new(texture_desc)?;
 
-        let depth_texture_view = TextureView::new_depth_texture_view(
+        let depth_image = Image::new(&image_desc)?;
+
+        let depth_image_view = ImageView::new_depth_image_view(
             Some("depth"),
             &device,
-            depth_texture.raw(),
+            depth_image.raw(),
             depth_format,
         )?;
 
@@ -216,7 +214,7 @@ impl Swapchain {
         };
         let render_pass = RenderPass::new(&render_pass_desc)?;
 
-        let framebuffers = texture_views
+        let framebuffers = image_views
             .iter()
             .map(|i| {
                 let image_view = i.raw();
@@ -244,20 +242,20 @@ impl Swapchain {
             device,
             allocator: desc.allocator.clone(),
             elements: &VERTICES,
-            buffer_type: BufferType::Vertex,
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
-        let vertex_buffer = Buffer::new_staging_buffer(vertex_buffer_desc)?;
+        let vertex_buffer =
+            Buffer::new_buffer_copy_from_staging_buffer(&vertex_buffer_desc, BufferType::Vertex)?;
 
         let index_buffer_desc = StagingBufferDescriptor {
             label: Some("Index Buffer"),
             device,
             allocator: desc.allocator.clone(),
             elements: INDICES,
-            buffer_type: BufferType::Index,
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
-        let index_buffer = Buffer::new_staging_buffer(index_buffer_desc)?;
+        let index_buffer =
+            Buffer::new_buffer_copy_from_staging_buffer(&index_buffer_desc, BufferType::Index)?;
 
         let uniform_buffer_desc = UniformBufferDescriptor {
             label: Some("Uniform Buffer"),
@@ -267,8 +265,7 @@ impl Swapchain {
             buffer_type: BufferType::Uniform,
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
-
-        let uniform_buffers = texture_views
+        let uniform_buffers = image_views
             .iter()
             .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
             .collect::<Result<Vec<_>, _>>()?;
@@ -279,10 +276,23 @@ impl Swapchain {
 
         let command_buffers = desc
             .command_buffer_allocator
-            .allocate_command_buffers(true, texture_views.len() as u32)?;
+            .allocate_command_buffers(true, image_views.len() as u32)?;
+
+        let mut texture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        texture_path.push("../../resources/textures/texture.png");
+        let texture_desc = VulkanTextureDescriptor {
+            device,
+            allocator: desc.allocator.clone(),
+            command_buffer_allocator: &desc.command_buffer_allocator,
+            path: &texture_path,
+        };
+
+        let texture = VulkanTexture::new(&texture_desc)?;
 
         let descriptor_sets_create_info = DescriptorSetsCreateInfo {
             uniform_buffers: &uniform_buffers,
+            texture_image_view: texture.raw_image_view(),
+            texture_sampler: texture.raw_sampler(),
         };
 
         let per_frame_descriptor_sets = desc
@@ -299,7 +309,7 @@ impl Swapchain {
             depth_format,
             extent: properties.extent,
             capabilities,
-            texture_views,
+            texture_views: image_views,
             framebuffers,
             render_pass,
             pipeline,
@@ -308,12 +318,13 @@ impl Swapchain {
             present_queue: desc.present_queue,
             command_buffer_allocator: desc.command_buffer_allocator.clone(),
             descriptor_set_allocator: desc.descriptor_set_allocator.clone(),
-            depth_texture,
-            depth_texture_view,
+            depth_texture: depth_image,
+            depth_texture_view: depth_image_view,
             vertex_buffer,
             index_buffer,
             uniform_buffers,
             per_frame_descriptor_sets,
+            texture,
             instant: desc.instant,
         })
     }
@@ -565,25 +576,6 @@ impl Swapchain {
                 other => Err(DeviceError::from(other).into()),
             },
         }
-    }
-
-    fn get_depth_format(
-        instance: &ash::Instance,
-        adapter: vk::PhysicalDevice,
-    ) -> Result<vk::Format, DeviceError> {
-        let formats = &[
-            vk::Format::D32_SFLOAT,
-            vk::Format::D32_SFLOAT_S8_UINT,
-            vk::Format::D24_UNORM_S8_UINT,
-        ];
-
-        Texture::get_supported_format(
-            instance,
-            adapter,
-            formats,
-            vk::ImageTiling::OPTIMAL,
-            vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
-        )
     }
 
     pub fn get_memory_type_index(

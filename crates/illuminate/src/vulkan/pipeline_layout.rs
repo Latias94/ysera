@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use ash::vk;
 
-use crate::vulkan::descriptor_set_layout::DescriptorSetLayout;
 use crate::vulkan::device::Device;
 use crate::DeviceError;
 

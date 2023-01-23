@@ -38,7 +38,12 @@ impl Adapter {
             return Err(crate::DeviceError::NotMeetRequirement);
         }
 
-        // let features = unsafe { instance.get_physical_device_features(self.raw) };
+        let features = unsafe { instance.get_physical_device_features(self.raw) };
+        if requirements.sampler_anisotropy && features.sampler_anisotropy != vk::TRUE {
+            log::error!("Device is not support sampler anisotropy!");
+            return Err(crate::DeviceError::NotMeetRequirement);
+        }
+
         let _queue_families =
             unsafe { instance.get_physical_device_queue_family_properties(self.raw) };
 

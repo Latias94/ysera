@@ -55,7 +55,6 @@ pub struct StagingBufferDescriptor<'a, T> {
     pub device: &'a Rc<Device>,
     pub allocator: Rc<Mutex<Allocator>>,
     pub elements: &'a [T],
-    pub buffer_type: BufferType,
     pub command_buffer_allocator: &'a CommandBufferAllocator,
 }
 
@@ -112,7 +111,7 @@ impl Buffer {
     // https://developer.nvidia.com/vulkan-memory-management
     // recommend that you also store multiple buffers, like the vertex and index buffer,
     // into a single vk::Buffer and use offsets in commands like cmd_bind_vertex_buffers.
-    pub fn new_staging_buffer<T>(desc: StagingBufferDescriptor<T>) -> Result<Buffer, DeviceError> {
+    pub fn new_staging_buffer<T>(desc: &StagingBufferDescriptor<T>) -> Result<Buffer, DeviceError> {
         let staging_buffer_desc = BufferDescriptor {
             label: Some("Staging Buffer"),
             device: desc.device,
@@ -124,14 +123,22 @@ impl Buffer {
         };
         let mut staging_buffer = Self::new(staging_buffer_desc)?;
         staging_buffer.copy_memory(desc.elements);
+        Ok(staging_buffer)
+    }
+
+    pub fn new_buffer_copy_from_staging_buffer<T>(
+        desc: &StagingBufferDescriptor<T>,
+        buffer_type: BufferType,
+    ) -> Result<Buffer, DeviceError> {
+        let staging_buffer = Self::new_staging_buffer(desc)?;
 
         let buffer_desc = BufferDescriptor {
             label: desc.label,
             device: desc.device,
-            allocator: desc.allocator,
+            allocator: desc.allocator.clone(),
             element_size: size_of::<T>(),
             element_count: desc.elements.len() as u32,
-            buffer_usage: vk::BufferUsageFlags::TRANSFER_DST | desc.buffer_type.to_buffer_usage(),
+            buffer_usage: vk::BufferUsageFlags::TRANSFER_DST | buffer_type.to_buffer_usage(),
             memory_location: MemoryLocation::GpuOnly,
         };
         let buffer = Self::new(buffer_desc)?;

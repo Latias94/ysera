@@ -30,7 +30,11 @@ impl DescriptorPool {
             .ty(desc.ty)
             .descriptor_count(desc.descriptor_count)
             .build();
-        let pool_sizes = &[ubo_size];
+        let sampler_size = vk::DescriptorPoolSize::builder()
+            .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(desc.descriptor_count)
+            .build();
+        let pool_sizes = &[ubo_size, sampler_size];
         let info = vk::DescriptorPoolCreateInfo::builder()
             .pool_sizes(pool_sizes)
             .max_sets(desc.max_sets);

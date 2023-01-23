@@ -6,7 +6,7 @@ use std::rc::Rc;
 use ash::vk;
 use typed_builder::TypedBuilder;
 
-use math::{Vec3, Vertex3D};
+use math::{Vec2, Vec3, Vertex3D};
 
 use crate::vulkan::device::Device;
 use crate::{Label, ShaderError};
@@ -27,6 +27,11 @@ pub struct ShaderDescriptor<'a> {
     pub vert_entry_name: &'a str,
     pub frag_bytes: &'a [u32],
     pub frag_entry_name: &'a str,
+}
+
+pub trait ShaderPropertyInfo {
+    fn get_binding_descriptions() -> Vec<vk::VertexInputBindingDescription>;
+    fn get_attribute_descriptions() -> Vec<vk::VertexInputAttributeDescription>;
 }
 
 impl Shader {
@@ -76,31 +81,6 @@ impl Shader {
         Ok(raw)
     }
 
-    pub fn get_binding_description(&self) -> vk::VertexInputBindingDescription {
-        vk::VertexInputBindingDescription::builder()
-            .binding(0)
-            .stride(size_of::<Vertex3D>() as u32)
-            .input_rate(vk::VertexInputRate::VERTEX)
-            .build()
-    }
-
-    // todo: reflect shader
-    pub fn get_attribute_descriptions(&self) -> [vk::VertexInputAttributeDescription; 2] {
-        let pos = vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(0)
-            .format(vk::Format::R32G32B32_SFLOAT)
-            .offset(0)
-            .build();
-        let color = vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(1)
-            .format(vk::Format::R32G32B32_SFLOAT)
-            .offset(size_of::<Vec3>() as u32)
-            .build();
-        [pos, color]
-    }
-
     pub fn load_pre_compiled_spv_bytes_from_name(shader_file_name: &str) -> Vec<u32> {
         let path = format!("{}/{}.spv", env!("OUT_DIR"), shader_file_name);
         log::debug!("load shader spv file from: {}", path);
@@ -122,5 +102,39 @@ impl Drop for Shader {
         self.device.destroy_shader_module(self.vert_shader);
         self.device.destroy_shader_module(self.frag_shader);
         log::debug!("shader module destroyed.");
+    }
+}
+
+impl ShaderPropertyInfo for Vertex3D {
+    fn get_binding_descriptions() -> Vec<vk::VertexInputBindingDescription> {
+        let desc = vk::VertexInputBindingDescription::builder()
+            .binding(0)
+            .stride(size_of::<Vertex3D>() as u32)
+            .input_rate(vk::VertexInputRate::VERTEX)
+            .build();
+        vec![desc]
+    }
+
+    // todo: reflect shader
+    fn get_attribute_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
+        let pos = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(0)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset(0)
+            .build();
+        let color = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(1)
+            .format(vk::Format::R32G32B32_SFLOAT)
+            .offset(size_of::<Vec3>() as u32)
+            .build();
+        let tex_coord = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(2)
+            .format(vk::Format::R32G32_SFLOAT)
+            .offset((size_of::<Vec2>() + size_of::<Vec3>()) as u32)
+            .build();
+        vec![pos, color, tex_coord]
     }
 }

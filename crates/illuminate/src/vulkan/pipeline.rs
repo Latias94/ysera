@@ -2,10 +2,10 @@ use alloc::ffi::CString;
 use std::rc::Rc;
 
 use ash::vk;
+use math::Vertex3D;
 use typed_builder::TypedBuilder;
 
-use crate::vulkan::descriptor_set_layout::DescriptorSetLayout;
-use crate::vulkan::shader::Shader;
+use crate::vulkan::shader::{Shader, ShaderPropertyInfo};
 use crate::{DeviceError, Label};
 
 use super::{device::Device, pipeline_layout::PipelineLayout};
@@ -74,10 +74,10 @@ impl Pipeline {
                 .build(),
         ];
 
-        let binding_descriptions = &[shader.get_binding_description()];
-        let attribute_descriptions = shader.get_attribute_descriptions();
+        let binding_descriptions = Vertex3D::get_binding_descriptions();
+        let attribute_descriptions = Vertex3D::get_attribute_descriptions();
         let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder()
-            .vertex_binding_descriptions(binding_descriptions)
+            .vertex_binding_descriptions(&binding_descriptions)
             .vertex_attribute_descriptions(&attribute_descriptions);
 
         let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
