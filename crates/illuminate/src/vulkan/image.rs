@@ -183,8 +183,31 @@ impl Image {
         command_buffer_allocator: &CommandBufferAllocator,
     ) -> Result<(), DeviceError> {
         command_buffer_allocator.create_single_use(|device, command_buffer| {
+            let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
+                match format {
+                    vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT => {
+                        vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
+                    }
+                    _ => vk::ImageAspectFlags::DEPTH,
+                }
+            } else {
+                vk::ImageAspectFlags::COLOR
+            };
             let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) =
                 match (old_layout, new_layout) {
+                    // 将读取深度缓冲区以执行深度测试以查看片段是否可见，并在绘制新片段时写入。
+                    // 读取发生在 vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS 阶段，
+                    // 写入发生在 vk::PipelineStageFlags::LATE_FRAGMENT_TESTS 阶段。
+                    (
+                        vk::ImageLayout::UNDEFINED,
+                        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                    ) => (
+                        vk::AccessFlags::empty(),
+                        vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                            | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                        vk::PipelineStageFlags::TOP_OF_PIPE,
+                        vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                    ),
                     (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
                         vk::AccessFlags::empty(),
                         vk::AccessFlags::TRANSFER_WRITE,
@@ -204,7 +227,7 @@ impl Image {
                 };
 
             let subresource = vk::ImageSubresourceRange::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .aspect_mask(aspect_mask)
                 .base_mip_level(0)
                 .level_count(1)
                 .base_array_layer(0)

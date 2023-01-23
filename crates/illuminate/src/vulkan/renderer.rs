@@ -39,7 +39,6 @@ pub struct VulkanRenderer {
     in_flight_fences: Vec<vk::Fence>,
     indices: QueueFamilyIndices,
     command_buffer_allocator: Rc<CommandBufferAllocator>,
-    descriptor_set_allocator: Rc<DescriptorSetAllocator>,
     frame: usize,
     instant: Instant,
 }
@@ -119,7 +118,6 @@ impl VulkanRenderer {
             command_pool,
             graphics_queue,
         ));
-        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(&device, 3)?);
 
         let allocator = Rc::new(Mutex::new(allocator));
         let instant = Instant::now();
@@ -135,7 +133,6 @@ impl VulkanRenderer {
             present_queue,
             allocator: allocator.clone(),
             command_buffer_allocator: command_buffer_allocator.clone(),
-            descriptor_set_allocator: descriptor_set_allocator.clone(),
             old_swapchain: None,
             instant,
         };
@@ -172,7 +169,6 @@ impl VulkanRenderer {
             in_flight_fences,
             indices,
             command_buffer_allocator,
-            descriptor_set_allocator,
             frame: 0,
             instant,
         })
@@ -262,7 +258,6 @@ impl VulkanRenderer {
             present_queue: self.present_queue,
             allocator: self.allocator.clone(),
             command_buffer_allocator: self.command_buffer_allocator.clone(),
-            descriptor_set_allocator: self.descriptor_set_allocator.clone(),
             old_swapchain,
             instant: self.instant,
         };

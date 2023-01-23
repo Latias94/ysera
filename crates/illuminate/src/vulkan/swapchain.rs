@@ -30,16 +30,20 @@ use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 
 lazy_static! {
     pub static ref VERTICES: Vec<Vertex3D> = vec![
-        Vertex3D::new(vec3(-0.5, -0.5, 0.0), vec3(1.0, 0.0, 0.0), vec2(0.0, 1.0)),
-        Vertex3D::new(vec3(0.5, -0.5, 0.0), vec3(0.0, 1.0, 0.0), vec2(1.0, 1.0)),
-        Vertex3D::new(vec3(0.5, 0.5, 0.0), vec3(0.0, 0.0, 1.0), vec2(1.0, 0.0)),
+        Vertex3D::new(vec3(-0.5, -0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(0.0, 1.0)),
+        Vertex3D::new(vec3(0.5, -0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(1.0, 1.0)),
+        Vertex3D::new(vec3(0.5, 0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(1.0, 0.0)),
         Vertex3D::new(vec3(-0.5, 0.5, 0.0), vec3(1.0, 1.0, 1.0), vec2(0.0, 0.0)),
+        Vertex3D::new(vec3(-0.5, -0.5, -0.5), vec3(1.0, 1.0, 1.0), vec2(0.0, 1.0)),
+        Vertex3D::new(vec3(0.5, -0.5, -0.5), vec3(1.0, 1.0, 1.0), vec2(1.0, 1.0)),
+        Vertex3D::new(vec3(0.5, 0.5, -0.5), vec3(1.0, 1.0, 1.0), vec2(1.0, 0.0)),
+        Vertex3D::new(vec3(-0.5, 0.5, -0.5), vec3(1.0, 1.0, 1.0), vec2(0.0, 0.0)),
     ];
 }
 
 pub const INDICES: &[u16] = &[
     0, 1, 2, 2, 3, 0, //
-    // 4, 5, 6, 6, 7, 4,
+    4, 5, 6, 6, 7, 4,
 ];
 
 pub struct Swapchain {
@@ -97,7 +101,6 @@ pub struct SwapchainDescriptor<'a> {
     pub command_pool: vk::CommandPool,
     pub allocator: Rc<Mutex<Allocator>>,
     pub command_buffer_allocator: Rc<CommandBufferAllocator>,
-    pub descriptor_set_allocator: Rc<DescriptorSetAllocator>,
     pub old_swapchain: Option<vk::SwapchainKHR>,
     pub instant: Instant,
 }
@@ -172,30 +175,8 @@ impl Swapchain {
         //         .get_physical_device_memory_properties(desc.adapter.raw())
         // };
 
-        let depth_format = Image::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
-
-        let image_desc = ImageDescriptor {
-            device,
-            image_type: vk::ImageType::TYPE_2D,
-            format: depth_format,
-            dimension: [extent.width, extent.height],
-            mip_levels: 4,
-            array_layers: 1,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::OPTIMAL,
-            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            allocator: desc.allocator.clone(),
-        };
-
-        let depth_image = Image::new(&image_desc)?;
-
-        let depth_image_view = ImageView::new_depth_image_view(
-            Some("depth"),
-            &device,
-            depth_image.raw(),
-            depth_format,
-        )?;
+        let (depth_format, depth_image, depth_image_view) =
+            Self::create_depth_objects(desc, &device, extent)?;
 
         let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
         let rect2d = Rect2D {
@@ -204,6 +185,7 @@ impl Swapchain {
             width: extent.width as f32,
             height: extent.height as f32,
         };
+
         let map = Default::default();
 
         let render_pass_desc = RenderPassDescriptor {
@@ -222,7 +204,7 @@ impl Swapchain {
             .map(|i| {
                 let image_view = i.raw();
                 let framebuffer_desc = FramebufferDescriptor::builder()
-                    .texture_views(vec![image_view])
+                    .texture_views(vec![image_view, depth_image_view.raw()])
                     .swapchain_extent(extent)
                     .render_pass(render_pass.raw())
                     .build();
@@ -273,7 +255,9 @@ impl Swapchain {
             .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let descriptor_set_layouts = &[desc.descriptor_set_allocator.raw_per_frame_layout()];
+        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(&device, 3)?);
+
+        let descriptor_set_layouts = &[descriptor_set_allocator.raw_per_frame_layout()];
 
         let pipeline = Pipeline::new(device, render_pass.raw(), descriptor_set_layouts, shader)?;
 
@@ -298,8 +282,7 @@ impl Swapchain {
             texture_sampler: texture.raw_sampler(),
         };
 
-        let per_frame_descriptor_sets = desc
-            .descriptor_set_allocator
+        let per_frame_descriptor_sets = descriptor_set_allocator
             .allocate_per_frame_descriptor_sets(&descriptor_sets_create_info)?;
 
         Ok(Self {
@@ -320,7 +303,7 @@ impl Swapchain {
             graphics_queue: desc.graphics_queue,
             present_queue: desc.present_queue,
             command_buffer_allocator: desc.command_buffer_allocator.clone(),
-            descriptor_set_allocator: desc.descriptor_set_allocator.clone(),
+            descriptor_set_allocator,
             depth_texture: depth_image,
             depth_texture_view: depth_image_view,
             vertex_buffer,
@@ -417,7 +400,7 @@ impl Swapchain {
             &vec3(0.0, 0.0, 0.0),
             &vec3(0.0, 0.0, 1.0),
         );
-        let projection = math::perspective(
+        let projection = math::perspective_rh_zo(
             self.extent.width as f32 / self.extent.height as f32,
             math::radians(&math::vec1(45.0))[0],
             0.1,
@@ -602,6 +585,45 @@ impl Swapchain {
             })
             .expect("Failed to find suitable memory type!")
     }
+
+    fn create_depth_objects(
+        desc: &SwapchainDescriptor,
+        device: &&Rc<Device>,
+        extent: vk::Extent2D,
+    ) -> Result<(vk::Format, Image, ImageView), DeviceError> {
+        let depth_format = Image::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
+
+        let depth_image_desc = ImageDescriptor {
+            device,
+            image_type: vk::ImageType::TYPE_2D,
+            format: depth_format,
+            dimension: [extent.width, extent.height],
+            mip_levels: 4,
+            array_layers: 1,
+            samples: vk::SampleCountFlags::TYPE_1,
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            allocator: desc.allocator.clone(),
+        };
+
+        let mut depth_image = Image::new(&depth_image_desc)?;
+
+        depth_image.transit_layout(
+            depth_format,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            &desc.command_buffer_allocator,
+        )?;
+
+        let depth_image_view = ImageView::new_depth_image_view(
+            Some("Depth Image View"),
+            device,
+            depth_image.raw(),
+            depth_format,
+        )?;
+        Ok((depth_format, depth_image, depth_image_view))
+    }
 }
 
 impl SwapChainSupportDetail {
@@ -706,6 +728,7 @@ impl SwapChainSupportDetail {
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
+        log::debug!("Swapchain start destroy!");
         self.framebuffers
             .iter()
             .for_each(|e| self.device.destroy_framebuffer(*e));

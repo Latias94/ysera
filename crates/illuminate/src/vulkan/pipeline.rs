@@ -126,24 +126,24 @@ impl Pipeline {
         //     reference: 0,
         // };
 
-        // let depth_stencil_state_create_info = vk::PipelineDepthStencilStateCreateInfo::builder()
-        //     // depth_test_enable 字段指定是否应将新片段的深度与深度缓冲区进行比较，看它们是否应被丢弃。
-        //     .depth_test_enable(true)
-        //     // depth_write_enable 字段指定是否应将通过深度测试的新片段的深度实际写入深度缓冲区。
-        //     .depth_write_enable(true)
-        //     // depth_compare_op 字段指定了为保留或丢弃片段所进行的比较。我们坚持较低的深度 = 较近的惯例，所以新片段的深度应该较小。
-        //     .depth_compare_op(vk::CompareOp::LESS)
-        //     // depth_bounds_test_enable、min_depth_bounds 和 max_depth_bounds 字段用于可选的深度边界测试。
-        //     // 基本上，这允许你只保留落在指定深度范围内的片段。我们将不会使用这个功能。
-        //     .depth_bounds_test_enable(false)
-        //     .min_depth_bounds(0.0) // Optional.
-        //     .max_depth_bounds(1.0) // Optional.
-        //     // 最后三个字段配置了模板缓冲区的操作，
-        //     // 如果你想使用这些操作，那么你必须确保深度 / 模板图像的格式包含一个模板组件。
-        //     .stencil_test_enable(false)
-        //     // .front(/* vk::StencilOpState */) // Optional.
-        //     // .back(/* vk::StencilOpState */); // Optional.
-        //     .build();
+        let depth_stencil_state_create_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+            // depth_test_enable 字段指定是否应将新片段的深度与深度缓冲区进行比较，看它们是否应被丢弃。
+            .depth_test_enable(true)
+            // depth_write_enable 字段指定是否应将通过深度测试的新片段的深度实际写入深度缓冲区。
+            .depth_write_enable(true)
+            // depth_compare_op 字段指定了为保留或丢弃片段所进行的比较。我们坚持较低的深度 = 较近的惯例，所以新片段的深度应该较小。
+            .depth_compare_op(vk::CompareOp::LESS)
+            // depth_bounds_test_enable、min_depth_bounds 和 max_depth_bounds 字段用于可选的深度边界测试。
+            // 基本上，这允许你只保留落在指定深度范围内的片段。我们将不会使用这个功能。
+            .depth_bounds_test_enable(false)
+            .min_depth_bounds(0.0) // Optional.
+            .max_depth_bounds(1.0) // Optional.
+            // 最后三个字段配置了模板缓冲区的操作，
+            // 如果你想使用这些操作，那么你必须确保深度 / 模板图像的格式包含一个模板组件。
+            .stencil_test_enable(false)
+            // .front(/* vk::StencilOpState */) // Optional.
+            // .back(/* vk::StencilOpState */); // Optional.
+            .build();
 
         // pseudocode:
         // if blend_enable {
@@ -180,7 +180,7 @@ impl Pipeline {
             .viewport_state(&viewport_state_create_info)
             .rasterization_state(&rasterization_state_create_info)
             .multisample_state(&multisample_state_create_info)
-            // .depth_stencil_state(&depth_stencil_state_create_info)
+            .depth_stencil_state(&depth_stencil_state_create_info)
             .color_blend_state(&color_blend_state_create_info)
             .dynamic_state(&dynamic_state_create_info)
             .layout(pipeline_layout)

@@ -99,5 +99,6 @@ impl ImageView {
 impl Drop for ImageView {
     fn drop(&mut self) {
         self.device.destroy_image_view(self.raw);
+        log::debug!("ImageView destroyed.");
     }
 }
