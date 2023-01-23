@@ -133,7 +133,7 @@ impl ShaderPropertyInfo for Vertex3D {
             .binding(0)
             .location(2)
             .format(vk::Format::R32G32_SFLOAT)
-            .offset((size_of::<Vec2>() + size_of::<Vec3>()) as u32)
+            .offset((size_of::<Vec3>() + size_of::<Vec3>()) as u32)
             .build();
         vec![pos, color, tex_coord]
     }

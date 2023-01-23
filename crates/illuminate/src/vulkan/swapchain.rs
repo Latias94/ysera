@@ -37,7 +37,10 @@ lazy_static! {
     ];
 }
 
-pub const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
+pub const INDICES: &[u16] = &[
+    0, 1, 2, 2, 3, 0, //
+    // 4, 5, 6, 6, 7, 4,
+];
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
