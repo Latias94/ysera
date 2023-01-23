@@ -19,13 +19,13 @@ use crate::vulkan::device::Device;
 use crate::vulkan::image::{Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
+use crate::vulkan::model::Model;
 use crate::vulkan::pipeline::Pipeline;
 use crate::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
 use crate::vulkan::uniform_buffer::UniformBufferObject;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
-use crate::vulkan::model::{Model, ModelDescriptor};
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
@@ -52,7 +52,7 @@ pub struct Swapchain {
     index_buffer: Buffer,
     uniform_buffers: Vec<Buffer>,
     per_frame_descriptor_sets: Vec<vk::DescriptorSet>,
-    model: Model,
+    model: Rc<Model>,
     instant: Instant,
 }
 
@@ -69,7 +69,7 @@ struct SwapChainSupportDetail {
     pub present_modes: Vec<vk::PresentModeKHR>,
 }
 
-#[derive(Clone, TypedBuilder)]
+#[derive(TypedBuilder)]
 pub struct SwapchainDescriptor<'a> {
     pub adapter: &'a Adapter,
     pub surface: &'a Surface,
@@ -83,6 +83,7 @@ pub struct SwapchainDescriptor<'a> {
     pub allocator: Rc<Mutex<Allocator>>,
     pub command_buffer_allocator: Rc<CommandBufferAllocator>,
     pub old_swapchain: Option<vk::SwapchainKHR>,
+    pub model: Rc<Model>,
     pub instant: Instant,
 }
 
@@ -203,19 +204,11 @@ impl Swapchain {
         };
         let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
 
-        let model_desc = ModelDescriptor{
-            file_name: "viking_room",
-            device,
-            allocator: desc.allocator.clone(),
-            command_buffer_allocator: &desc.command_buffer_allocator,
-        };
-        let model = Model::load_obj(&model_desc)?;
-
         let vertex_buffer_desc = StagingBufferDescriptor {
             label: Some("Vertex Buffer"),
             device,
             allocator: desc.allocator.clone(),
-            elements: model.vertices(),
+            elements: desc.model.vertices(),
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
         let vertex_buffer =
@@ -225,7 +218,7 @@ impl Swapchain {
             label: Some("Index Buffer"),
             device,
             allocator: desc.allocator.clone(),
-            elements: model.indices(),
+            elements: desc.model.indices(),
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
         let index_buffer =
@@ -254,7 +247,7 @@ impl Swapchain {
             .command_buffer_allocator
             .allocate_command_buffers(true, image_views.len() as u32)?;
 
-        let model_texture = model.texture();
+        let model_texture = desc.model.texture();
         let descriptor_sets_create_info = DescriptorSetsCreateInfo {
             uniform_buffers: &uniform_buffers,
             texture_image_view: model_texture.raw_image_view(),
@@ -289,7 +282,7 @@ impl Swapchain {
             index_buffer,
             uniform_buffers,
             per_frame_descriptor_sets,
-            model,
+            model: desc.model.clone(),
             instant: desc.instant,
         })
     }
@@ -359,8 +352,14 @@ impl Swapchain {
             &[],
         );
 
-        self.device
-            .cmd_draw_indexed(command_buffer.raw(), self.model.indices().len() as u32, 1, 0, 0, 0);
+        self.device.cmd_draw_indexed(
+            command_buffer.raw(),
+            self.model.indices().len() as u32,
+            1,
+            0,
+            0,
+            0,
+        );
         self.render_pass.end(command_buffer);
         self.device.end_command_buffer(command_buffer.raw())?;
 

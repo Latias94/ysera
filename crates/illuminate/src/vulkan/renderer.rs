@@ -10,11 +10,10 @@ use winit::window::Window;
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::debug::DebugUtils;
+use crate::vulkan::model::{Model, ModelDescriptor};
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
-use crate::{
-    AdapterRequirements, DeviceError, InstanceDescriptor, QueueFamilyIndices, SurfaceError,
-};
+use crate::{AdapterRequirements, InstanceDescriptor, QueueFamilyIndices, SurfaceError};
 
 use super::device::Device;
 use super::instance::Instance;
@@ -38,6 +37,7 @@ pub struct VulkanRenderer {
     in_flight_fences: Vec<vk::Fence>,
     indices: QueueFamilyIndices,
     command_buffer_allocator: Rc<CommandBufferAllocator>,
+    model: Rc<Model>,
     frame: usize,
     instant: Instant,
 }
@@ -117,6 +117,15 @@ impl VulkanRenderer {
 
         let allocator = Rc::new(Mutex::new(allocator));
         let instant = Instant::now();
+
+        let model_desc = ModelDescriptor {
+            file_name: "viking_room",
+            device: &device,
+            allocator: allocator.clone(),
+            command_buffer_allocator: &command_buffer_allocator,
+        };
+        let model = Rc::new(Model::load_obj(&model_desc)?);
+
         let swapchain_desc = SwapchainDescriptor {
             adapter: &adapter,
             surface: &surface,
@@ -129,6 +138,7 @@ impl VulkanRenderer {
             present_queue,
             allocator: allocator.clone(),
             command_buffer_allocator: command_buffer_allocator.clone(),
+            model: model.clone(),
             old_swapchain: None,
             instant,
         };
@@ -165,6 +175,7 @@ impl VulkanRenderer {
             in_flight_fences,
             indices,
             command_buffer_allocator,
+            model,
             frame: 0,
             instant,
         })
@@ -254,6 +265,7 @@ impl VulkanRenderer {
             present_queue: self.present_queue,
             allocator: self.allocator.clone(),
             command_buffer_allocator: self.command_buffer_allocator.clone(),
+            model: self.model.clone(),
             old_swapchain,
             instant: self.instant,
         };
