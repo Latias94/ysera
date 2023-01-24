@@ -33,13 +33,18 @@ impl Pipeline {
     pub fn new(
         device: &Rc<Device>,
         render_pass: vk::RenderPass,
-        // msaa_samples: vk::SampleCountFlags,
+        msaa_samples: vk::SampleCountFlags,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
         shader: Shader,
     ) -> Result<Self, DeviceError> {
         let pipeline_layout = PipelineLayout::new(device, descriptor_set_layouts)?;
-        let raw =
-            Self::create_graphics_pipeline(device, render_pass, pipeline_layout.raw(), shader)?[0];
+        let raw = Self::create_graphics_pipeline(
+            device,
+            render_pass,
+            pipeline_layout.raw(),
+            msaa_samples,
+            shader,
+        )?[0];
 
         Ok(Self {
             raw,
@@ -52,7 +57,7 @@ impl Pipeline {
         device: &Rc<Device>,
         render_pass: vk::RenderPass,
         pipeline_layout: vk::PipelineLayout,
-        // msaa_samples: vk::SampleCountFlags,
+        msaa_samples: vk::SampleCountFlags,
         shader: Shader,
     ) -> Result<Vec<vk::Pipeline>, DeviceError> {
         profiling::scope!("create_graphics_pipeline");
@@ -110,11 +115,10 @@ impl Pipeline {
             .depth_bias_enable(false);
 
         let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
-            // .sample_shading_enable(true)
-            // .min_sample_shading(0.2)
-            // .rasterization_samples(msaa_samples)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-            .sample_shading_enable(false);
+            // Enable sample shading in the pipeline.
+            .sample_shading_enable(true)
+            .min_sample_shading(0.2)
+            .rasterization_samples(msaa_samples);
 
         // let stencil_state = vk::StencilOpState {
         //     fail_op: vk::StencilOp::KEEP,

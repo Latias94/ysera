@@ -50,6 +50,8 @@ pub struct Swapchain {
     descriptor_set_allocator: Rc<DescriptorSetAllocator>,
     depth_image: Image,
     depth_image_view: ImageView,
+    color_image: Image,
+    color_image_view: ImageView,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     uniform_buffers: Vec<Buffer>,
@@ -164,8 +166,12 @@ impl Swapchain {
         //         .get_physical_device_memory_properties(desc.adapter.raw())
         // };
 
+        let color_format = properties.surface_format.format;
+        let (color_image, color_image_view) =
+            Self::create_color_objects(desc, extent, color_format)?;
+
         let (depth_format, depth_image, depth_image_view) =
-            Self::create_depth_objects(desc, &device, extent)?;
+            Self::create_depth_objects(desc, extent)?;
 
         let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
         let rect2d = Rect2D {
@@ -183,6 +189,7 @@ impl Swapchain {
             depth_format,
             render_area: rect2d,
             clear_color,
+            max_msaa_samples: desc.adapter.max_msaa_samples(),
             depth: 1.0,
             stencil: 0,
         };
@@ -193,7 +200,11 @@ impl Swapchain {
             .map(|i| {
                 let image_view = i.raw();
                 let framebuffer_desc = FramebufferDescriptor::builder()
-                    .texture_views(vec![image_view, depth_image_view.raw()])
+                    .texture_views(vec![
+                        color_image_view.raw(),
+                        depth_image_view.raw(),
+                        image_view,
+                    ])
                     .swapchain_extent(extent)
                     .render_pass(render_pass.raw())
                     .build();
@@ -248,7 +259,13 @@ impl Swapchain {
 
         let descriptor_set_layouts = &[descriptor_set_allocator.raw_per_frame_layout()];
 
-        let pipeline = Pipeline::new(device, render_pass.raw(), descriptor_set_layouts, shader)?;
+        let pipeline = Pipeline::new(
+            device,
+            render_pass.raw(),
+            desc.adapter.max_msaa_samples(),
+            descriptor_set_layouts,
+            shader,
+        )?;
 
         let command_buffers = desc
             .command_buffer_allocator
@@ -276,7 +293,7 @@ impl Swapchain {
             depth_format,
             extent: properties.extent,
             capabilities,
-            image_views: image_views,
+            image_views,
             framebuffers,
             render_pass,
             pipeline,
@@ -287,6 +304,8 @@ impl Swapchain {
             descriptor_set_allocator,
             depth_image,
             depth_image_view,
+            color_image,
+            color_image_view,
             vertex_buffer,
             index_buffer,
             uniform_buffers,
@@ -585,19 +604,18 @@ impl Swapchain {
 
     fn create_depth_objects(
         desc: &SwapchainDescriptor,
-        device: &&Rc<Device>,
         extent: vk::Extent2D,
     ) -> Result<(vk::Format, Image, ImageView), DeviceError> {
         let depth_format = Image::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
 
         let depth_image_desc = ImageDescriptor {
-            device,
+            device: desc.device,
             image_type: vk::ImageType::TYPE_2D,
             format: depth_format,
             dimension: [extent.width, extent.height],
             mip_levels: 1,
             array_layers: 1,
-            samples: vk::SampleCountFlags::TYPE_1,
+            samples: desc.adapter.max_msaa_samples(),
             tiling: vk::ImageTiling::OPTIMAL,
             usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
@@ -616,11 +634,43 @@ impl Swapchain {
 
         let depth_image_view = ImageView::new_depth_image_view(
             Some("Depth Image View"),
-            device,
+            desc.device,
             depth_image.raw(),
             depth_format,
         )?;
         Ok((depth_format, depth_image, depth_image_view))
+    }
+
+    fn create_color_objects(
+        desc: &SwapchainDescriptor,
+        extent: vk::Extent2D,
+        format: vk::Format,
+    ) -> Result<(Image, ImageView), DeviceError> {
+        let color_image_desc = ImageDescriptor {
+            device: desc.device,
+            image_type: vk::ImageType::TYPE_2D,
+            format,
+            dimension: [extent.width, extent.height],
+            mip_levels: 1,
+            array_layers: 1,
+            samples: desc.adapter.max_msaa_samples(),
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
+                | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            allocator: desc.allocator.clone(),
+        };
+
+        let mut color_image = Image::new(&color_image_desc)?;
+
+        let color_image_view = ImageView::new_color_image_view(
+            Some("Color Image View"),
+            desc.device,
+            color_image.raw(),
+            format,
+            1,
+        )?;
+        Ok((color_image, color_image_view))
     }
 }
 

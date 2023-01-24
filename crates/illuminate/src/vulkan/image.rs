@@ -123,10 +123,13 @@ impl Image {
         width: u32,
         height: u32,
         mip_levels: u32,
-        format:vk::Format,
+        format: vk::Format,
+        samples: vk::SampleCountFlags,
         extra_image_usage_flags: vk::ImageUsageFlags,
     ) -> Result<Self, DeviceError> {
-        let usage = vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST | extra_image_usage_flags;
+        let usage = vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_DST
+            | extra_image_usage_flags;
 
         let image_desc = ImageDescriptor {
             device,
@@ -135,7 +138,7 @@ impl Image {
             dimension: [width, height],
             mip_levels,
             array_layers: 1,
-            samples: vk::SampleCountFlags::TYPE_1,
+            samples,
             tiling: vk::ImageTiling::OPTIMAL,
             usage,
             sharing_mode: vk::SharingMode::EXCLUSIVE,

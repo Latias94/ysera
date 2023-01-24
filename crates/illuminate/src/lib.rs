@@ -31,6 +31,8 @@ pub struct AdapterRequirements {
     #[builder(default = true)]
     pub sampler_anisotropy: bool,
     #[builder(default = true)]
+    pub sample_rate_shading: bool,
+    #[builder(default = true)]
     pub discrete_gpu: bool,
     pub adapter_extension_names: Vec<&'static CStr>,
 }

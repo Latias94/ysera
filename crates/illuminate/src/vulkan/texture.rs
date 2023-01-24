@@ -102,6 +102,7 @@ impl VulkanTexture {
             height,
             mip_levels,
             desc.format,
+            vk::SampleCountFlags::TYPE_1,
             vk::ImageUsageFlags::TRANSFER_SRC, // cmd_blit_image
         )?;
 
