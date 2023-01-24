@@ -8,6 +8,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 
+use crate::vulkan::adapter::Adapter;
+use crate::vulkan::instance::Instance;
+use ash::vk;
 use std::rc::Rc;
 use typed_builder::TypedBuilder;
 
@@ -23,6 +26,8 @@ pub struct ModelDescriptor<'a> {
     pub device: &'a Rc<Device>,
     pub allocator: Rc<Mutex<Allocator>>,
     pub command_buffer_allocator: &'a CommandBufferAllocator,
+    pub adapter: Rc<Adapter>, // check mipmap format support
+    pub instance: Rc<Instance>,
 }
 
 impl Model {
@@ -33,18 +38,26 @@ impl Model {
     pub fn indices(&self) -> &[u32] {
         &self.indices
     }
+
     pub fn texture(&self) -> &VulkanTexture {
         &self.texture
     }
 
     pub fn load_obj(desc: &ModelDescriptor) -> anyhow::Result<Self> {
+        let format = vk::Format::R8G8B8A8_SRGB;
+
         let mut texture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         texture_path.push(format!("../../resources/textures/{}.png", desc.file_name));
+
         let texture_desc = VulkanTextureDescriptor {
+            adapter: &desc.adapter,
+            instance: &desc.instance,
             device: desc.device,
             allocator: desc.allocator.clone(),
             command_buffer_allocator: desc.command_buffer_allocator,
             path: &texture_path,
+            format,
+            enable_mip_levels: true,
         };
 
         let texture = VulkanTexture::new(&texture_desc)?;

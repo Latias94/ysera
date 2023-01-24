@@ -30,10 +30,12 @@ use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
     loader: khr::Swapchain,
+    adapter: Rc<Adapter>,
+    instance: Rc<Instance>,
     device: Rc<Device>,
     family_index: QueueFamilyIndices,
     textures: Vec<vk::Image>,
-    texture_views: Vec<ImageView>,
+    image_views: Vec<ImageView>,
     surface_format: vk::SurfaceFormatKHR,
     depth_format: vk::Format,
     extent: vk::Extent2D,
@@ -46,13 +48,14 @@ pub struct Swapchain {
     present_queue: vk::Queue,
     command_buffer_allocator: Rc<CommandBufferAllocator>,
     descriptor_set_allocator: Rc<DescriptorSetAllocator>,
-    depth_texture: Image,
-    depth_texture_view: ImageView,
+    depth_image: Image,
+    depth_image_view: ImageView,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     uniform_buffers: Vec<Buffer>,
     per_frame_descriptor_sets: Vec<vk::DescriptorSet>,
     model: Rc<Model>,
+    mip_levels: u32,
     instant: Instant,
 }
 
@@ -71,10 +74,11 @@ struct SwapChainSupportDetail {
 
 #[derive(TypedBuilder)]
 pub struct SwapchainDescriptor<'a> {
-    pub adapter: &'a Adapter,
+    pub adapter: Rc<Adapter>,
     pub surface: &'a Surface,
-    pub instance: &'a Instance,
+    pub instance: Rc<Instance>,
     pub device: &'a Rc<Device>,
+    pub max_frame_in_flight: u32,
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
     pub queue_family: QueueFamilyIndices,
@@ -84,6 +88,7 @@ pub struct SwapchainDescriptor<'a> {
     pub command_buffer_allocator: Rc<CommandBufferAllocator>,
     pub old_swapchain: Option<vk::SwapchainKHR>,
     pub model: Rc<Model>,
+    pub mip_levels: u32,
     pub instant: Instant,
 }
 
@@ -121,15 +126,17 @@ impl Swapchain {
 
     pub fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
         let device = desc.device;
-        let (swapchain_loader, swapchain, properties, support) = Self::create_swapchain(
-            desc.adapter,
-            desc.surface,
-            desc.instance,
-            device,
-            &desc.queue_family,
-            desc.dimensions,
-            desc.old_swapchain,
-        )?;
+        let (swapchain_loader, swapchain, properties, support, image_count) =
+            Self::create_swapchain(
+                &desc.adapter,
+                desc.surface,
+                &desc.instance,
+                device,
+                &desc.queue_family,
+                desc.dimensions,
+                desc.old_swapchain,
+                desc.max_frame_in_flight,
+            )?;
         let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
         let swapchain_textures = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
@@ -138,7 +145,6 @@ impl Swapchain {
 
         capabilities.current_extent.width = capabilities.current_extent.width.max(1);
         capabilities.current_extent.height = capabilities.current_extent.height.max(1);
-
         let image_views = swapchain_textures
             .iter()
             .map(|i| {
@@ -147,6 +153,7 @@ impl Swapchain {
                     device,
                     *i,
                     properties.surface_format.format,
+                    1,
                 )
             })
             .collect::<Result<Vec<ImageView>, DeviceError>>()?;
@@ -237,7 +244,7 @@ impl Swapchain {
             .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(&device, 3)?);
+        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(&device, image_count)?);
 
         let descriptor_set_layouts = &[descriptor_set_allocator.raw_per_frame_layout()];
 
@@ -260,6 +267,8 @@ impl Swapchain {
         Ok(Self {
             raw: swapchain,
             loader: swapchain_loader,
+            adapter: desc.adapter.clone(),
+            instance: desc.instance.clone(),
             device: desc.device.clone(),
             family_index: desc.queue_family,
             textures: swapchain_textures,
@@ -267,7 +276,7 @@ impl Swapchain {
             depth_format,
             extent: properties.extent,
             capabilities,
-            texture_views: image_views,
+            image_views: image_views,
             framebuffers,
             render_pass,
             pipeline,
@@ -276,13 +285,14 @@ impl Swapchain {
             present_queue: desc.present_queue,
             command_buffer_allocator: desc.command_buffer_allocator.clone(),
             descriptor_set_allocator,
-            depth_texture: depth_image,
-            depth_texture_view: depth_image_view,
+            depth_image,
+            depth_image_view,
             vertex_buffer,
             index_buffer,
             uniform_buffers,
             per_frame_descriptor_sets,
             model: desc.model.clone(),
+            mip_levels: desc.mip_levels,
             instant: desc.instant,
         })
     }
@@ -408,12 +418,14 @@ impl Swapchain {
         queue_family: &QueueFamilyIndices,
         dimensions: [u32; 2],
         old_swapchain: Option<vk::SwapchainKHR>,
+        max_frame_in_flight: u32,
     ) -> Result<
         (
             khr::Swapchain,
             vk::SwapchainKHR,
             SwapchainProperties,
             SwapChainSupportDetail,
+            u32,
         ),
         DeviceError,
     > {
@@ -428,8 +440,9 @@ impl Swapchain {
             extent,
         } = properties;
 
-        let image_count = swapchain_support.capabilities.min_image_count + 1;
-        let image_count = if swapchain_support.capabilities.max_image_count > 0 {
+        let mut image_count = swapchain_support.capabilities.min_image_count + 1;
+        image_count = image_count.max(max_frame_in_flight);
+        image_count = if swapchain_support.capabilities.max_image_count > 0 {
             image_count.min(swapchain_support.capabilities.max_image_count)
         } else {
             image_count
@@ -484,7 +497,13 @@ impl Swapchain {
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
         log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 
-        Ok((swapchain_loader, swapchain, properties, swapchain_support))
+        Ok((
+            swapchain_loader,
+            swapchain,
+            properties,
+            swapchain_support,
+            image_count,
+        ))
     }
 
     pub fn create_framebuffer(
@@ -576,7 +595,7 @@ impl Swapchain {
             image_type: vk::ImageType::TYPE_2D,
             format: depth_format,
             dimension: [extent.width, extent.height],
-            mip_levels: 4,
+            mip_levels: 1,
             array_layers: 1,
             samples: vk::SampleCountFlags::TYPE_1,
             tiling: vk::ImageTiling::OPTIMAL,
@@ -592,6 +611,7 @@ impl Swapchain {
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             &desc.command_buffer_allocator,
+            1,
         )?;
 
         let depth_image_view = ImageView::new_depth_image_view(

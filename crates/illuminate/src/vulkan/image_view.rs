@@ -10,6 +10,7 @@ pub struct ImageViewDescriptor<'a> {
     pub format: vk::Format,
     pub dimension: vk::ImageViewType,
     pub aspect_mask: vk::ImageAspectFlags,
+    pub mip_levels: u32,
     // pub usage: vk::ImageUsageFlags,
     // pub range: vk::ImageSubresourceRange,
 }
@@ -29,12 +30,14 @@ impl ImageView {
         device: &Rc<Device>,
         image: vk::Image,
         format: vk::Format,
+        mip_levels: u32,
     ) -> Result<ImageView, crate::DeviceError> {
         let desc = ImageViewDescriptor {
             label,
             format,
             dimension: vk::ImageViewType::TYPE_2D,
             aspect_mask: vk::ImageAspectFlags::COLOR,
+            mip_levels,
         };
         Self::new(device, image, &desc)
     }
@@ -50,13 +53,14 @@ impl ImageView {
             format,
             dimension: vk::ImageViewType::TYPE_2D,
             aspect_mask: vk::ImageAspectFlags::DEPTH,
+            mip_levels: 1,
         };
         Self::new(device, image, &desc)
     }
 
     fn new(
         device: &Rc<Device>,
-        texture: vk::Image,
+        image: vk::Image,
         desc: &ImageViewDescriptor,
     ) -> Result<ImageView, crate::DeviceError> {
         let range = vk::ImageSubresourceRange::builder()
@@ -64,11 +68,11 @@ impl ImageView {
             .base_array_layer(0)
             .layer_count(1)
             .base_mip_level(0)
-            .level_count(1)
+            .level_count(desc.mip_levels)
             .build();
         let info = vk::ImageViewCreateInfo::builder()
             .flags(vk::ImageViewCreateFlags::empty())
-            .image(texture)
+            .image(image)
             // 用于指定图像被看作是一维纹理、二维纹理、三维纹理还是立方体贴图
             .view_type(desc.dimension)
             .format(desc.format)

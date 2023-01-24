@@ -6,7 +6,8 @@
 # rustup component add llvm-tools-preview
 # ```
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+# weird issue work with sccache
+#rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 [target.x86_64-pc-windows-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]

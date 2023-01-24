@@ -479,6 +479,30 @@ impl Device {
         }
     }
 
+    /// graphics queue
+    pub fn cmd_blit_image(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        src_image: vk::Image,
+        src_image_layout: vk::ImageLayout,
+        dst_image: vk::Image,
+        dst_image_layout: vk::ImageLayout,
+        regions: &[vk::ImageBlit],
+        filter: vk::Filter,
+    ) {
+        unsafe {
+            self.raw.cmd_blit_image(
+                command_buffer,
+                src_image,
+                src_image_layout,
+                dst_image,
+                dst_image_layout,
+                regions,
+                filter,
+            );
+        }
+    }
+
     pub fn create_semaphore(
         &self,
         create_info: &vk::SemaphoreCreateInfo,

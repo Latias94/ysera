@@ -48,6 +48,14 @@ impl Image {
         self.format
     }
 
+    pub fn get_max_mip_levels(&self) -> u32 {
+        Self::max_mip_levels(self.width, self.height)
+    }
+
+    pub fn max_mip_levels(width: u32, height: u32) -> u32 {
+        (width.max(height) as f32).log2().floor() as u32 + 1
+    }
+
     pub fn new(desc: &ImageDescriptor) -> Result<Self, DeviceError> {
         let create_info = vk::ImageCreateInfo::builder()
             .image_type(desc.image_type)
@@ -114,17 +122,22 @@ impl Image {
         allocator: Rc<Mutex<Allocator>>,
         width: u32,
         height: u32,
+        mip_levels: u32,
+        format:vk::Format,
+        extra_image_usage_flags: vk::ImageUsageFlags,
     ) -> Result<Self, DeviceError> {
+        let usage = vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST | extra_image_usage_flags;
+
         let image_desc = ImageDescriptor {
             device,
             image_type: vk::ImageType::TYPE_2D,
-            format: vk::Format::R8G8B8A8_SRGB,
+            format,
             dimension: [width, height],
-            mip_levels: 1,
+            mip_levels,
             array_layers: 1,
             samples: vk::SampleCountFlags::TYPE_1,
             tiling: vk::ImageTiling::OPTIMAL,
-            usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+            usage,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
             allocator: allocator.clone(),
         };
@@ -181,6 +194,7 @@ impl Image {
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
         command_buffer_allocator: &CommandBufferAllocator,
+        mip_levels: u32,
     ) -> Result<(), DeviceError> {
         command_buffer_allocator.create_single_use(|device, command_buffer| {
             let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
@@ -229,7 +243,7 @@ impl Image {
             let subresource = vk::ImageSubresourceRange::builder()
                 .aspect_mask(aspect_mask)
                 .base_mip_level(0)
-                .level_count(1)
+                .level_count(mip_levels)
                 .base_array_layer(0)
                 .layer_count(1)
                 .build();

@@ -13,7 +13,7 @@ impl Sampler {
         self.sampler
     }
 
-    pub fn new(device: &Rc<Device>) -> Result<Self, DeviceError> {
+    pub fn new(device: &Rc<Device>, mip_levels: u32) -> Result<Self, DeviceError> {
         let create_info = vk::SamplerCreateInfo::builder()
             .mag_filter(vk::Filter::LINEAR)
             .min_filter(vk::Filter::LINEAR)
@@ -30,7 +30,8 @@ impl Sampler {
             .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
             .mip_lod_bias(0.0)
             .min_lod(0.0)
-            .max_lod(0.0);
+            // .min_lod(mip_levels as f32 / 2.0) // test mip_levels
+            .max_lod(mip_levels as f32);
         let sampler = device.create_sampler(&create_info)?;
         Ok(Self {
             device: device.clone(),
