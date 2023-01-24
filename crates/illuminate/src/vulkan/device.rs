@@ -503,6 +503,20 @@ impl Device {
         }
     }
 
+    pub fn cmd_push_constants(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        layout: vk::PipelineLayout,
+        stage_flags: vk::ShaderStageFlags,
+        offset: u32,
+        constants: &[u8],
+    ) {
+        unsafe {
+            self.raw
+                .cmd_push_constants(command_buffer, layout, stage_flags, offset, constants);
+        }
+    }
+
     pub fn create_semaphore(
         &self,
         create_info: &vk::SemaphoreCreateInfo,

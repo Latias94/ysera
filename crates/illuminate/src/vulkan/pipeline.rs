@@ -162,8 +162,14 @@ impl Pipeline {
         // final_color = final_color & color_write_mask;
 
         let color_blend_attachment_state = vk::PipelineColorBlendAttachmentState::builder()
-            .blend_enable(false)
             .color_write_mask(vk::ColorComponentFlags::RGBA)
+            .blend_enable(true)
+            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+            .alpha_blend_op(vk::BlendOp::ADD)
             .build();
 
         let color_blend_attachment_states = &[color_blend_attachment_state];

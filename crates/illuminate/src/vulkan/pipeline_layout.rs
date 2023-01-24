@@ -19,7 +19,21 @@ impl PipelineLayout {
         device: &Rc<Device>,
         layouts: &[vk::DescriptorSetLayout],
     ) -> Result<Self, DeviceError> {
-        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(layouts);
+        let vert_push_constant_range = vk::PushConstantRange::builder()
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .offset(0)
+            .size(64 /* 16 × 4 byte floats */)
+            .build();
+        let frag_push_constant_range = vk::PushConstantRange::builder()
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .offset(64)
+            .size(4)
+            .build();
+
+        let push_constant_ranges = &[vert_push_constant_range, frag_push_constant_range];
+        let create_info = vk::PipelineLayoutCreateInfo::builder()
+            .set_layouts(layouts)
+            .push_constant_ranges(push_constant_ranges);
 
         let raw = device.create_pipeline_layout(&create_info)?;
         log::debug!("Vulkan pipeline layout created.");

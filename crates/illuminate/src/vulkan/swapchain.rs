@@ -215,12 +215,16 @@ impl Swapchain {
         let shader_desc = ShaderDescriptor {
             label: Some("Triangle"),
             device,
-            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.vert"),
+            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
+                "triangle_push_constant.vert",
+            ),
             vert_entry_name: "main",
-            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.frag"),
+            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
+                "triangle_push_constant.frag",
+            ),
             frag_entry_name: "main",
         };
-        let shader = Shader::new(&shader_desc).map_err(|e| DeviceError::Other("Shader Error"))?;
+        let shader = Shader::new(&shader_desc)?;
 
         let vertex_buffer_desc = StagingBufferDescriptor {
             label: Some("Vertex Buffer"),
@@ -281,7 +285,7 @@ impl Swapchain {
         let per_frame_descriptor_sets = descriptor_set_allocator
             .allocate_per_frame_descriptor_sets(&descriptor_sets_create_info)?;
 
-        Ok(Self {
+        let mut swapchain = Self {
             raw: swapchain,
             loader: swapchain_loader,
             adapter: desc.adapter.clone(),
@@ -313,95 +317,127 @@ impl Swapchain {
             model: desc.model.clone(),
             mip_levels: desc.mip_levels,
             instant: desc.instant,
-        })
+        };
+
+        swapchain.create_command_buffers()?;
+
+        Ok(swapchain)
     }
 
     pub fn render(&mut self, image_index: usize) -> Result<vk::CommandBuffer, DeviceError> {
         self.update_uniform_buffer(image_index);
 
         let command_buffer = &self.command_buffers[image_index];
-        let framebuffer = self.framebuffers[image_index];
 
-        self.device
-            .reset_command_buffer(command_buffer.raw(), vk::CommandBufferResetFlags::empty())?;
-        self.device.begin_command_buffer(
-            command_buffer.raw(),
-            &vk::CommandBufferBeginInfo::builder().build(),
-        )?;
+        // self.device
+        //     .reset_command_buffer(command_buffer.raw(), vk::CommandBufferResetFlags::empty())?;
+        // self.device.begin_command_buffer(
+        //     command_buffer.raw(),
+        //     &vk::CommandBufferBeginInfo::builder().build(),
+        // )?;
 
-        self.render_pass.begin(command_buffer, framebuffer);
-        self.device.cmd_bind_pipeline(
-            command_buffer.raw(),
-            vk::PipelineBindPoint::GRAPHICS,
-            self.pipeline.raw(),
-        );
+        // ...
 
-        // 改为左手坐标系 NDC
-        let viewport_rect2d = Rect2D {
-            x: 0.0,
-            y: self.extent.height as f32,
-            width: self.extent.width as f32,
-            height: -(self.extent.height as f32),
-        };
-        self.device
-            .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
-
-        let scissor_rect2d = Rect2D {
-            x: 0.0,
-            y: 0.0,
-            width: self.extent.width as f32,
-            height: self.extent.height as f32,
-        };
-        self.device.cmd_set_scissor(
-            command_buffer.raw(),
-            0,
-            &[conv::convert_rect2d(scissor_rect2d)],
-        );
-
-        self.device.cmd_bind_vertex_buffers(
-            command_buffer.raw(),
-            0,
-            &[self.vertex_buffer.raw()],
-            &[0],
-        );
-
-        self.device.cmd_bind_index_buffer(
-            command_buffer.raw(),
-            self.index_buffer.raw(),
-            0,
-            vk::IndexType::UINT32, // Model.indices
-        );
-
-        self.device.cmd_bind_descriptor_sets(
-            command_buffer.raw(),
-            vk::PipelineBindPoint::GRAPHICS,
-            self.pipeline.raw_pipeline_layout(),
-            0,
-            &[self.per_frame_descriptor_sets[image_index]],
-            &[],
-        );
-
-        self.device.cmd_draw_indexed(
-            command_buffer.raw(),
-            self.model.indices().len() as u32,
-            1,
-            0,
-            0,
-            0,
-        );
-        self.render_pass.end(command_buffer);
-        self.device.end_command_buffer(command_buffer.raw())?;
+        // self.device.end_command_buffer(command_buffer.raw())?;
 
         Ok(command_buffer.raw())
     }
 
-    pub fn update_uniform_buffer(&mut self, image_index: usize) {
-        let time = self.instant.elapsed().as_secs_f32();
-        let model = math::rotate(
-            &math::identity(),
-            time * math::radians(&math::vec1(90.0))[0],
-            &vec3(0.0, 0.0, 1.0),
-        );
+    fn create_command_buffers(&mut self) -> Result<(), DeviceError> {
+        let model = math::rotate(&math::identity(), 0.0f32, &vec3(0.0, 0.0, 1.0));
+        let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
+
+        for (i, command_buffer) in self.command_buffers.iter().enumerate() {
+            self.device.begin_command_buffer(
+                command_buffer.raw(),
+                &vk::CommandBufferBeginInfo::builder().build(),
+            )?;
+
+            self.device.cmd_bind_pipeline(
+                command_buffer.raw(),
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline.raw(),
+            );
+
+            let framebuffer = self.framebuffers[i];
+            self.render_pass.begin(command_buffer, framebuffer);
+
+            // 改为左手坐标系 NDC
+            let viewport_rect2d = Rect2D {
+                x: 0.0,
+                y: self.extent.height as f32,
+                width: self.extent.width as f32,
+                height: -(self.extent.height as f32),
+            };
+            self.device
+                .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
+
+            let scissor_rect2d = Rect2D {
+                x: 0.0,
+                y: 0.0,
+                width: self.extent.width as f32,
+                height: self.extent.height as f32,
+            };
+            self.device.cmd_set_scissor(
+                command_buffer.raw(),
+                0,
+                &[conv::convert_rect2d(scissor_rect2d)],
+            );
+
+            self.device.cmd_bind_vertex_buffers(
+                command_buffer.raw(),
+                0,
+                &[self.vertex_buffer.raw()],
+                &[0],
+            );
+
+            self.device.cmd_bind_index_buffer(
+                command_buffer.raw(),
+                self.index_buffer.raw(),
+                0,
+                vk::IndexType::UINT32, // Model.indices
+            );
+
+            self.device.cmd_push_constants(
+                command_buffer.raw(),
+                self.pipeline.raw_pipeline_layout(),
+                vk::ShaderStageFlags::VERTEX,
+                0,
+                model_bytes,
+            );
+
+            self.device.cmd_push_constants(
+                command_buffer.raw(),
+                self.pipeline.raw_pipeline_layout(),
+                vk::ShaderStageFlags::FRAGMENT,
+                64,
+                &0.75f32.to_ne_bytes()[..],
+            );
+
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer.raw(),
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipeline.raw_pipeline_layout(),
+                0,
+                &[self.per_frame_descriptor_sets[i]],
+                &[],
+            );
+            self.device.cmd_draw_indexed(
+                command_buffer.raw(),
+                self.model.indices().len() as u32,
+                1,
+                0,
+                0,
+                0,
+            );
+            self.render_pass.end(command_buffer);
+
+            self.device.end_command_buffer(command_buffer.raw())?;
+        }
+        Ok(())
+    }
+
+    fn update_uniform_buffer(&mut self, image_index: usize) {
         let view = math::look_at(
             &vec3(2.0, 2.0, 2.0),
             &vec3(0.0, 0.0, 0.0),
@@ -414,11 +450,7 @@ impl Swapchain {
             10.0,
         );
         // projection[(1, 1)] *= -1.0; // openGL clip space y 和 vulkan 相反，不过我们在 cmd_set_viewport 处理了
-        let ubo = UniformBufferObject {
-            model,
-            view,
-            projection,
-        };
+        let ubo = UniformBufferObject { view, projection };
 
         let uniform_buffer = &mut self.uniform_buffers[image_index];
         uniform_buffer.copy_memory(&[ubo]);
