@@ -1,7 +1,7 @@
 use crate::vulkan::buffer::{Buffer, StagingBufferDescriptor};
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::Device;
-use crate::vulkan::image::Image;
+use crate::vulkan::image::{ColorImageDescriptor, Image};
 use crate::vulkan::image_view::ImageView;
 use crate::vulkan::sampler::Sampler;
 use crate::DeviceError;
@@ -95,16 +95,17 @@ impl VulkanTexture {
         };
         let staging_buffer = Buffer::new_staging_buffer(&staging_buffer_desc)?;
 
-        let mut image = Image::new_color_image(
+        let color_image_desc = ColorImageDescriptor {
             device,
-            staging_buffer_desc.allocator.clone(),
+            allocator: staging_buffer_desc.allocator.clone(),
             width,
             height,
             mip_levels,
-            desc.format,
-            vk::SampleCountFlags::TYPE_1,
-            vk::ImageUsageFlags::TRANSFER_SRC, // cmd_blit_image
-        )?;
+            format: desc.format,
+            samples: vk::SampleCountFlags::TYPE_1,
+            extra_image_usage_flags: vk::ImageUsageFlags::TRANSFER_SRC, // cmd_blit_image
+        };
+        let mut image = Image::new_color_image(&color_image_desc)?;
 
         // TODO: 组合在一个命令缓冲区中并异步执行它们以获得更高的吞吐量
         image.transit_layout(

@@ -16,7 +16,7 @@ use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
 use crate::vulkan::descriptor_set_allocator::{DescriptorSetAllocator, DescriptorSetsCreateInfo};
 use crate::vulkan::device::Device;
-use crate::vulkan::image::{Image, ImageDescriptor};
+use crate::vulkan::image::{DepthImageDescriptor, Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::model::Model;
@@ -168,10 +168,10 @@ impl Swapchain {
 
         let color_format = properties.surface_format.format;
         let (color_image, color_image_view) =
-            Self::create_color_objects(desc, extent, color_format)?;
+            Self::create_color_objects(desc, color_format, extent)?;
 
-        let (depth_format, depth_image, depth_image_view) =
-            Self::create_depth_objects(desc, extent)?;
+        let (depth_image, depth_image_view) = Self::create_depth_objects(desc, extent)?;
+        let depth_format = depth_image.format();
 
         let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
         let rect2d = Rect2D {
@@ -605,46 +605,31 @@ impl Swapchain {
     fn create_depth_objects(
         desc: &SwapchainDescriptor,
         extent: vk::Extent2D,
-    ) -> Result<(vk::Format, Image, ImageView), DeviceError> {
-        let depth_format = Image::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
-
-        let depth_image_desc = ImageDescriptor {
+    ) -> Result<(Image, ImageView), DeviceError> {
+        let depth_image_desc = DepthImageDescriptor {
             device: desc.device,
-            image_type: vk::ImageType::TYPE_2D,
-            format: depth_format,
-            dimension: [extent.width, extent.height],
-            mip_levels: 1,
-            array_layers: 1,
-            samples: desc.adapter.max_msaa_samples(),
-            tiling: vk::ImageTiling::OPTIMAL,
-            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            instance: &desc.instance,
+            adapter: &desc.adapter,
             allocator: desc.allocator.clone(),
+            width: extent.width,
+            height: extent.height,
+            command_buffer_allocator: &desc.command_buffer_allocator,
         };
-
-        let mut depth_image = Image::new(&depth_image_desc)?;
-
-        depth_image.transit_layout(
-            depth_format,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            &desc.command_buffer_allocator,
-            1,
-        )?;
+        let depth_image = Image::new_depth_image(&depth_image_desc)?;
 
         let depth_image_view = ImageView::new_depth_image_view(
             Some("Depth Image View"),
             desc.device,
             depth_image.raw(),
-            depth_format,
+            depth_image.format(),
         )?;
-        Ok((depth_format, depth_image, depth_image_view))
+        Ok((depth_image, depth_image_view))
     }
 
     fn create_color_objects(
         desc: &SwapchainDescriptor,
-        extent: vk::Extent2D,
         format: vk::Format,
+        extent: vk::Extent2D,
     ) -> Result<(Image, ImageView), DeviceError> {
         let color_image_desc = ImageDescriptor {
             device: desc.device,
@@ -661,7 +646,7 @@ impl Swapchain {
             allocator: desc.allocator.clone(),
         };
 
-        let mut color_image = Image::new(&color_image_desc)?;
+        let color_image = Image::new(&color_image_desc)?;
 
         let color_image_view = ImageView::new_color_image_view(
             Some("Color Image View"),
