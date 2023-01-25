@@ -158,7 +158,7 @@ impl Instance {
         let mut result = vec![];
 
         for &each_adapter in adapters.iter() {
-            let adapter = Adapter::new(each_adapter);
+            let adapter = Adapter::new(each_adapter, self);
             adapter.log_adapter_information(&self.raw);
             result.push(adapter);
         }

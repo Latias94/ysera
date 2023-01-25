@@ -6,7 +6,7 @@ layout (location = 1) in vec2 fragTexCoord;
 layout (location = 0) out vec4 outColor;
 
 // https://github.com/gfx-rs/naga/issues/1012
-//layout (binding = 1) uniform sampler2D texSampler;
+// layout (binding = 1) uniform sampler2D texSampler;
 
 layout (set = 0, binding = 1) uniform texture2D fragTexture;
 layout (set = 0, binding = 2) uniform sampler fragSampler;

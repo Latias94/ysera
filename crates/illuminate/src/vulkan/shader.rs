@@ -6,7 +6,7 @@ use std::rc::Rc;
 use ash::vk;
 use typed_builder::TypedBuilder;
 
-use math::{Vec2, Vec3, Vertex3D};
+use math::{Vec3, Vertex3D};
 
 use crate::vulkan::device::Device;
 use crate::{Label, ShaderError};

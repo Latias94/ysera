@@ -38,6 +38,7 @@ pub struct VulkanRenderer {
     indices: QueueFamilyIndices,
     command_buffer_allocator: Rc<CommandBufferAllocator>,
     model: Rc<Model>,
+    mip_levels: u32,
     frame: usize,
     instant: Instant,
 }
@@ -61,7 +62,8 @@ impl VulkanRenderer {
             .build();
         let mut selected_adapter = None;
         for adapter in adapters {
-            if unsafe { adapter.meet_requirements(instance.raw(), &surface, &requirements) }.is_ok()
+            if unsafe { adapter.meet_requirements(&instance.raw(), &surface, &requirements) }
+                .is_ok()
             {
                 selected_adapter = Some(adapter);
                 break;
@@ -71,10 +73,14 @@ impl VulkanRenderer {
             None => panic!("Cannot find the require device."),
             Some(adapter) => adapter,
         };
+
+        let adapter = Rc::new(adapter);
+        let instance = Rc::new(instance);
+
         log::debug!("Find the require device.");
         let debug_utils = instance.debug_utils().clone();
 
-        let indices = utils::get_queue_family_indices(instance.raw(), adapter.raw(), &surface)?;
+        let indices = utils::get_queue_family_indices(&instance.raw(), adapter.raw(), &surface)?;
         indices.log_debug();
 
         let device =
@@ -123,14 +129,18 @@ impl VulkanRenderer {
             device: &device,
             allocator: allocator.clone(),
             command_buffer_allocator: &command_buffer_allocator,
+            adapter: adapter.clone(),
+            instance: instance.clone(),
         };
         let model = Rc::new(Model::load_obj(&model_desc)?);
+        let mip_levels = model.texture().image().get_max_mip_levels();
 
         let swapchain_desc = SwapchainDescriptor {
-            adapter: &adapter,
+            adapter: adapter.clone(),
             surface: &surface,
-            instance: &instance,
+            instance: instance.clone(),
             device: &device,
+            max_frame_in_flight: MAX_FRAMES_IN_FLIGHT as u32,
             queue_family: indices,
             dimensions: [inner_size.width, inner_size.height],
             command_pool,
@@ -141,6 +151,7 @@ impl VulkanRenderer {
             model: model.clone(),
             old_swapchain: None,
             instant,
+            mip_levels,
         };
 
         let swapchain = Swapchain::new(&swapchain_desc)?;
@@ -159,8 +170,8 @@ impl VulkanRenderer {
         }
 
         Ok(Self {
-            adapter: Rc::new(adapter),
-            instance: Rc::new(instance),
+            adapter,
+            instance,
             surface: Rc::new(surface),
             device,
             allocator,
@@ -176,6 +187,7 @@ impl VulkanRenderer {
             indices,
             command_buffer_allocator,
             model,
+            mip_levels,
             frame: 0,
             instant,
         })
@@ -254,10 +266,11 @@ impl VulkanRenderer {
             old_swapchain = Some(swapchain.raw())
         }
         let swapchain_desc = SwapchainDescriptor {
-            adapter: &self.adapter,
+            adapter: self.adapter.clone(),
             surface: &self.surface,
-            instance: &self.instance,
+            instance: self.instance.clone(),
             device: &self.device,
+            max_frame_in_flight: MAX_FRAMES_IN_FLIGHT as u32,
             queue_family: self.indices,
             dimensions: [inner_size.width, inner_size.height],
             command_pool: self.command_pool,
@@ -266,6 +279,7 @@ impl VulkanRenderer {
             allocator: self.allocator.clone(),
             command_buffer_allocator: self.command_buffer_allocator.clone(),
             model: self.model.clone(),
+            mip_levels: self.mip_levels,
             old_swapchain,
             instant: self.instant,
         };

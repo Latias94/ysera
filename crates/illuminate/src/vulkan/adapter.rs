@@ -13,6 +13,7 @@ use super::{device::Device, instance::Instance, surface::Surface, utils};
 
 pub struct Adapter {
     raw: vk::PhysicalDevice,
+    max_msaa_samples: vk::SampleCountFlags,
 }
 
 impl Adapter {
@@ -20,8 +21,16 @@ impl Adapter {
         self.raw
     }
 
-    pub fn new(raw: vk::PhysicalDevice) -> Self {
-        Self { raw }
+    pub fn max_msaa_samples(&self) -> vk::SampleCountFlags {
+        self.max_msaa_samples
+    }
+
+    pub fn new(raw: vk::PhysicalDevice, instance: &Instance) -> Self {
+        let max_msaa_samples = Self::get_max_msaa_samples(raw, instance);
+        Self {
+            raw,
+            max_msaa_samples,
+        }
     }
 
     pub unsafe fn meet_requirements(
@@ -88,7 +97,7 @@ impl Adapter {
 
         let physical_device_features = vk::PhysicalDeviceFeatures::builder()
             .sampler_anisotropy(requirement.sampler_anisotropy)
-            .sample_rate_shading(true);
+            .sample_rate_shading(requirement.sample_rate_shading);
 
         let enable_validation = instance.flags().contains(InstanceFlags::VALIDATION);
         let mut required_layers = vec![];
@@ -217,5 +226,26 @@ impl Adapter {
                 "Unsupport"
             }
         );
+    }
+
+    fn get_max_msaa_samples(
+        adapter: vk::PhysicalDevice,
+        instance: &Instance,
+    ) -> vk::SampleCountFlags {
+        let properties = unsafe { instance.raw().get_physical_device_properties(adapter) };
+        let counts = properties.limits.framebuffer_color_sample_counts
+            & properties.limits.framebuffer_depth_sample_counts;
+        [
+            vk::SampleCountFlags::TYPE_64,
+            vk::SampleCountFlags::TYPE_32,
+            vk::SampleCountFlags::TYPE_16,
+            vk::SampleCountFlags::TYPE_8,
+            vk::SampleCountFlags::TYPE_4,
+            vk::SampleCountFlags::TYPE_2,
+        ]
+        .iter()
+        .cloned()
+        .find(|c| counts.contains(*c))
+        .unwrap_or(vk::SampleCountFlags::TYPE_1)
     }
 }
