@@ -1,6 +1,6 @@
 use alloc::ffi::CString;
 use std::collections::HashSet;
-use std::ffi::c_char;
+use std::ffi::{c_char, CStr};
 
 use ash::extensions::khr;
 use ash::vk;
@@ -22,7 +22,8 @@ impl Adapter {
     }
 
     pub fn max_msaa_samples(&self) -> vk::SampleCountFlags {
-        self.max_msaa_samples
+        // self.max_msaa_samples
+        vk::SampleCountFlags::TYPE_1
     }
 
     pub fn new(raw: vk::PhysicalDevice, instance: &Instance) -> Self {
@@ -113,7 +114,13 @@ impl Adapter {
             .map(|layer_name| layer_name.as_ptr())
             .collect();
 
-        let enable_extensions = [khr::Swapchain::name()];
+        let enable_extensions = Self::get_required_device_extensions();
+
+        let support_extensions = Self::check_device_extension_support(instance, self.raw);
+        if !support_extensions {
+            log::error!("device extensions not support");
+        }
+
         let enable_extension_names = enable_extensions
             .iter()
             // Safe because `enabled_extensions` entries have static lifetime.
@@ -132,6 +139,33 @@ impl Adapter {
 
         let device = Device::new(ash_device, debug_utils);
         Ok(device)
+    }
+
+    fn get_required_device_extensions() -> [&'static CStr; 1] {
+        [khr::Swapchain::name()]
+    }
+
+    fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevice) -> bool {
+        let required_extensions = Self::get_required_device_extensions();
+
+        let extension_props = unsafe {
+            instance
+                .raw()
+                .enumerate_device_extension_properties(device)
+                .expect("Failed to enumerate device extension properties")
+        };
+
+        for required in required_extensions.iter() {
+            let found = extension_props.iter().any(|ext| {
+                let name = unsafe { CStr::from_ptr(ext.extension_name.as_ptr()) };
+                required == &name
+            });
+
+            if !found {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn log_adapter_information(&self, instance: &ash::Instance) {

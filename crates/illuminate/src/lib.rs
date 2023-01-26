@@ -16,6 +16,11 @@ use crate::vulkan::instance::InstanceFlags;
 mod error;
 pub mod vulkan;
 
+pub use ash;
+pub use winit;
+
+const MAX_FRAMES_IN_FLIGHT: usize = 2;
+
 pub type Label<'a> = Option<&'a str>;
 
 #[derive(Debug, TypedBuilder)]

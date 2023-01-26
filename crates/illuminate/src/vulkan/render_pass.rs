@@ -41,6 +41,13 @@ pub struct RenderPassDescriptor<'a> {
     pub stencil: u32,
 }
 
+#[derive(Clone, TypedBuilder)]
+pub struct ImguiRenderPassDescriptor<'a> {
+    pub device: &'a Rc<Device>,
+    pub render_area: math::Rect2D,
+    pub surface_format: vk::Format,
+}
+
 impl RenderPass {
     pub fn raw(&self) -> vk::RenderPass {
         self.raw
@@ -141,8 +148,8 @@ impl RenderPass {
             color_resolve_attachment,
         ];
 
-        // dont's do the `.subpasses(&[subpass])` + `build()` will cause the temporary array pointer
-        //  live shorter before the vulkan call  https://github.com/ash-rs/ash/issues/158
+        // don't do the `.subpasses(&[subpass])` + `build()` will cause the temporary array pointer
+        // live shorter before the vulkan call  https://github.com/ash-rs/ash/issues/158
         let subpasses = [subpass];
         let dependencies = [dependency];
         let create_info = vk::RenderPassCreateInfo::builder()
@@ -160,6 +167,59 @@ impl RenderPass {
             state: InRenderPass,
             render_area: desc.render_area,
             clear_values,
+        })
+    }
+
+    pub fn new_imgui_render_pass(desc: &ImguiRenderPassDescriptor) -> Result<Self, DeviceError> {
+        profiling::scope!("create_render_pass imgui");
+
+        log::debug!("Creating imgui render pass!");
+        let attachment_descs = [vk::AttachmentDescription::builder()
+            .format(desc.surface_format)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+            .build()];
+
+        let color_attachment_refs = [vk::AttachmentReference::builder()
+            .attachment(0)
+            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .build()];
+
+        let subpass_descs = [vk::SubpassDescription::builder()
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+            .color_attachments(&color_attachment_refs)
+            .build()];
+
+        let subpass_deps = [vk::SubpassDependency::builder()
+            .src_subpass(vk::SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(
+                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            )
+            .build()];
+
+        let render_pass_info = vk::RenderPassCreateInfo::builder()
+            .attachments(&attachment_descs)
+            .subpasses(&subpass_descs)
+            .dependencies(&subpass_deps);
+
+        let raw = desc.device.create_render_pass(&render_pass_info)?;
+        Ok(Self {
+            raw,
+            device: desc.device.clone(),
+            state: InRenderPass,
+            render_area: desc.render_area,
+            clear_values: vec![vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [1.0, 1.0, 1.0, 1.0],
+                },
+            }],
         })
     }
 

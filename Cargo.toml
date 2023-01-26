@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/illuminate",
     "crates/math",
+    "crates/editor",
     "crates/playground",
 ]
 
@@ -12,7 +13,7 @@ rust-version = "1.65"
 
 [workspace.dependencies]
 math = { package = "eureka-math", path = "crates/math" }
-clipboard = "0.5"
+editor = { package = "eureka-editor", path = "crates/editor" }
 image = "0.24"
 profiling = "=1.0.7"
 serde = "1"
@@ -43,11 +44,12 @@ tobj = "3.2"
 
 # Vulkan
 ash = "0.37"
-naga = "0.10"
+naga = "0.11"
 gpu-allocator = "0.21"
 #vk-mem = { git = "https://github.com/gwihlidal/vk-mem-rs", version = "0.2.3" } # wait for update
 
 #glium = "0.32.1"
-#imgui = "0.9"
-#imgui-glium-renderer = "0.9"
-#imgui-winit-support = "0.9"
+imgui = "0.10"
+imgui-winit-support = "0.10.0"
+imgui-rs-vulkan-renderer = "1.7"
+clipboard = "0.5"

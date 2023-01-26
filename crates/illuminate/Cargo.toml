@@ -33,6 +33,11 @@ tobj.workspace = true
 #vk-mem.workspace = true
 naga = { workspace = true, features = ["clone"] }
 
+# imgui
+imgui.workspace = true
+imgui-rs-vulkan-renderer = { workspace = true, features = ["gpu-allocator"] }
+editor.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_Foundation"] }
 

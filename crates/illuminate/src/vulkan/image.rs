@@ -8,6 +8,7 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
 use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use std::rc::Rc;
+use typed_builder::TypedBuilder;
 
 pub struct Image {
     raw: vk::Image,
@@ -19,6 +20,7 @@ pub struct Image {
     height: u32,
 }
 
+#[derive(TypedBuilder)]
 pub struct ImageDescriptor<'a> {
     pub device: &'a Rc<Device>,
     pub image_type: vk::ImageType,
@@ -33,6 +35,7 @@ pub struct ImageDescriptor<'a> {
     pub allocator: Rc<Mutex<Allocator>>,
 }
 
+#[derive(TypedBuilder)]
 pub struct ColorImageDescriptor<'a> {
     pub device: &'a Rc<Device>,
     pub allocator: Rc<Mutex<Allocator>>,
@@ -44,6 +47,7 @@ pub struct ColorImageDescriptor<'a> {
     pub extra_image_usage_flags: vk::ImageUsageFlags,
 }
 
+#[derive(TypedBuilder)]
 pub struct DepthImageDescriptor<'a> {
     pub device: &'a Rc<Device>,
     pub instance: &'a Instance,

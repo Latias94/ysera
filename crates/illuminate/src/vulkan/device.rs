@@ -218,6 +218,15 @@ impl Device {
         unsafe { self.raw.free_command_buffers(command_pool, command_buffers) }
     }
 
+    pub fn reset_command_pool(
+        &self,
+        command_pool: vk::CommandPool,
+        flags: vk::CommandPoolResetFlags,
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.reset_command_pool(command_pool, flags)? };
+        Ok(())
+    }
+
     pub fn create_buffer(
         &self,
         create_info: &vk::BufferCreateInfo,
@@ -281,6 +290,15 @@ impl Device {
             self.raw
                 .update_descriptor_sets(descriptor_writes, descriptor_copies)
         }
+    }
+
+    pub fn free_descriptor_sets(
+        &self,
+        pool: vk::DescriptorPool,
+        descriptor_sets: &[vk::DescriptorSet],
+    ) -> Result<(), DeviceError> {
+        unsafe { self.raw.free_descriptor_sets(pool, descriptor_sets)? }
+        Ok(())
     }
 
     pub fn cmd_begin_render_pass(

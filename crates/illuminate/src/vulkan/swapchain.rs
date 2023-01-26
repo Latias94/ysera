@@ -3,21 +3,27 @@ use std::time::Instant;
 
 use ash::extensions::khr;
 use ash::vk;
+
+use editor::gui::GuiContext;
 use gpu_allocator::vulkan::Allocator;
+use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
+use math::prelude::*;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
-
-use math::prelude::*;
+use winit::window::Window;
 
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor, UniformBufferDescriptor};
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::conv;
-use crate::vulkan::descriptor_set_allocator::{DescriptorSetAllocator, DescriptorSetsCreateInfo};
+use crate::vulkan::descriptor_set_allocator::{
+    DescriptorSetAllocator, PerFrameDescriptorSetsCreateInfo,
+};
 use crate::vulkan::device::Device;
 use crate::vulkan::image::{DepthImageDescriptor, Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
+
 use crate::vulkan::instance::Instance;
 use crate::vulkan::model::Model;
 use crate::vulkan::pipeline::Pipeline;
@@ -124,6 +130,10 @@ impl Swapchain {
 
     pub fn pipeline(&self) -> &Pipeline {
         &self.pipeline
+    }
+
+    pub fn command_buffer_allocator(&self) -> &CommandBufferAllocator {
+        &self.command_buffer_allocator
     }
 
     pub fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
@@ -259,7 +269,7 @@ impl Swapchain {
             .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(&device, image_count)?);
+        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(device, image_count)?);
 
         let descriptor_set_layouts = &[descriptor_set_allocator.raw_per_frame_layout()];
 
@@ -276,7 +286,7 @@ impl Swapchain {
             .allocate_command_buffers(true, image_views.len() as u32)?;
 
         let model_texture = desc.model.texture();
-        let descriptor_sets_create_info = DescriptorSetsCreateInfo {
+        let descriptor_sets_create_info = PerFrameDescriptorSetsCreateInfo {
             uniform_buffers: &uniform_buffers,
             texture_image_view: model_texture.raw_image_view(),
             texture_sampler: model_texture.raw_sampler(),
@@ -322,10 +332,17 @@ impl Swapchain {
         Ok(swapchain)
     }
 
-    pub fn render(&mut self, image_index: usize) -> Result<vk::CommandBuffer, DeviceError> {
+    pub fn render(
+        &mut self,
+        image_index: usize,
+        window: &Window,
+        gui_context: &mut GuiContext,
+        gui_renderer: &mut GuiRenderer,
+    ) -> Result<vk::CommandBuffer, DeviceError> {
         self.update_uniform_buffer(image_index);
 
-        let command_buffer = self.update_command_buffers(image_index)?;
+        let command_buffer =
+            self.update_command_buffers(image_index, window, gui_context, gui_renderer)?;
 
         Ok(command_buffer.raw())
     }
@@ -333,6 +350,9 @@ impl Swapchain {
     fn update_command_buffers(
         &mut self,
         image_index: usize,
+        window: &Window,
+        gui_context: &mut GuiContext,
+        gui_renderer: &mut GuiRenderer,
     ) -> Result<&CommandBuffer, DeviceError> {
         let command_buffer = &self.command_buffers[image_index];
 
@@ -422,7 +442,8 @@ impl Swapchain {
             self.pipeline.raw_pipeline_layout(),
             vk::ShaderStageFlags::FRAGMENT,
             64,
-            &0.75f32.to_ne_bytes()[..],
+            // &0.75f32.to_ne_bytes()[..],
+            &1f32.to_ne_bytes()[..],
         );
 
         self.device.cmd_draw_indexed(
@@ -433,7 +454,17 @@ impl Swapchain {
             0,
             0,
         );
+
+        let draw_data = gui_context.render(window);
+        gui_renderer
+            .cmd_draw(command_buffer.raw(), draw_data)
+            .unwrap();
+
         self.render_pass.end(command_buffer);
+
+        // self.imgui_render_pass.begin(command_buffer, framebuffer);
+        //
+        // self.imgui_render_pass.end(command_buffer);
 
         self.device.end_command_buffer(command_buffer.raw())?;
         Ok(command_buffer)

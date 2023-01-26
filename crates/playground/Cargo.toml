@@ -17,3 +17,4 @@ naga = { workspace = true, features = ["glsl-in"] }
 # uncomment if needed, will keep increase memory usage
 #profiling = { workspace = true, features = ["profile-with-tracy"] }
 profiling.workspace = true
+editor.workspace = true
