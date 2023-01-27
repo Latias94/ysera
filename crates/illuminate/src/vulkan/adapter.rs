@@ -22,8 +22,8 @@ impl Adapter {
     }
 
     pub fn max_msaa_samples(&self) -> vk::SampleCountFlags {
-        // self.max_msaa_samples
-        vk::SampleCountFlags::TYPE_1
+        self.max_msaa_samples
+        // vk::SampleCountFlags::TYPE_1
     }
 
     pub fn new(raw: vk::PhysicalDevice, instance: &Instance) -> Self {
