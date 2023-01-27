@@ -60,9 +60,9 @@ impl GuiContext {
             let choices = ["test test this is 1", "test test this is 2"];
 
             ui.window("Menu")
-                .collapsed(true, Condition::FirstUseEver)
+                // .collapsed(true, Condition::FirstUseEver)
                 .position([0.0, 0.0], Condition::Always)
-                .size([350.0, 800.0], Condition::FirstUseEver)
+                .size([220.0, 250.0], Condition::FirstUseEver)
                 .focus_on_appearing(false)
                 .movable(false)
                 .bg_alpha(0.3)
@@ -116,11 +116,20 @@ fn init_imgui(window: &WinitWindow) -> (Context, WinitPlatform) {
             }),
         },
         FontSource::TtfData {
+            data: include_bytes!("../../../resources/fonts/Roboto-Regular.ttf"),
+            size_pixels: font_size,
+            config: Some(FontConfig {
+                rasterizer_multiply: 2.0,
+                glyph_ranges: FontGlyphRanges::japanese(),
+                ..FontConfig::default()
+            }),
+        },
+        FontSource::TtfData {
             data: include_bytes!("../../../resources/fonts/mplus-1p-regular.ttf"),
             size_pixels: font_size,
             config: Some(FontConfig {
                 rasterizer_multiply: 1.75,
-                glyph_ranges: FontGlyphRanges::default(),
+                glyph_ranges: FontGlyphRanges::japanese(),
                 ..FontConfig::default()
             }),
         },
