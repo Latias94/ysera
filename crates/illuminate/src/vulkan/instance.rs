@@ -175,6 +175,7 @@ impl Instance {
 }
 
 impl Instance {
+    #[allow(dead_code)]
     #[cfg(target_os = "windows")]
     fn create_surface_from_hwnd(
         &self,

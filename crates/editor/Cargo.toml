@@ -1,0 +1,16 @@
+[package]
+name = "eureka-editor"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+imgui.workspace = true
+ash = { workspace = true, default-features = false, features = ["linked", "debug"] }
+thiserror.workspace = true
+log.workspace = true
+gpu-allocator.workspace = true
+raw-window-handle.workspace = true
+winit.workspace = true
+imgui-winit-support.workspace = true
+clipboard.workspace = true

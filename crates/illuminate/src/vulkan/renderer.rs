@@ -2,7 +2,9 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use ash::vk;
+use editor::gui::GuiContext;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+use imgui::Context as ImguiContext;
 use parking_lot::Mutex;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
@@ -10,10 +12,14 @@ use winit::window::Window;
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::debug::DebugUtils;
+use crate::vulkan::descriptor_set_allocator::DescriptorSetAllocator;
+use crate::vulkan::imgui::{ImguiRenderer, ImguiRendererDescriptor};
 use crate::vulkan::model::{Model, ModelDescriptor};
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::utils;
-use crate::{AdapterRequirements, InstanceDescriptor, QueueFamilyIndices, SurfaceError};
+use crate::{
+    AdapterRequirements, InstanceDescriptor, QueueFamilyIndices, SurfaceError, MAX_FRAMES_IN_FLIGHT,
+};
 
 use super::device::Device;
 use super::instance::Instance;
@@ -41,12 +47,11 @@ pub struct VulkanRenderer {
     mip_levels: u32,
     frame: usize,
     instant: Instant,
+    imgui_renderer: ImguiRenderer,
 }
 
-const MAX_FRAMES_IN_FLIGHT: usize = 2;
-
 impl VulkanRenderer {
-    pub fn new(window: &Window) -> anyhow::Result<Self> {
+    pub fn new(window: &Window, gui_context: &mut ImguiContext) -> anyhow::Result<Self> {
         let instance_desc = InstanceDescriptor::builder()
             // .flags(crate::vulkan::instance::InstanceFlags::empty())
             // .debug_level_filter(log::LevelFilter::Info)
@@ -156,6 +161,32 @@ impl VulkanRenderer {
 
         let swapchain = Swapchain::new(&swapchain_desc)?;
 
+        let imgui_command_pool = {
+            let create_info = vk::CommandPoolCreateInfo::builder()
+                .flags(
+                    vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER
+                        | vk::CommandPoolCreateFlags::TRANSIENT,
+                )
+                .queue_family_index(indices.graphics_family.unwrap())
+                .build();
+            device.create_command_pool(&create_info)?
+        };
+        let imgui_descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(&device, 2)?);
+
+        let mut imgui_descriptor = ImguiRendererDescriptor {
+            instance: instance.clone(),
+            adapter: adapter.clone(),
+            device: device.clone(),
+            queue: graphics_queue,
+            format: swapchain.surface_format().format,
+            command_pool: imgui_command_pool,
+            render_pass: swapchain.render_pass().raw(),
+            context: gui_context,
+            descriptor_set_allocator: imgui_descriptor_set_allocator,
+        };
+
+        let imgui_renderer = ImguiRenderer::new(&mut imgui_descriptor)?;
+
         let semaphore_create_info = vk::SemaphoreCreateInfo::builder().build();
         let fence_create_info = vk::FenceCreateInfo::builder()
             .flags(vk::FenceCreateFlags::SIGNALED)
@@ -190,10 +221,11 @@ impl VulkanRenderer {
             mip_levels,
             frame: 0,
             instant,
+            imgui_renderer,
         })
     }
 
-    pub fn render(&mut self) -> anyhow::Result<()> {
+    pub fn render(&mut self, window: &Window, gui_context: &mut GuiContext) -> anyhow::Result<()> {
         if self.swapchain.is_none() {
             self.recreate_swapchain(PhysicalSize {
                 width: self.extent.width,
@@ -219,7 +251,12 @@ impl VulkanRenderer {
         };
         self.device.reset_fence(&in_flight_fences)?;
 
-        let command_buffer = swapchain.render(image_index as usize)?;
+        let command_buffer = swapchain.render(
+            image_index as usize,
+            window,
+            gui_context,
+            self.imgui_renderer.renderer_mut(),
+        )?;
 
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
 

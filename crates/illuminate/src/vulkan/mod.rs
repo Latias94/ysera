@@ -10,6 +10,7 @@ pub mod descriptor_set_layout;
 pub mod device;
 pub mod image;
 pub mod image_view;
+pub mod imgui;
 pub mod instance;
 pub mod model;
 pub mod pipeline;
