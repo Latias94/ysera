@@ -222,19 +222,24 @@ impl Swapchain {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let shader_desc = ShaderDescriptor {
-            label: Some("Triangle"),
+        let vert_shader_desc = ShaderDescriptor {
+            label: Some("Triangle Vert"),
             device,
-            vert_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
+            spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
                 "triangle_push_constant.vert",
             ),
-            vert_entry_name: "main",
-            frag_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
+            entry_name: "main",
+        };
+        let vert_shader = Shader::new_vert(&vert_shader_desc)?;
+        let frag_shader_desc = ShaderDescriptor {
+            label: Some("Triangle Frag"),
+            device,
+            spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
                 "triangle_push_constant.frag",
             ),
-            frag_entry_name: "main",
+            entry_name: "main",
         };
-        let shader = Shader::new(&shader_desc)?;
+        let frag_shader = Shader::new_frag(&frag_shader_desc)?;
 
         let vertex_buffer_desc = StagingBufferDescriptor {
             label: Some("Vertex Buffer"),
@@ -273,12 +278,13 @@ impl Swapchain {
 
         let descriptor_set_layouts = &[descriptor_set_allocator.raw_per_frame_layout()];
 
+        let shaders = &[vert_shader, frag_shader];
         let pipeline = Pipeline::new(
             device,
             render_pass.raw(),
             desc.adapter.max_msaa_samples(),
             descriptor_set_layouts,
-            shader,
+            shaders,
         )?;
 
         let command_buffers = desc

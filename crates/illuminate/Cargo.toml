@@ -36,10 +36,14 @@ naga = { workspace = true, features = ["clone"] }
 # imgui
 imgui.workspace = true
 imgui-rs-vulkan-renderer = { workspace = true, features = ["gpu-allocator"] }
+spirq.workspace = true
 editor.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_Foundation"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ash-molten.workspace = true
 
 [build-dependencies]
 naga = { workspace = true, features = ["clone", "spv-out", "wgsl-out", "glsl-in"] }

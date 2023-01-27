@@ -44,8 +44,10 @@ tobj = "3.2"
 
 # Vulkan
 ash = "0.37"
+ash-molten = "0.14"
 naga = "0.11"
 gpu-allocator = "0.21"
+spirq = "0.6"
 #vk-mem = { git = "https://github.com/gwihlidal/vk-mem-rs", version = "0.2.3" } # wait for update
 
 #glium = "0.32.1"

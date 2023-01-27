@@ -1,32 +1,34 @@
+use crate::vulkan::device::Device;
+use crate::{Label, ShaderError};
+use ash::vk;
+use math::{Vec3, Vertex3D};
+use spirq::ty::Type;
+use spirq::{EntryPoint, ReflectConfig, Variable};
 use std::borrow::Cow;
+use std::ffi::CString;
 use std::mem::size_of;
 use std::path::Path;
 use std::rc::Rc;
-
-use ash::vk;
 use typed_builder::TypedBuilder;
 
-use math::{Vec3, Vertex3D};
-
-use crate::vulkan::device::Device;
-use crate::{Label, ShaderError};
+pub enum ShaderStage {
+    S,
+}
 
 pub struct Shader {
     device: Rc<Device>,
-    vert_shader: vk::ShaderModule,
-    vert_entry_name: String,
-    frag_shader: vk::ShaderModule,
-    frag_entry_name: String,
+    shader: vk::ShaderModule,
+    entry_point: EntryPoint,
+    name: CString,
+    stage: vk::ShaderStageFlags,
 }
 
 #[derive(Clone, TypedBuilder)]
 pub struct ShaderDescriptor<'a> {
     pub label: Label<'a>,
     pub device: &'a Rc<Device>,
-    pub vert_bytes: &'a [u32],
-    pub vert_entry_name: &'a str,
-    pub frag_bytes: &'a [u32],
-    pub frag_entry_name: &'a str,
+    pub spv_bytes: &'a [u32],
+    pub entry_name: &'a str,
 }
 
 pub trait ShaderPropertyInfo {
@@ -35,34 +37,66 @@ pub trait ShaderPropertyInfo {
 }
 
 impl Shader {
-    pub fn vert_shader_module(&self) -> vk::ShaderModule {
-        self.vert_shader
+    pub fn shader_module(&self) -> vk::ShaderModule {
+        self.shader
     }
 
-    pub fn frag_shader_module(&self) -> vk::ShaderModule {
-        self.frag_shader
+    pub fn entry_name(&self) -> &str {
+        self.entry_point.name.as_str()
     }
 
-    pub fn vert_entry_name(&self) -> &str {
-        self.vert_entry_name.as_str()
+    pub fn name(&self) -> &CString {
+        &self.name
     }
 
-    pub fn frag_entry_name(&self) -> &str {
-        self.frag_entry_name.as_str()
+    pub fn stage(&self) -> vk::ShaderStageFlags {
+        self.stage
     }
 
-    pub fn new(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
-        let vert_shader = Self::create_shader_module(desc.label, desc.device, desc.vert_bytes)?;
-        let frag_shader = Self::create_shader_module(desc.label, desc.device, desc.frag_bytes)?;
+    pub fn new(desc: &ShaderDescriptor, stage: vk::ShaderStageFlags) -> Result<Self, ShaderError> {
+        let shader = Self::create_shader_module(desc.label, desc.device, desc.spv_bytes)?;
+
+        let entry_point = Self::reflect_entry_point(desc.entry_name, desc.spv_bytes);
         log::debug!("shader module created.");
-
         Ok(Self {
             device: desc.device.clone(),
-            vert_shader,
-            frag_shader,
-            vert_entry_name: desc.vert_entry_name.to_string(),
-            frag_entry_name: desc.frag_entry_name.to_string(),
+            shader,
+            entry_point,
+            stage,
+            name: CString::new(desc.entry_name).unwrap(),
         })
+    }
+
+    pub fn new_vert(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
+        Self::new(desc, vk::ShaderStageFlags::VERTEX)
+    }
+
+    pub fn new_frag(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
+        Self::new(desc, vk::ShaderStageFlags::FRAGMENT)
+    }
+
+    fn reflect_entry_point(entry_name: &str, spv: &[u32]) -> EntryPoint {
+        let entry_points = ReflectConfig::new()
+            // Load SPIR-V data into `[u32]` buffer `spv_words`.
+            .spv(spv)
+            // Set this true if you want to reflect all resources no matter it's
+            // used by an entry point or not.
+            .ref_all_rscs(true)
+            .reflect()
+            .map_err(|_| {
+                log::error!("Unable to reflect spirv");
+            })
+            .unwrap();
+        // println!("{:#?}", &entry_points);
+        let entry_point = entry_points
+            .into_iter()
+            .find(|entry_point| entry_point.name == entry_name)
+            .ok_or_else(|| {
+                log::error!("Entry point not found");
+            })
+            .unwrap();
+
+        entry_point
     }
 
     pub fn create_shader_module(
@@ -95,17 +129,40 @@ impl Shader {
         let (_prefix, bytes, _suffix) = unsafe { bytes_code.align_to::<u32>() };
         bytes.into()
     }
+
+    pub fn get_push_constant_range(&self) -> Option<vk::PushConstantRange> {
+        self.entry_point
+            .vars
+            .iter()
+            .filter_map(|var| match var {
+                Variable::PushConstant {
+                    ty: Type::Struct(ty),
+                    ..
+                } => Some(ty.members.clone()),
+                _ => None,
+            })
+            .flatten()
+            .map(|push_const| {
+                push_const.offset..push_const.offset + push_const.ty.nbyte().unwrap_or_default()
+            })
+            .reduce(|a, b| a.start.min(b.start)..a.end.max(b.end))
+            .map(|push_const| vk::PushConstantRange {
+                stage_flags: self.stage,
+                size: (push_const.end - push_const.start) as _,
+                offset: push_const.start as _,
+            })
+    }
 }
 
 impl Drop for Shader {
     fn drop(&mut self) {
-        self.device.destroy_shader_module(self.vert_shader);
-        self.device.destroy_shader_module(self.frag_shader);
+        self.device.destroy_shader_module(self.shader);
         log::debug!("shader module destroyed.");
     }
 }
 
 impl ShaderPropertyInfo for Vertex3D {
+    // todo vertex layout
     fn get_binding_descriptions() -> Vec<vk::VertexInputBindingDescription> {
         let desc = vk::VertexInputBindingDescription::builder()
             .binding(0)
@@ -115,7 +172,6 @@ impl ShaderPropertyInfo for Vertex3D {
         vec![desc]
     }
 
-    // todo: reflect shader
     fn get_attribute_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
         let pos = vk::VertexInputAttributeDescription::builder()
             .binding(0)
