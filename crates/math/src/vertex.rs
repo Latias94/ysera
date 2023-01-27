@@ -1,7 +1,8 @@
 use nalgebra_glm::{Vec2, Vec3};
 use std::hash::{Hash, Hasher};
 
-#[derive(Clone, Copy)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub struct Vertex3D {
     pub position: Vec3,
     pub color: Vec3,
