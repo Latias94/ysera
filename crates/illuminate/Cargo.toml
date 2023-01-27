@@ -42,6 +42,9 @@ editor.workspace = true
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_Foundation"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+ash-molten.workspace = true
+
 [build-dependencies]
 naga = { workspace = true, features = ["clone", "spv-out", "wgsl-out", "glsl-in"] }
 anyhow.workspace = true

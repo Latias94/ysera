@@ -44,6 +44,7 @@ tobj = "3.2"
 
 # Vulkan
 ash = "0.37"
+ash-molten = "0.14"
 naga = "0.11"
 gpu-allocator = "0.21"
 spirq = "0.6"

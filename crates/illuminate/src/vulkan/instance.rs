@@ -57,7 +57,18 @@ impl Instance {
     }
 
     pub unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, InstanceError> {
+        #[cfg(not(target_os = "macos"))]
+        let vulkan_api_version = vk::API_VERSION_1_3;
+
+        #[cfg(target_os = "macos")]
+        // https://github.com/KhronosGroup/MoltenVK/issues/1567
+        let vulkan_api_version = vk::API_VERSION_1_1;
+
+        #[cfg(not(target_os = "macos"))]
         let entry = ash::Entry::linked();
+
+        // #[cfg(target_os = "macos")]
+        // let entry = ash_molten::linked();
 
         let app_name = CString::new(desc.name).unwrap();
         let engine_name = CString::new("Eureka Engine").unwrap();
@@ -66,7 +77,7 @@ impl Instance {
             .engine_version(vk::make_api_version(0, 1, 0, 0))
             .application_name(app_name.as_c_str())
             .engine_name(engine_name.as_c_str())
-            .api_version(vk::API_VERSION_1_3);
+            .api_version(vulkan_api_version);
         let enable_validation = desc.flags.contains(InstanceFlags::VALIDATION);
         let mut required_layers = vec![];
         if enable_validation {
