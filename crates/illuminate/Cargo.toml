@@ -36,6 +36,7 @@ naga = { workspace = true, features = ["clone"] }
 # imgui
 imgui.workspace = true
 imgui-rs-vulkan-renderer = { workspace = true, features = ["gpu-allocator"] }
+spirq.workspace = true
 editor.workspace = true
 
 [target.'cfg(windows)'.dependencies]

@@ -35,15 +35,15 @@ impl Pipeline {
         render_pass: vk::RenderPass,
         msaa_samples: vk::SampleCountFlags,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
-        shader: Shader,
+        shaders: &[Shader],
     ) -> Result<Self, DeviceError> {
-        let pipeline_layout = PipelineLayout::new(device, descriptor_set_layouts)?;
+        let pipeline_layout = PipelineLayout::new(device, shaders, descriptor_set_layouts)?;
         let raw = Self::create_graphics_pipeline(
             device,
             render_pass,
             pipeline_layout.raw(),
             msaa_samples,
-            shader,
+            shaders,
         )?[0];
 
         Ok(Self {
@@ -58,26 +58,22 @@ impl Pipeline {
         render_pass: vk::RenderPass,
         pipeline_layout: vk::PipelineLayout,
         msaa_samples: vk::SampleCountFlags,
-        shader: Shader,
+        shaders: &[Shader],
     ) -> Result<Vec<vk::Pipeline>, DeviceError> {
         profiling::scope!("create_graphics_pipeline");
 
-        // the beginning function name in shader code.
-        let vert_entry_name = CString::new(shader.vert_entry_name()).unwrap();
-        let frag_entry_name = CString::new(shader.frag_entry_name()).unwrap();
+        let shader_stages = shaders
+            .iter()
+            .map(|shader| {
+                vk::PipelineShaderStageCreateInfo::builder()
+                    .module(shader.shader_module())
+                    .name(shader.name())
+                    .stage(shader.stage())
+                    .build()
+            })
+            .collect::<Vec<_>>();
 
-        let shader_stages = [
-            vk::PipelineShaderStageCreateInfo::builder()
-                .module(shader.vert_shader_module())
-                .name(&vert_entry_name)
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .build(),
-            vk::PipelineShaderStageCreateInfo::builder()
-                .module(shader.frag_shader_module())
-                .name(&frag_entry_name)
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .build(),
-        ];
+        let shader_stages = &shader_stages;
 
         let binding_descriptions = Vertex3D::get_binding_descriptions();
         let attribute_descriptions = Vertex3D::get_attribute_descriptions();
