@@ -180,7 +180,7 @@ impl VulkanRenderer {
             queue: graphics_queue,
             format: swapchain.surface_format().format,
             command_pool: imgui_command_pool,
-            render_pass: swapchain.render_pass().raw(),
+            render_pass: swapchain.imgui_render_pass().raw(),
             context: gui_context,
             descriptor_set_allocator: imgui_descriptor_set_allocator,
         };

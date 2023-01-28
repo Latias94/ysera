@@ -103,7 +103,7 @@ impl RenderPass {
             .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
             .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
             .build();
 
         // 现在必须指示渲染通道将多采样的彩色图像解析为普通附件。创建一个新的附件引用，它将指向颜色缓冲区，作为解析目标。
@@ -177,9 +177,9 @@ impl RenderPass {
         let attachment_descs = [vk::AttachmentDescription::builder()
             .format(desc.surface_format)
             .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .load_op(vk::AttachmentLoadOp::LOAD)
             .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
             .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
             .build()];
 

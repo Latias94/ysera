@@ -80,6 +80,7 @@ impl GuiContext {
                         "Mouse Position: ({:.1},{:.1})",
                         mouse_pos[0], mouse_pos[1]
                     ));
+                    ui.show_demo_window(&mut self.state.open_demo_window);
                 });
             self.state.hovered = ui.is_any_item_hovered()
                 || ui.is_window_hovered_with_flags(WindowHoveredFlags::ANY_WINDOW);
@@ -151,6 +152,7 @@ fn init_imgui(window: &WinitWindow) -> (Context, WinitPlatform) {
 pub struct GuiState {
     hovered: bool,
     value: usize,
+    open_demo_window: bool,
 }
 
 impl Default for GuiState {
@@ -158,6 +160,7 @@ impl Default for GuiState {
         Self {
             hovered: false,
             value: 0,
+            open_demo_window: true,
         }
     }
 }

@@ -27,7 +27,7 @@ use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::model::Model;
 use crate::vulkan::pipeline::Pipeline;
-use crate::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
+use crate::vulkan::render_pass::{ImguiRenderPassDescriptor, RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
 use crate::vulkan::uniform_buffer::UniformBufferObject;
@@ -40,16 +40,18 @@ pub struct Swapchain {
     instance: Rc<Instance>,
     device: Rc<Device>,
     family_index: QueueFamilyIndices,
-    textures: Vec<vk::Image>,
+    swapchain_images: Vec<vk::Image>,
     image_views: Vec<ImageView>,
     surface_format: vk::SurfaceFormatKHR,
     depth_format: vk::Format,
     extent: vk::Extent2D,
     capabilities: vk::SurfaceCapabilitiesKHR,
     render_pass: RenderPass,
+    imgui_render_pass: RenderPass,
     pipeline: Pipeline,
     command_buffers: Vec<CommandBuffer>,
     framebuffers: Vec<vk::Framebuffer>,
+    imgui_framebuffers: Vec<vk::Framebuffer>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
     command_buffer_allocator: Rc<CommandBufferAllocator>,
@@ -128,6 +130,10 @@ impl Swapchain {
         &self.render_pass
     }
 
+    pub fn imgui_render_pass(&self) -> &RenderPass {
+        &self.imgui_render_pass
+    }
+
     pub fn pipeline(&self) -> &Pipeline {
         &self.pipeline
     }
@@ -151,13 +157,13 @@ impl Swapchain {
             )?;
         let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
-        let swapchain_textures = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
+        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
 
         let mut capabilities = support.capabilities;
 
         capabilities.current_extent.width = capabilities.current_extent.width.max(1);
         capabilities.current_extent.height = capabilities.current_extent.height.max(1);
-        let image_views = swapchain_textures
+        let swapchain_image_views = swapchain_images
             .iter()
             .map(|i| {
                 ImageView::new_color_image_view(
@@ -195,7 +201,7 @@ impl Swapchain {
 
         let render_pass_desc = RenderPassDescriptor {
             device,
-            surface_format: properties.surface_format.format,
+            surface_format: color_format,
             depth_format,
             render_area: rect2d,
             clear_color,
@@ -205,7 +211,7 @@ impl Swapchain {
         };
         let render_pass = RenderPass::new(&render_pass_desc)?;
 
-        let framebuffers = image_views
+        let framebuffers = swapchain_image_views
             .iter()
             .map(|i| {
                 let image_view = i.raw();
@@ -217,6 +223,26 @@ impl Swapchain {
                     ])
                     .swapchain_extent(extent)
                     .render_pass(render_pass.raw())
+                    .build();
+                Self::create_framebuffer(device, &map, framebuffer_desc)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let imgui_render_pass_desc = ImguiRenderPassDescriptor {
+            device,
+            surface_format: properties.surface_format.format,
+            render_area: rect2d,
+        };
+        let imgui_render_pass = RenderPass::new_imgui_render_pass(&imgui_render_pass_desc)?;
+
+        let imgui_framebuffers = swapchain_image_views
+            .iter()
+            .map(|i| {
+                let image_view = i.raw();
+                let framebuffer_desc = FramebufferDescriptor::builder()
+                    .texture_views(vec![image_view])
+                    .swapchain_extent(extent)
+                    .render_pass(imgui_render_pass.raw())
                     .build();
                 Self::create_framebuffer(device, &map, framebuffer_desc)
             })
@@ -269,7 +295,7 @@ impl Swapchain {
             buffer_type: BufferType::Uniform,
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
-        let uniform_buffers = image_views
+        let uniform_buffers = swapchain_image_views
             .iter()
             .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
             .collect::<Result<Vec<_>, _>>()?;
@@ -289,7 +315,7 @@ impl Swapchain {
 
         let command_buffers = desc
             .command_buffer_allocator
-            .allocate_command_buffers(true, image_views.len() as u32)?;
+            .allocate_command_buffers(true, swapchain_image_views.len() as u32)?;
 
         let model_texture = desc.model.texture();
         let descriptor_sets_create_info = PerFrameDescriptorSetsCreateInfo {
@@ -308,14 +334,16 @@ impl Swapchain {
             instance: desc.instance.clone(),
             device: desc.device.clone(),
             family_index: desc.queue_family,
-            textures: swapchain_textures,
+            swapchain_images,
             surface_format: properties.surface_format,
             depth_format,
             extent: properties.extent,
             capabilities,
-            image_views,
+            image_views: swapchain_image_views,
             framebuffers,
             render_pass,
+            imgui_framebuffers,
+            imgui_render_pass,
             pipeline,
             command_buffers,
             graphics_queue: desc.graphics_queue,
@@ -461,16 +489,17 @@ impl Swapchain {
             0,
         );
 
+        self.render_pass.end(command_buffer);
+
+        self.imgui_render_pass
+            .begin(command_buffer, self.imgui_framebuffers[image_index]);
+
         let draw_data = gui_context.render(window);
         gui_renderer
             .cmd_draw(command_buffer.raw(), draw_data)
             .unwrap();
 
-        self.render_pass.end(command_buffer);
-
-        // self.imgui_render_pass.begin(command_buffer, framebuffer);
-        //
-        // self.imgui_render_pass.end(command_buffer);
+        self.imgui_render_pass.end(command_buffer);
 
         self.device.end_command_buffer(command_buffer.raw())?;
         Ok(command_buffer)
