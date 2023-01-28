@@ -24,6 +24,7 @@ use crate::vulkan::device::Device;
 use crate::vulkan::image::{DepthImageDescriptor, Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
 
+use crate::gui::GuiState;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::model::Model;
 use crate::vulkan::pipeline::Pipeline;
@@ -145,16 +146,7 @@ impl Swapchain {
     pub fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
         let device = desc.device;
         let (swapchain_loader, swapchain, properties, support, image_count) =
-            Self::create_swapchain(
-                &desc.adapter,
-                desc.surface,
-                &desc.instance,
-                device,
-                &desc.queue_family,
-                desc.dimensions,
-                desc.old_swapchain,
-                desc.max_frame_in_flight,
-            )?;
+            Self::create_swapchain(&desc)?;
         let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
         let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
@@ -372,11 +364,19 @@ impl Swapchain {
         window: &Window,
         gui_context: &mut GuiContext,
         gui_renderer: &mut GuiRenderer,
+        ui_state: &mut GuiState,
+        ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
     ) -> Result<vk::CommandBuffer, DeviceError> {
-        self.update_uniform_buffer(image_index);
+        self.update_uniform_buffer(image_index, ui_state);
 
-        let command_buffer =
-            self.update_command_buffers(image_index, window, gui_context, gui_renderer)?;
+        let command_buffer = self.update_command_buffers(
+            image_index,
+            window,
+            gui_context,
+            gui_renderer,
+            ui_state,
+            ui_func,
+        )?;
 
         Ok(command_buffer.raw())
     }
@@ -387,6 +387,8 @@ impl Swapchain {
         window: &Window,
         gui_context: &mut GuiContext,
         gui_renderer: &mut GuiRenderer,
+        ui_state: &mut GuiState,
+        ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
     ) -> Result<&CommandBuffer, DeviceError> {
         let command_buffer = &self.command_buffers[image_index];
 
@@ -412,8 +414,8 @@ impl Swapchain {
 
         // 改为左手坐标系 NDC
         let viewport_rect2d = Rect2D {
-            x: 0.0,
-            y: self.extent.height as f32,
+            x: 0f32 + ui_state.viewport_xy.x,
+            y: self.extent.height as f32 - ui_state.viewport_xy.y,
             width: self.extent.width as f32,
             height: -(self.extent.height as f32),
         };
@@ -458,9 +460,11 @@ impl Swapchain {
         let time = self.instant.elapsed().as_secs_f32();
         let model = math::rotate(
             &math::identity(),
-            time * math::radians(&math::vec1(90.0))[0],
+            // time *  math::radians(&math::vec1(90.0))[0],
+            math::radians(&math::vec1(ui_state.value))[0],
             &vec3(0.0, 0.0, 1.0),
         );
+
         let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
 
         self.device.cmd_push_constants(
@@ -477,7 +481,8 @@ impl Swapchain {
             vk::ShaderStageFlags::FRAGMENT,
             64,
             // &0.75f32.to_ne_bytes()[..],
-            &1f32.to_ne_bytes()[..],
+            // &1f32.to_ne_bytes()[..],
+            &ui_state.opacity.to_ne_bytes()[..],
         );
 
         self.device.cmd_draw_indexed(
@@ -494,7 +499,7 @@ impl Swapchain {
         self.imgui_render_pass
             .begin(command_buffer, self.imgui_framebuffers[image_index]);
 
-        let draw_data = gui_context.render(window);
+        let draw_data = gui_context.render(window, ui_state, ui_func);
         gui_renderer
             .cmd_draw(command_buffer.raw(), draw_data)
             .unwrap();
@@ -505,7 +510,7 @@ impl Swapchain {
         Ok(command_buffer)
     }
 
-    fn update_uniform_buffer(&mut self, image_index: usize) {
+    fn update_uniform_buffer(&mut self, image_index: usize, ui_state: &GuiState) {
         let view = math::look_at(
             &vec3(2.0, 2.0, 2.0),
             &vec3(0.0, 0.0, 0.0),
@@ -513,7 +518,8 @@ impl Swapchain {
         );
         let projection = math::perspective_rh_zo(
             self.extent.width as f32 / self.extent.height as f32,
-            math::radians(&math::vec1(45.0))[0],
+            // math::radians(&math::vec1(45.0))[0],
+            math::radians(&math::vec1(ui_state.fovy))[0],
             0.1,
             10.0,
         );
@@ -530,14 +536,7 @@ impl Swapchain {
     }
 
     fn create_swapchain(
-        adapter: &Adapter,
-        surface: &Surface,
-        instance: &Instance,
-        device: &Device,
-        queue_family: &QueueFamilyIndices,
-        dimensions: [u32; 2],
-        old_swapchain: Option<vk::SwapchainKHR>,
-        max_frame_in_flight: u32,
+        desc: &SwapchainDescriptor,
     ) -> Result<
         (
             khr::Swapchain,
@@ -550,9 +549,14 @@ impl Swapchain {
     > {
         profiling::scope!("create_swapchain");
 
-        let swapchain_support =
-            unsafe { SwapChainSupportDetail::new(adapter.raw(), surface.loader(), surface.raw()) }?;
-        let properties = swapchain_support.get_ideal_swapchain_properties(dimensions);
+        let swapchain_support = unsafe {
+            SwapChainSupportDetail::new(
+                desc.adapter.raw(),
+                desc.surface.loader(),
+                desc.surface.raw(),
+            )
+        }?;
+        let properties = swapchain_support.get_ideal_swapchain_properties(desc.dimensions);
         let SwapchainProperties {
             surface_format,
             present_mode,
@@ -560,7 +564,7 @@ impl Swapchain {
         } = properties;
 
         let mut image_count = swapchain_support.capabilities.min_image_count + 1;
-        image_count = image_count.max(max_frame_in_flight);
+        image_count = image_count.max(desc.max_frame_in_flight);
         image_count = if swapchain_support.capabilities.max_image_count > 0 {
             image_count.min(swapchain_support.capabilities.max_image_count)
         } else {
@@ -568,14 +572,14 @@ impl Swapchain {
         };
 
         let (image_sharing_mode, queue_family_indices) =
-            if queue_family.graphics_family != queue_family.present_family {
+            if desc.queue_family.graphics_family != desc.queue_family.present_family {
                 (
                     // 图像可以在多个队列族间使用，不需要显式地改变图像所有权。
                     // 如果图形和呈现不是同一个队列族，我们使用协同模式来避免处理图像所有权问题。
                     vk::SharingMode::CONCURRENT,
                     vec![
-                        queue_family.graphics_family.unwrap(),
-                        queue_family.present_family.unwrap(),
+                        desc.queue_family.graphics_family.unwrap(),
+                        desc.queue_family.present_family.unwrap(),
                     ],
                 )
             } else {
@@ -584,13 +588,13 @@ impl Swapchain {
                 (vk::SharingMode::EXCLUSIVE, vec![])
             };
 
-        let old_swapchain = match old_swapchain {
+        let old_swapchain = match desc.old_swapchain {
             None => vk::SwapchainKHR::null(),
             Some(swapchain) => swapchain,
         };
 
         let create_info = vk::SwapchainCreateInfoKHR::builder()
-            .surface(surface.raw())
+            .surface(desc.surface.raw())
             .min_image_count(image_count)
             .image_color_space(surface_format.color_space)
             .image_format(surface_format.format)
@@ -612,7 +616,7 @@ impl Swapchain {
             .image_array_layers(1)
             .old_swapchain(old_swapchain);
 
-        let swapchain_loader = khr::Swapchain::new(instance.raw(), device.raw());
+        let swapchain_loader = khr::Swapchain::new(desc.instance.raw(), desc.device.raw());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
         log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 

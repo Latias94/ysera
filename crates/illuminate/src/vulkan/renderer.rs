@@ -5,10 +5,12 @@ use ash::vk;
 use eureka_imgui::gui::GuiContext;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use imgui::Context as ImguiContext;
+use math::vec2;
 use parking_lot::Mutex;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use crate::gui::GuiState;
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::debug::DebugUtils;
@@ -48,6 +50,7 @@ pub struct VulkanRenderer {
     frame: usize,
     instant: Instant,
     imgui_renderer: ImguiRenderer,
+    gui_state: GuiState,
 }
 
 impl VulkanRenderer {
@@ -222,6 +225,7 @@ impl VulkanRenderer {
             frame: 0,
             instant,
             imgui_renderer,
+            gui_state: GuiState::new(vec2(inner_size.width as f32, inner_size.height as f32)),
         })
     }
 
@@ -256,6 +260,8 @@ impl VulkanRenderer {
             window,
             gui_context,
             self.imgui_renderer.renderer_mut(),
+            &mut self.gui_state,
+            crate::gui::draw_imgui,
         )?;
 
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
