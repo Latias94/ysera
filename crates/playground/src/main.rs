@@ -1,7 +1,8 @@
 use std::time::Instant;
 
-use editor::controls::InputState;
-use editor::gui::{GuiContext, GuiContextDescriptor};
+use eureka_imgui::controls::InputState;
+use eureka_imgui::gui::{GuiContext, GuiContextDescriptor};
+use eureka_imgui::imgui;
 use illuminate::vulkan::renderer::VulkanRenderer;
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
@@ -38,6 +39,7 @@ impl State {
             window,
             hidpi_factor: window.scale_factor(),
         };
+
         let mut gui_context = GuiContext::new(&editor_context_desc);
         let renderer = VulkanRenderer::new(window, gui_context.get_context()).unwrap();
         Self {

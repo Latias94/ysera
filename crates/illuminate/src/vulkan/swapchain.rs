@@ -4,7 +4,7 @@ use std::time::Instant;
 use ash::extensions::khr;
 use ash::vk;
 
-use editor::gui::GuiContext;
+use eureka_imgui::gui::GuiContext;
 use gpu_allocator::vulkan::Allocator;
 use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
 use math::prelude::*;

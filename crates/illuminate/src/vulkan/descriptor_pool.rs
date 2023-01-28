@@ -6,7 +6,7 @@ use typed_builder::TypedBuilder;
 use crate::vulkan::device::Device;
 use crate::DeviceError;
 
-const MAX_DESCRIPTOR_SET_COUNT: u32 = 40960;
+const MAX_DESCRIPTOR_SET_COUNT: u32 = 1000;
 
 #[derive(Clone, TypedBuilder)]
 pub struct DescriptorPoolCreateInfo<'a> {

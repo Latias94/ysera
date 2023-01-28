@@ -513,7 +513,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "eureka-editor"
+name = "eureka-imgui"
 version = "0.1.0"
 dependencies = [
  "ash",
@@ -772,7 +772,7 @@ dependencies = [
  "ash",
  "ash-molten",
  "bitflags",
- "eureka-editor",
+ "eureka-imgui",
  "eureka-math",
  "fs_extra",
  "fxhash",
@@ -1469,7 +1469,7 @@ name = "playground"
 version = "0.1.0"
 dependencies = [
  "env_logger",
- "eureka-editor",
+ "eureka-imgui",
  "fxhash",
  "illuminate",
  "log",

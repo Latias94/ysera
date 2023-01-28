@@ -237,6 +237,7 @@ impl RenderPass {
         );
         self.state = InRenderPass;
     }
+
     pub fn end(&mut self, command_buffer: &CommandBuffer) {
         self.device.cmd_end_render_pass(command_buffer.raw());
         self.state = Recording;

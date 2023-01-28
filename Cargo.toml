@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "crates/illuminate",
     "crates/math",
-    "crates/editor",
+    "crates/imgui",
     "crates/playground",
 ]
 
@@ -13,7 +13,7 @@ rust-version = "1.65"
 
 [workspace.dependencies]
 math = { package = "eureka-math", path = "crates/math" }
-editor = { package = "eureka-editor", path = "crates/editor" }
+eureka-imgui = { path = "crates/imgui" }
 image = "0.24"
 profiling = "=1.0.7"
 serde = "1"

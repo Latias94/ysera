@@ -53,7 +53,6 @@ impl GuiContext {
 
     pub fn render(&mut self, window: &WinitWindow) -> &DrawData {
         let ui = self.context.frame();
-
         {
             let ui = &ui;
 

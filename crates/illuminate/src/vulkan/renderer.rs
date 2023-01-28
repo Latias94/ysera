@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use ash::vk;
-use editor::gui::GuiContext;
+use eureka_imgui::gui::GuiContext;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use imgui::Context as ImguiContext;
 use parking_lot::Mutex;
