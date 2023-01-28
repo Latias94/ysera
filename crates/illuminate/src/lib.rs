@@ -14,6 +14,7 @@ pub use error::*;
 use crate::vulkan::instance::InstanceFlags;
 
 mod error;
+mod gui;
 pub mod vulkan;
 
 pub use ash;

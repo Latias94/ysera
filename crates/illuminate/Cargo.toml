@@ -12,8 +12,10 @@ default = ["vulkan"]
 vulkan = ["naga/spv-out", "ash"]
 
 [dependencies]
-ash = { workspace = true, default-features = false, features = ["linked", "debug"], optional = true }
 math.workspace = true
+eureka-imgui.workspace = true
+
+ash = { workspace = true, default-features = false, features = ["linked", "debug"], optional = true }
 raw-window-handle.workspace = true
 log.workspace = true
 num.workspace = true
@@ -37,7 +39,6 @@ naga = { workspace = true, features = ["clone"] }
 imgui.workspace = true
 imgui-rs-vulkan-renderer = { workspace = true, features = ["gpu-allocator"] }
 spirq.workspace = true
-editor.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_System_LibraryLoader", "Win32_Foundation"] }

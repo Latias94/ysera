@@ -4,7 +4,7 @@ use std::time::Instant;
 use ash::extensions::khr;
 use ash::vk;
 
-use editor::gui::GuiContext;
+use eureka_imgui::gui::GuiContext;
 use gpu_allocator::vulkan::Allocator;
 use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
 use math::prelude::*;
@@ -24,10 +24,11 @@ use crate::vulkan::device::Device;
 use crate::vulkan::image::{DepthImageDescriptor, Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
 
+use crate::gui::GuiState;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::model::Model;
 use crate::vulkan::pipeline::Pipeline;
-use crate::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
+use crate::vulkan::render_pass::{ImguiRenderPassDescriptor, RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
 use crate::vulkan::uniform_buffer::UniformBufferObject;
@@ -40,16 +41,18 @@ pub struct Swapchain {
     instance: Rc<Instance>,
     device: Rc<Device>,
     family_index: QueueFamilyIndices,
-    textures: Vec<vk::Image>,
+    swapchain_images: Vec<vk::Image>,
     image_views: Vec<ImageView>,
     surface_format: vk::SurfaceFormatKHR,
     depth_format: vk::Format,
     extent: vk::Extent2D,
     capabilities: vk::SurfaceCapabilitiesKHR,
     render_pass: RenderPass,
+    imgui_render_pass: RenderPass,
     pipeline: Pipeline,
     command_buffers: Vec<CommandBuffer>,
     framebuffers: Vec<vk::Framebuffer>,
+    imgui_framebuffers: Vec<vk::Framebuffer>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
     command_buffer_allocator: Rc<CommandBufferAllocator>,
@@ -128,6 +131,10 @@ impl Swapchain {
         &self.render_pass
     }
 
+    pub fn imgui_render_pass(&self) -> &RenderPass {
+        &self.imgui_render_pass
+    }
+
     pub fn pipeline(&self) -> &Pipeline {
         &self.pipeline
     }
@@ -139,25 +146,16 @@ impl Swapchain {
     pub fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
         let device = desc.device;
         let (swapchain_loader, swapchain, properties, support, image_count) =
-            Self::create_swapchain(
-                &desc.adapter,
-                desc.surface,
-                &desc.instance,
-                device,
-                &desc.queue_family,
-                desc.dimensions,
-                desc.old_swapchain,
-                desc.max_frame_in_flight,
-            )?;
+            Self::create_swapchain(&desc)?;
         let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
-        let swapchain_textures = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
+        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
 
         let mut capabilities = support.capabilities;
 
         capabilities.current_extent.width = capabilities.current_extent.width.max(1);
         capabilities.current_extent.height = capabilities.current_extent.height.max(1);
-        let image_views = swapchain_textures
+        let swapchain_image_views = swapchain_images
             .iter()
             .map(|i| {
                 ImageView::new_color_image_view(
@@ -195,7 +193,7 @@ impl Swapchain {
 
         let render_pass_desc = RenderPassDescriptor {
             device,
-            surface_format: properties.surface_format.format,
+            surface_format: color_format,
             depth_format,
             render_area: rect2d,
             clear_color,
@@ -205,7 +203,7 @@ impl Swapchain {
         };
         let render_pass = RenderPass::new(&render_pass_desc)?;
 
-        let framebuffers = image_views
+        let framebuffers = swapchain_image_views
             .iter()
             .map(|i| {
                 let image_view = i.raw();
@@ -217,6 +215,26 @@ impl Swapchain {
                     ])
                     .swapchain_extent(extent)
                     .render_pass(render_pass.raw())
+                    .build();
+                Self::create_framebuffer(device, &map, framebuffer_desc)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let imgui_render_pass_desc = ImguiRenderPassDescriptor {
+            device,
+            surface_format: properties.surface_format.format,
+            render_area: rect2d,
+        };
+        let imgui_render_pass = RenderPass::new_imgui_render_pass(&imgui_render_pass_desc)?;
+
+        let imgui_framebuffers = swapchain_image_views
+            .iter()
+            .map(|i| {
+                let image_view = i.raw();
+                let framebuffer_desc = FramebufferDescriptor::builder()
+                    .texture_views(vec![image_view])
+                    .swapchain_extent(extent)
+                    .render_pass(imgui_render_pass.raw())
                     .build();
                 Self::create_framebuffer(device, &map, framebuffer_desc)
             })
@@ -269,7 +287,7 @@ impl Swapchain {
             buffer_type: BufferType::Uniform,
             command_buffer_allocator: &desc.command_buffer_allocator,
         };
-        let uniform_buffers = image_views
+        let uniform_buffers = swapchain_image_views
             .iter()
             .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
             .collect::<Result<Vec<_>, _>>()?;
@@ -289,7 +307,7 @@ impl Swapchain {
 
         let command_buffers = desc
             .command_buffer_allocator
-            .allocate_command_buffers(true, image_views.len() as u32)?;
+            .allocate_command_buffers(true, swapchain_image_views.len() as u32)?;
 
         let model_texture = desc.model.texture();
         let descriptor_sets_create_info = PerFrameDescriptorSetsCreateInfo {
@@ -308,14 +326,16 @@ impl Swapchain {
             instance: desc.instance.clone(),
             device: desc.device.clone(),
             family_index: desc.queue_family,
-            textures: swapchain_textures,
+            swapchain_images,
             surface_format: properties.surface_format,
             depth_format,
             extent: properties.extent,
             capabilities,
-            image_views,
+            image_views: swapchain_image_views,
             framebuffers,
             render_pass,
+            imgui_framebuffers,
+            imgui_render_pass,
             pipeline,
             command_buffers,
             graphics_queue: desc.graphics_queue,
@@ -344,11 +364,19 @@ impl Swapchain {
         window: &Window,
         gui_context: &mut GuiContext,
         gui_renderer: &mut GuiRenderer,
+        ui_state: &mut GuiState,
+        ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
     ) -> Result<vk::CommandBuffer, DeviceError> {
-        self.update_uniform_buffer(image_index);
+        self.update_uniform_buffer(image_index, ui_state);
 
-        let command_buffer =
-            self.update_command_buffers(image_index, window, gui_context, gui_renderer)?;
+        let command_buffer = self.update_command_buffers(
+            image_index,
+            window,
+            gui_context,
+            gui_renderer,
+            ui_state,
+            ui_func,
+        )?;
 
         Ok(command_buffer.raw())
     }
@@ -359,6 +387,8 @@ impl Swapchain {
         window: &Window,
         gui_context: &mut GuiContext,
         gui_renderer: &mut GuiRenderer,
+        ui_state: &mut GuiState,
+        ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
     ) -> Result<&CommandBuffer, DeviceError> {
         let command_buffer = &self.command_buffers[image_index];
 
@@ -384,8 +414,8 @@ impl Swapchain {
 
         // 改为左手坐标系 NDC
         let viewport_rect2d = Rect2D {
-            x: 0.0,
-            y: self.extent.height as f32,
+            x: 0f32 + ui_state.viewport_xy.x,
+            y: self.extent.height as f32 - ui_state.viewport_xy.y,
             width: self.extent.width as f32,
             height: -(self.extent.height as f32),
         };
@@ -430,9 +460,11 @@ impl Swapchain {
         let time = self.instant.elapsed().as_secs_f32();
         let model = math::rotate(
             &math::identity(),
-            time * math::radians(&math::vec1(90.0))[0],
+            // time *  math::radians(&math::vec1(90.0))[0],
+            math::radians(&math::vec1(ui_state.value))[0],
             &vec3(0.0, 0.0, 1.0),
         );
+
         let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
 
         self.device.cmd_push_constants(
@@ -449,7 +481,8 @@ impl Swapchain {
             vk::ShaderStageFlags::FRAGMENT,
             64,
             // &0.75f32.to_ne_bytes()[..],
-            &1f32.to_ne_bytes()[..],
+            // &1f32.to_ne_bytes()[..],
+            &ui_state.opacity.to_ne_bytes()[..],
         );
 
         self.device.cmd_draw_indexed(
@@ -461,22 +494,23 @@ impl Swapchain {
             0,
         );
 
-        let draw_data = gui_context.render(window);
+        self.render_pass.end(command_buffer);
+
+        self.imgui_render_pass
+            .begin(command_buffer, self.imgui_framebuffers[image_index]);
+
+        let draw_data = gui_context.render(window, ui_state, ui_func);
         gui_renderer
             .cmd_draw(command_buffer.raw(), draw_data)
             .unwrap();
 
-        self.render_pass.end(command_buffer);
-
-        // self.imgui_render_pass.begin(command_buffer, framebuffer);
-        //
-        // self.imgui_render_pass.end(command_buffer);
+        self.imgui_render_pass.end(command_buffer);
 
         self.device.end_command_buffer(command_buffer.raw())?;
         Ok(command_buffer)
     }
 
-    fn update_uniform_buffer(&mut self, image_index: usize) {
+    fn update_uniform_buffer(&mut self, image_index: usize, ui_state: &GuiState) {
         let view = math::look_at(
             &vec3(2.0, 2.0, 2.0),
             &vec3(0.0, 0.0, 0.0),
@@ -484,7 +518,8 @@ impl Swapchain {
         );
         let projection = math::perspective_rh_zo(
             self.extent.width as f32 / self.extent.height as f32,
-            math::radians(&math::vec1(45.0))[0],
+            // math::radians(&math::vec1(45.0))[0],
+            math::radians(&math::vec1(ui_state.fovy))[0],
             0.1,
             10.0,
         );
@@ -501,14 +536,7 @@ impl Swapchain {
     }
 
     fn create_swapchain(
-        adapter: &Adapter,
-        surface: &Surface,
-        instance: &Instance,
-        device: &Device,
-        queue_family: &QueueFamilyIndices,
-        dimensions: [u32; 2],
-        old_swapchain: Option<vk::SwapchainKHR>,
-        max_frame_in_flight: u32,
+        desc: &SwapchainDescriptor,
     ) -> Result<
         (
             khr::Swapchain,
@@ -521,9 +549,14 @@ impl Swapchain {
     > {
         profiling::scope!("create_swapchain");
 
-        let swapchain_support =
-            unsafe { SwapChainSupportDetail::new(adapter.raw(), surface.loader(), surface.raw()) }?;
-        let properties = swapchain_support.get_ideal_swapchain_properties(dimensions);
+        let swapchain_support = unsafe {
+            SwapChainSupportDetail::new(
+                desc.adapter.raw(),
+                desc.surface.loader(),
+                desc.surface.raw(),
+            )
+        }?;
+        let properties = swapchain_support.get_ideal_swapchain_properties(desc.dimensions);
         let SwapchainProperties {
             surface_format,
             present_mode,
@@ -531,7 +564,7 @@ impl Swapchain {
         } = properties;
 
         let mut image_count = swapchain_support.capabilities.min_image_count + 1;
-        image_count = image_count.max(max_frame_in_flight);
+        image_count = image_count.max(desc.max_frame_in_flight);
         image_count = if swapchain_support.capabilities.max_image_count > 0 {
             image_count.min(swapchain_support.capabilities.max_image_count)
         } else {
@@ -539,14 +572,14 @@ impl Swapchain {
         };
 
         let (image_sharing_mode, queue_family_indices) =
-            if queue_family.graphics_family != queue_family.present_family {
+            if desc.queue_family.graphics_family != desc.queue_family.present_family {
                 (
                     // 图像可以在多个队列族间使用，不需要显式地改变图像所有权。
                     // 如果图形和呈现不是同一个队列族，我们使用协同模式来避免处理图像所有权问题。
                     vk::SharingMode::CONCURRENT,
                     vec![
-                        queue_family.graphics_family.unwrap(),
-                        queue_family.present_family.unwrap(),
+                        desc.queue_family.graphics_family.unwrap(),
+                        desc.queue_family.present_family.unwrap(),
                     ],
                 )
             } else {
@@ -555,13 +588,13 @@ impl Swapchain {
                 (vk::SharingMode::EXCLUSIVE, vec![])
             };
 
-        let old_swapchain = match old_swapchain {
+        let old_swapchain = match desc.old_swapchain {
             None => vk::SwapchainKHR::null(),
             Some(swapchain) => swapchain,
         };
 
         let create_info = vk::SwapchainCreateInfoKHR::builder()
-            .surface(surface.raw())
+            .surface(desc.surface.raw())
             .min_image_count(image_count)
             .image_color_space(surface_format.color_space)
             .image_format(surface_format.format)
@@ -583,7 +616,7 @@ impl Swapchain {
             .image_array_layers(1)
             .old_swapchain(old_swapchain);
 
-        let swapchain_loader = khr::Swapchain::new(instance.raw(), device.raw());
+        let swapchain_loader = khr::Swapchain::new(desc.instance.raw(), desc.device.raw());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
         log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 
