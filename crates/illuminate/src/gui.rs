@@ -31,7 +31,7 @@ pub fn draw_imgui(state: &mut GuiState, ui: &mut imgui::Ui) {
     ui.window("Menu")
         // .collapsed(true, Condition::FirstUseEver)
         .position([0.0, 0.0], imgui::Condition::FirstUseEver)
-        .size([220.0, 250.0], imgui::Condition::FirstUseEver)
+        .size([220.0, 220.0], imgui::Condition::FirstUseEver)
         .focus_on_appearing(false)
         .bg_alpha(0.9f32)
         // .movable(false)

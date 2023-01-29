@@ -44,7 +44,7 @@ impl Model {
     }
 
     pub fn load_obj(desc: &ModelDescriptor) -> anyhow::Result<Self> {
-        let format = vk::Format::R8G8B8A8_SRGB;
+        let format = vk::Format::R8G8B8A8_UNORM;
 
         let mut texture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         texture_path.push(format!("../../resources/textures/{}.png", desc.file_name));

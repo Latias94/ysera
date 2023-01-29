@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-imgui.workspace = true
+imgui = { workspace = true, features = ["docking"] }
 ash = { workspace = true, default-features = false, features = ["linked", "debug"] }
 thiserror.workspace = true
 log.workspace = true

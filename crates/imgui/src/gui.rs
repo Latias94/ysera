@@ -1,11 +1,12 @@
-use crate::support;
-use imgui::{
-    Condition, Context, DrawData, FontConfig, FontGlyphRanges, FontSource, WindowHoveredFlags,
-};
-use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::time::Instant;
+
+use imgui::{Context, DrawData, FontConfig, FontGlyphRanges, FontSource};
+use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use winit::event::Event;
 use winit::window::Window as WinitWindow;
+
+use crate::support;
+use crate::theme::{set_theme, GuiTheme};
 
 pub struct GuiContext {
     context: Context,
@@ -16,11 +17,16 @@ pub struct GuiContext {
 pub struct GuiContextDescriptor<'a> {
     pub window: &'a WinitWindow,
     pub hidpi_factor: f64,
+    pub theme: GuiTheme,
 }
 
 impl GuiContext {
     pub fn new(desc: &GuiContextDescriptor) -> Self {
-        let (context, winit_platform) = init_imgui(desc.window);
+        let (mut context, winit_platform) = init_imgui(desc.window);
+
+        let style = context.style_mut();
+        set_theme(desc.theme, style);
+        context.io_mut().config_flags |= imgui::ConfigFlags::DOCKING_ENABLE;
 
         Self {
             context,
