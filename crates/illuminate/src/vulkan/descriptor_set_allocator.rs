@@ -44,13 +44,13 @@ impl DescriptorSetAllocator {
     }
 
     pub fn new(device: &Rc<Device>, swapchain_image_count: u32) -> Result<Self, DeviceError> {
-        let pool_create_info = DescriptorPoolCreateInfo {
+        let per_frame_pool_create_info = DescriptorPoolCreateInfo {
             ty: vk::DescriptorType::UNIFORM_BUFFER,
             descriptor_count: swapchain_image_count,
             device,
             max_sets: swapchain_image_count,
         };
-        let per_frame_pool = DescriptorPool::new(pool_create_info)?;
+        let per_frame_pool = DescriptorPool::new(per_frame_pool_create_info)?;
 
         let texture_pool = DescriptorPool::create_texture_descriptor_pool(device)?;
 
@@ -84,9 +84,9 @@ impl DescriptorSetAllocator {
 
         let texture_pool_ubo_binding = DescriptorSetLayoutBinding {
             binding: 0,
-            descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+            descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
             descriptor_count: 1,
-            shader_stage_flags: vk::ShaderStageFlags::VERTEX,
+            shader_stage_flags: vk::ShaderStageFlags::FRAGMENT,
         };
         let texture_layout_desc = DescriptorSetLayoutCreateInfo {
             device,
@@ -174,7 +174,8 @@ impl DescriptorSetAllocator {
 
     pub fn allocate_texture_descriptor_set(
         &self,
-        texture: VulkanTexture,
+        texture: &VulkanTexture,
+        image_layout: vk::ImageLayout,
     ) -> Result<vk::DescriptorSet, DeviceError> {
         let descriptor_set = {
             let layouts = [self.texture_layout.raw()];
@@ -186,7 +187,8 @@ impl DescriptorSetAllocator {
         };
 
         let image_info = vk::DescriptorImageInfo::builder()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_layout(image_layout)
+            .sampler(texture.raw_sampler())
             .image_view(texture.raw_image_view())
             .build();
 
@@ -196,29 +198,11 @@ impl DescriptorSetAllocator {
             .dst_set(descriptor_set)
             .dst_binding(0)
             .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(image_infos)
             .build();
-
-        let sampler_info = vk::DescriptorImageInfo::builder()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .sampler(texture.raw_sampler())
-            .build();
-
-        let sampler_infos = &[sampler_info];
-        let sampler_write = vk::WriteDescriptorSet::builder()
-            .dst_set(descriptor_set)
-            .dst_binding(1)
-            .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::SAMPLER)
-            .image_info(sampler_infos)
-            .build();
-        self.device.update_descriptor_sets(
-            &[image_write, sampler_write],
-            &[] as &[vk::CopyDescriptorSet],
-        );
         self.device
-            .update_descriptor_sets(&[image_write, sampler_write], &[]);
+            .update_descriptor_sets(&[image_write], &[]);
         Ok(descriptor_set)
     }
 

@@ -1,15 +1,16 @@
 use std::time::Instant;
 
-use eureka_imgui::controls::InputState;
-use eureka_imgui::gui::{GuiContext, GuiContextDescriptor};
-use eureka_imgui::imgui;
-use illuminate::vulkan::renderer::VulkanRenderer;
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
+
+use eureka_imgui::controls::InputState;
+use eureka_imgui::gui::{GuiContext, GuiContextDescriptor};
+use eureka_imgui::GuiTheme;
+use illuminate::vulkan::renderer::VulkanRenderer;
 
 fn main() {
     std::env::set_var("RUST_BACKTRACE", "full");
@@ -38,6 +39,7 @@ impl State {
         let editor_context_desc = GuiContextDescriptor {
             window,
             hidpi_factor: window.scale_factor(),
+            theme: GuiTheme::Dark,
         };
 
         let mut gui_context = GuiContext::new(&editor_context_desc);

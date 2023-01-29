@@ -2,13 +2,14 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use ash::vk;
-use eureka_imgui::gui::GuiContext;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use imgui::Context as ImguiContext;
-use math::vec2;
 use parking_lot::Mutex;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+
+use eureka_imgui::gui::GuiContext;
+use math::vec2;
 
 use crate::gui::GuiState;
 use crate::vulkan::adapter::Adapter;
@@ -18,6 +19,7 @@ use crate::vulkan::descriptor_set_allocator::DescriptorSetAllocator;
 use crate::vulkan::imgui::{ImguiRenderer, ImguiRendererDescriptor};
 use crate::vulkan::model::{Model, ModelDescriptor};
 use crate::vulkan::swapchain::SwapchainDescriptor;
+use crate::vulkan::texture::{VulkanTexture, VulkanTextureFromPathDescriptor};
 use crate::vulkan::utils;
 use crate::{
     AdapterRequirements, InstanceDescriptor, QueueFamilyIndices, SurfaceError, MAX_FRAMES_IN_FLIGHT,
@@ -51,6 +53,11 @@ pub struct VulkanRenderer {
     instant: Instant,
     imgui_renderer: ImguiRenderer,
     gui_state: GuiState,
+    misc: Misc,
+}
+
+pub struct Misc {
+    test_texture: VulkanTexture,
 }
 
 impl VulkanRenderer {
@@ -188,7 +195,7 @@ impl VulkanRenderer {
             descriptor_set_allocator: imgui_descriptor_set_allocator,
         };
 
-        let imgui_renderer = ImguiRenderer::new(&mut imgui_descriptor)?;
+        let mut imgui_renderer = ImguiRenderer::new(&mut imgui_descriptor)?;
 
         let semaphore_create_info = vk::SemaphoreCreateInfo::builder().build();
         let fence_create_info = vk::FenceCreateInfo::builder()
@@ -202,6 +209,23 @@ impl VulkanRenderer {
             render_finished_semaphores.push(device.create_semaphore(&semaphore_create_info)?);
             in_flight_fences.push(device.create_fence(&fence_create_info)?);
         }
+
+        let mut texture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        texture_path.push(format!("../../resources/textures/{}.png", "texture"));
+        let texture_desc = VulkanTextureFromPathDescriptor {
+            adapter: &adapter,
+            instance: &instance,
+            device: &device,
+            allocator: allocator.clone(),
+            command_buffer_allocator: &command_buffer_allocator,
+            path: &texture_path,
+            format: vk::Format::R8G8B8A8_UNORM,
+            enable_mip_levels: false,
+        };
+
+        let test_texture = VulkanTexture::new_from_path(texture_desc)?;
+        let test_texture_id =
+            imgui_renderer.add_texture(&test_texture, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)?;
 
         Ok(Self {
             adapter,
@@ -225,7 +249,11 @@ impl VulkanRenderer {
             frame: 0,
             instant,
             imgui_renderer,
-            gui_state: GuiState::new(vec2(inner_size.width as f32, inner_size.height as f32)),
+            gui_state: GuiState::new(
+                vec2(inner_size.width as f32, inner_size.height as f32),
+                Some(test_texture_id),
+            ),
+            misc: Misc { test_texture },
         })
     }
 

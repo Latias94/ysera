@@ -3,6 +3,7 @@ use crate::DeviceError;
 use ash::vk;
 use std::rc::Rc;
 
+#[derive(Clone)]
 pub struct Sampler {
     device: Rc<Device>,
     sampler: vk::Sampler,
