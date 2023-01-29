@@ -1,17 +1,20 @@
-use crate::vulkan::adapter::Adapter;
-use crate::vulkan::descriptor_set_allocator::DescriptorSetAllocator;
-use crate::vulkan::device::Device;
-use crate::vulkan::instance::Instance;
-use crate::MAX_FRAMES_IN_FLIGHT;
 use alloc::rc::Rc;
+use std::collections::HashSet;
+use std::sync::Arc;
+
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use imgui::Context as ImguiContext;
 use imgui::TextureId;
 use imgui_rs_vulkan_renderer::{Options, Renderer};
-use std::collections::HashSet;
-use std::sync::Arc;
 use typed_builder::TypedBuilder;
+
+use crate::{DeviceError, MAX_FRAMES_IN_FLIGHT};
+use crate::vulkan::adapter::Adapter;
+use crate::vulkan::descriptor_set_allocator::DescriptorSetAllocator;
+use crate::vulkan::device::Device;
+use crate::vulkan::instance::Instance;
+use crate::vulkan::texture::VulkanTexture;
 
 pub struct ImguiRenderer {
     _device: Rc<Device>,
@@ -78,5 +81,18 @@ impl ImguiRenderer {
             texture_id_set: HashSet::new(),
             _device: desc.device.clone(),
         })
+    }
+
+    /// Register a texture
+    /// https://github.com/ocornut/imgui/pull/914
+    pub fn add_texture(
+        &mut self,
+        texture: &VulkanTexture,
+        image_layout: vk::ImageLayout,
+    ) -> Result<TextureId, DeviceError> {
+        let set = self.descriptor_set_allocator
+            .allocate_texture_descriptor_set(texture, image_layout)?;
+        let texture_id= self.renderer.textures().insert(set);
+        Ok(texture_id)
     }
 }

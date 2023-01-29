@@ -6,7 +6,6 @@ rust-version.workspace = true
 
 [dependencies]
 imgui = { workspace = true, features = ["docking"] }
-ash = { workspace = true, default-features = false, features = ["linked", "debug"] }
 thiserror.workspace = true
 log.workspace = true
 gpu-allocator.workspace = true

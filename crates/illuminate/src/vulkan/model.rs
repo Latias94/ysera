@@ -1,18 +1,20 @@
-use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
-use crate::vulkan::device::Device;
-use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
-use gpu_allocator::vulkan::Allocator;
-use math::{vec2, vec3, Vertex3D};
-use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
+use std::rc::Rc;
+
+use ash::vk;
+use gpu_allocator::vulkan::Allocator;
+use parking_lot::Mutex;
+use typed_builder::TypedBuilder;
+
+use math::{vec2, vec3, Vertex3D};
 
 use crate::vulkan::adapter::Adapter;
+use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
+use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
-use ash::vk;
-use std::rc::Rc;
-use typed_builder::TypedBuilder;
+use crate::vulkan::texture::{VulkanTexture, VulkanTextureFromPathDescriptor};
 
 pub struct Model {
     vertices: Vec<Vertex3D>,
@@ -49,7 +51,7 @@ impl Model {
         let mut texture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         texture_path.push(format!("../../resources/textures/{}.png", desc.file_name));
 
-        let texture_desc = VulkanTextureDescriptor {
+        let texture_desc = VulkanTextureFromPathDescriptor {
             adapter: &desc.adapter,
             instance: &desc.instance,
             device: desc.device,
@@ -60,7 +62,7 @@ impl Model {
             enable_mip_levels: true,
         };
 
-        let texture = VulkanTexture::new(&texture_desc)?;
+        let texture = VulkanTexture::new_from_path(texture_desc)?;
 
         let mut model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         model_path.push(format!("../../resources/objs/{}.obj", desc.file_name));

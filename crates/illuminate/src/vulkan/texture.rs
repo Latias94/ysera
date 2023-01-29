@@ -1,25 +1,53 @@
-use crate::vulkan::buffer::{Buffer, StagingBufferDescriptor};
-use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
-use crate::vulkan::device::Device;
-use crate::vulkan::image::{ColorImageDescriptor, Image};
-use crate::vulkan::image_view::ImageView;
-use crate::vulkan::sampler::Sampler;
-use crate::DeviceError;
+use std::path::Path;
+use std::rc::Rc;
+
 use ash::vk;
 use gpu_allocator::vulkan::Allocator;
 use image::io::Reader as ImageReader;
 use image::EncodableLayout;
 use parking_lot::Mutex;
-
-use crate::vulkan::adapter::Adapter;
-use crate::vulkan::instance::Instance;
-use std::path::Path;
-use std::rc::Rc;
 use typed_builder::TypedBuilder;
 
-#[derive(Clone, TypedBuilder)]
+use crate::vulkan::adapter::Adapter;
+use crate::vulkan::buffer::{Buffer, StagingBufferDescriptor};
+use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
+use crate::vulkan::device::Device;
+use crate::vulkan::image::{ColorImageDescriptor, Image};
+use crate::vulkan::image_view::ImageView;
+use crate::vulkan::instance::Instance;
+use crate::vulkan::sampler::Sampler;
+use crate::DeviceError;
+
+#[derive(TypedBuilder)]
 pub struct VulkanTextureDescriptor<'a> {
-    pub adapter: &'a Adapter, // check mipmap format support
+    pub adapter: &'a Adapter,
+    // check mipmap format support
+    pub instance: &'a Instance,
+    pub device: &'a Rc<Device>,
+    pub command_buffer_allocator: &'a CommandBufferAllocator,
+    pub image: Image,
+    pub image_view: ImageView,
+    pub generate_mipmaps: bool
+}
+
+#[derive(TypedBuilder)]
+pub struct VulkanTextureFromPixelsDescriptor<'a> {
+    pub adapter: &'a Adapter,
+    // check mipmap format support
+    pub instance: &'a Instance,
+    pub device: &'a Rc<Device>,
+    pub allocator: Rc<Mutex<Allocator>>,
+    pub command_buffer_allocator: &'a CommandBufferAllocator,
+    pub format: vk::Format,
+    pub extent: [u32; 2],
+    pub bytes: &'a [u8],
+    pub enable_mip_levels: bool,
+}
+
+#[derive(TypedBuilder)]
+pub struct VulkanTextureFromPathDescriptor<'a> {
+    pub adapter: &'a Adapter,
+    // check mipmap format support
     pub instance: &'a Instance,
     pub device: &'a Rc<Device>,
     pub allocator: Rc<Mutex<Allocator>>,
@@ -68,18 +96,44 @@ impl VulkanTexture {
         &self.sampler
     }
 
-    pub fn new(desc: &VulkanTextureDescriptor) -> Result<VulkanTexture, DeviceError> {
-        let display_path = desc.path.canonicalize().unwrap();
+    pub fn new_from_path(
+        desc: VulkanTextureFromPathDescriptor,
+    ) -> Result<VulkanTexture, DeviceError> {
+        let path = desc.path;
+        let display_path = path.canonicalize().unwrap();
 
-        let device = desc.device;
-        let img = ImageReader::open(desc.path)
+        let img = ImageReader::open(path)
             .unwrap()
             .decode()
             .unwrap()
             .to_rgba8();
-        let height = img.height();
         let width = img.width();
+        let height = img.height();
         let pixels = img.as_bytes();
+
+        let desc = VulkanTextureFromPixelsDescriptor {
+            adapter: desc.adapter,
+            instance: desc.instance,
+            device: desc.device,
+            allocator: desc.allocator.clone(),
+            command_buffer_allocator: desc.command_buffer_allocator,
+            format: desc.format,
+            extent: [width, height],
+            bytes: pixels,
+            enable_mip_levels: desc.enable_mip_levels,
+        };
+        let texture = Self::new_from_pixels(desc);
+        log::debug!("VulkanTexture from '{}' created.", display_path.display());
+        texture
+    }
+
+    pub fn new_from_pixels(
+        desc: VulkanTextureFromPixelsDescriptor,
+    ) -> Result<VulkanTexture, DeviceError> {
+        let width = desc.extent[0];
+        let height = desc.extent[1];
+        let pixels = desc.bytes;
+
         let mip_levels = if desc.enable_mip_levels {
             Image::max_mip_levels(width, height)
         } else {
@@ -88,7 +142,7 @@ impl VulkanTexture {
 
         let staging_buffer_desc = StagingBufferDescriptor {
             label: Some("Vulkan Image Staging Buffer"),
-            device,
+            device: desc.device,
             allocator: desc.allocator.clone(),
             elements: pixels,
             command_buffer_allocator: desc.command_buffer_allocator,
@@ -96,7 +150,7 @@ impl VulkanTexture {
         let staging_buffer = Buffer::new_staging_buffer(&staging_buffer_desc)?;
 
         let color_image_desc = ColorImageDescriptor {
-            device,
+            device: desc.device,
             allocator: staging_buffer_desc.allocator.clone(),
             width,
             height,
@@ -125,30 +179,43 @@ impl VulkanTexture {
 
         let image_view = ImageView::new_color_image_view(
             Some("VulkanTexture color image view"),
-            device,
+            desc.device,
             image.raw(),
             image.format(),
             mip_levels,
         )?;
 
-        let sampler = Sampler::new(device, mip_levels)?;
-
-        log::debug!("VulkanTexture from '{}' created.", display_path.display());
-
-        Self::generate_mipmaps(
-            image.raw(),
-            width,
-            height,
-            mip_levels,
-            desc.command_buffer_allocator,
-            desc.instance,
-            desc.adapter,
-            desc.format,
-        )?;
-
-        Ok(Self {
+        let texture_desc = VulkanTextureDescriptor {
+            adapter: desc.adapter,
+            instance: desc.instance,
+            device: desc.device,
+            command_buffer_allocator: desc.command_buffer_allocator,
             image,
             image_view,
+            generate_mipmaps: true
+        };
+        Self::new(texture_desc)
+    }
+
+    pub fn new(desc: VulkanTextureDescriptor) -> Result<VulkanTexture, DeviceError> {
+        let sampler = Sampler::new(desc.device, desc.image.mip_levels())?;
+
+        if desc.generate_mipmaps {
+            Self::generate_mipmaps(
+                desc.image.raw(),
+                desc.image.width(),
+                desc.image.height(),
+                desc.image.mip_levels(),
+                desc.command_buffer_allocator,
+                desc.instance,
+                desc.adapter,
+                desc.image.format(),
+            )?;
+        }
+
+        Ok(Self {
+            image: desc.image,
+            image_view: desc.image_view,
             sampler,
         })
     }
@@ -163,6 +230,7 @@ impl VulkanTexture {
         adapter: &Adapter,
         format: vk::Format,
     ) -> Result<(), DeviceError> {
+        log::info!("generate_mipmaps {}", mip_levels);
         let support_mip_levels = if mip_levels > 1 {
             unsafe {
                 instance

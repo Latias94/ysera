@@ -30,6 +30,7 @@ use crate::vulkan::pipeline::Pipeline;
 use crate::vulkan::render_pass::{ImguiRenderPassDescriptor, RenderPass, RenderPassDescriptor};
 use crate::vulkan::shader::{Shader, ShaderDescriptor};
 use crate::vulkan::surface::Surface;
+use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
 use crate::vulkan::uniform_buffer::UniformBufferObject;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 
@@ -56,10 +57,8 @@ pub struct Swapchain {
     present_queue: vk::Queue,
     command_buffer_allocator: Rc<CommandBufferAllocator>,
     descriptor_set_allocator: Rc<DescriptorSetAllocator>,
-    depth_image: Image,
-    depth_image_view: ImageView,
-    color_image: Image,
-    color_image_view: ImageView,
+    depth_texture: VulkanTexture,
+    color_texture: VulkanTexture,
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     uniform_buffers: Vec<Buffer>,
@@ -126,6 +125,10 @@ impl Swapchain {
         self.extent
     }
 
+    pub fn color_texture(&self) -> &VulkanTexture {
+        &self.color_texture
+    }
+
     pub fn render_pass(&self) -> &RenderPass {
         &self.render_pass
     }
@@ -174,11 +177,10 @@ impl Swapchain {
         // };
 
         let color_format = properties.surface_format.format;
-        let (color_image, color_image_view) =
-            Self::create_color_objects(desc, color_format, extent)?;
+        let color_texture = Self::create_color_objects(desc, color_format, extent)?;
 
-        let (depth_image, depth_image_view) = Self::create_depth_objects(desc, extent)?;
-        let depth_format = depth_image.format();
+        let depth_texture = Self::create_depth_objects(desc, extent)?;
+        let depth_format = depth_texture.image().format();
 
         let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
         let rect2d = Rect2D {
@@ -208,8 +210,8 @@ impl Swapchain {
                 let image_view = i.raw();
                 let framebuffer_desc = FramebufferDescriptor::builder()
                     .texture_views(vec![
-                        color_image_view.raw(),
-                        depth_image_view.raw(),
+                        color_texture.image_view().raw(),
+                        depth_texture.image_view().raw(),
                         image_view,
                     ])
                     .swapchain_extent(extent)
@@ -293,7 +295,10 @@ impl Swapchain {
 
         let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(device, image_count)?);
 
-        let descriptor_set_layouts = &[descriptor_set_allocator.raw_per_frame_layout()];
+        let descriptor_set_layouts = &[
+            descriptor_set_allocator.raw_per_frame_layout(),
+            descriptor_set_allocator.raw_texture_layout(),
+        ];
 
         let shaders = &[vert_shader, frag_shader];
         let pipeline = Pipeline::new(
@@ -341,10 +346,8 @@ impl Swapchain {
             present_queue: desc.present_queue,
             command_buffer_allocator: desc.command_buffer_allocator.clone(),
             descriptor_set_allocator,
-            depth_image,
-            depth_image_view,
-            color_image,
-            color_image_view,
+            depth_texture,
+            color_texture,
             vertex_buffer,
             index_buffer,
             uniform_buffers,
@@ -708,7 +711,7 @@ impl Swapchain {
     fn create_depth_objects(
         desc: &SwapchainDescriptor,
         extent: vk::Extent2D,
-    ) -> Result<(Image, ImageView), DeviceError> {
+    ) -> Result<VulkanTexture, DeviceError> {
         let depth_image_desc = DepthImageDescriptor {
             device: desc.device,
             instance: &desc.instance,
@@ -726,14 +729,26 @@ impl Swapchain {
             depth_image.raw(),
             depth_image.format(),
         )?;
-        Ok((depth_image, depth_image_view))
+
+        let texture_desc = VulkanTextureDescriptor {
+            adapter: &desc.adapter,
+            instance: &desc.instance,
+            device: desc.device,
+            command_buffer_allocator: &desc.command_buffer_allocator,
+            image: depth_image,
+            image_view: depth_image_view,
+            generate_mipmaps: false,
+        };
+        let texture = VulkanTexture::new(texture_desc)?;
+
+        Ok(texture)
     }
 
     fn create_color_objects(
         desc: &SwapchainDescriptor,
         format: vk::Format,
         extent: vk::Extent2D,
-    ) -> Result<(Image, ImageView), DeviceError> {
+    ) -> Result<VulkanTexture, DeviceError> {
         let color_image_desc = ImageDescriptor {
             device: desc.device,
             image_type: vk::ImageType::TYPE_2D,
@@ -758,7 +773,19 @@ impl Swapchain {
             format,
             1,
         )?;
-        Ok((color_image, color_image_view))
+
+        let texture_desc = VulkanTextureDescriptor {
+            adapter: &desc.adapter,
+            instance: &desc.instance,
+            device: desc.device,
+            command_buffer_allocator: &desc.command_buffer_allocator,
+            image: color_image,
+            image_view: color_image_view,
+            generate_mipmaps: false,
+        };
+        let texture = VulkanTexture::new(texture_desc)?;
+
+        Ok(texture)
     }
 }
 

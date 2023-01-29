@@ -1,3 +1,5 @@
+use imgui::TextureId;
+
 use math::{vec2, Vec2};
 
 #[derive(Clone)]
@@ -9,10 +11,11 @@ pub struct GuiState {
     pub viewport_xy: Vec2,
     pub viewport_size: Vec2,
     pub open_demo_window: bool,
+    pub test_texture_id: Option<TextureId>,
 }
 
 impl GuiState {
-    pub fn new(viewport_size: Vec2) -> Self {
+    pub fn new(viewport_size: Vec2, test_texture_id: Option<TextureId>) -> Self {
         Self {
             hovered: false,
             value: 0f32,
@@ -21,13 +24,12 @@ impl GuiState {
             viewport_xy: vec2(0.0, 0.0),
             viewport_size,
             open_demo_window: false,
+            test_texture_id,
         }
     }
 }
 
 pub fn draw_imgui(state: &mut GuiState, ui: &mut imgui::Ui) {
-    // let choices = ["test test this is 1", "test test this is 2"];
-
     ui.window("Menu")
         // .collapsed(true, Condition::FirstUseEver)
         .position([0.0, 0.0], imgui::Condition::FirstUseEver)
@@ -61,20 +63,20 @@ pub fn draw_imgui(state: &mut GuiState, ui: &mut imgui::Ui) {
             if state.open_demo_window {
                 ui.show_demo_window(&mut state.open_demo_window);
             }
-
-            // ui.text_wrapped("Hello world!");
-            // ui.text_wrapped("こんにちは世界！");
-            // if ui.button(choices[state.value]) {
-            //     state.value += 1;
-            //     state.value %= 2;
-            // }
-            // ui.button("This...is...imgui-rs!");
-            // ui.separator();
-            // let mouse_pos = ui.io().mouse_pos;
-            // ui.text(format!(
-            //     "Mouse Position: ({:.1},{:.1})",
-            //     mouse_pos[0], mouse_pos[1]
-            // ));
+        });
+    ui.window("Viewport")
+        // .collapsed(true, Condition::FirstUseEver)
+        .position([0.0, 220.0], imgui::Condition::FirstUseEver)
+        .size([220.0, 220.0], imgui::Condition::FirstUseEver)
+        .focus_on_appearing(false)
+        .bg_alpha(1f32)
+        // .movable(false)
+        .build(|| {
+            ui.text("Hello textures!");
+            if let Some(my_texture_id) = state.test_texture_id {
+                ui.text("Some generated texture");
+                imgui::Image::new(my_texture_id, [100.0, 100.0]).build(ui);
+            }
         });
     state.hovered = ui.is_any_item_hovered()
         || ui.is_window_hovered_with_flags(imgui::WindowHoveredFlags::ANY_WINDOW);

@@ -18,6 +18,7 @@ pub struct Image {
     format: vk::Format,
     width: u32,
     height: u32,
+    mip_levels: u32,
 }
 
 #[derive(TypedBuilder)]
@@ -69,6 +70,10 @@ impl Image {
 
     pub fn height(&self) -> u32 {
         self.height
+    }
+
+    pub fn mip_levels(&self) -> u32 {
+        self.mip_levels
     }
 
     pub fn format(&self) -> vk::Format {
@@ -141,6 +146,7 @@ impl Image {
             format: desc.format,
             width: desc.dimension[0],
             height: desc.dimension[1],
+            mip_levels: desc.mip_levels
         })
     }
 

@@ -1,4 +1,3 @@
-use alloc::ffi::CString;
 use std::rc::Rc;
 
 use ash::vk;
