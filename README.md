@@ -6,6 +6,14 @@ This engine is mainly for self-learning to build game engine, it also highlights
 
 It is the place to collect my _Eureka_ moment😊.
 
+## Build
+
+```shell
+git clone https://github.com/Latias94/eureka.git
+cd eureka
+cargo r
+```
+
 ## Screenshots
 
 ![](resources/screenshot/load_model.png)

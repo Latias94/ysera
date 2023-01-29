@@ -513,6 +513,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "eureka-engine"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "eureka-imgui",
+ "illuminate",
+ "log",
+ "profiling",
+ "raw-window-handle 0.5.0",
+]
+
+[[package]]
 name = "eureka-imgui"
 version = "0.1.0"
 dependencies = [
@@ -1468,14 +1480,11 @@ name = "playground"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "eureka-engine",
  "eureka-imgui",
- "fxhash",
  "illuminate",
  "log",
- "naga",
  "profiling",
- "raw-window-handle 0.5.0",
- "winit",
 ]
 
 [[package]]

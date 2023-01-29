@@ -27,7 +27,7 @@ pub struct VulkanTextureDescriptor<'a> {
     pub command_buffer_allocator: &'a CommandBufferAllocator,
     pub image: Image,
     pub image_view: ImageView,
-    pub generate_mipmaps: bool
+    pub generate_mipmaps: bool,
 }
 
 #[derive(TypedBuilder)]
@@ -192,7 +192,7 @@ impl VulkanTexture {
             command_buffer_allocator: desc.command_buffer_allocator,
             image,
             image_view,
-            generate_mipmaps: true
+            generate_mipmaps: true,
         };
         Self::new(texture_desc)
     }

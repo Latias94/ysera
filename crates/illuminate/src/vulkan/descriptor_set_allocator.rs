@@ -201,8 +201,7 @@ impl DescriptorSetAllocator {
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(image_infos)
             .build();
-        self.device
-            .update_descriptor_sets(&[image_write], &[]);
+        self.device.update_descriptor_sets(&[image_write], &[]);
         Ok(descriptor_set)
     }
 

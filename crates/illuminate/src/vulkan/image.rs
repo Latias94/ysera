@@ -146,7 +146,7 @@ impl Image {
             format: desc.format,
             width: desc.dimension[0],
             height: desc.dimension[1],
-            mip_levels: desc.mip_levels
+            mip_levels: desc.mip_levels,
         })
     }
 

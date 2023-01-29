@@ -416,8 +416,8 @@ impl Swapchain {
 
         // 改为左手坐标系 NDC
         let viewport_rect2d = Rect2D {
-            x: 0f32 + ui_state.viewport_xy.x,
-            y: self.extent.height as f32 - ui_state.viewport_xy.y,
+            x: 0f32,
+            y: self.extent.height as f32,
             width: self.extent.width as f32,
             height: -(self.extent.height as f32),
         };
@@ -522,8 +522,8 @@ impl Swapchain {
             self.extent.width as f32 / self.extent.height as f32,
             // math::radians(&math::vec1(45.0))[0],
             math::radians(&math::vec1(ui_state.fovy))[0],
-            0.1,
-            10.0,
+            ui_state.near_clip,
+            ui_state.far_clip,
         );
         // projection[(1, 1)] *= -1.0; // openGL clip space y 和 vulkan 相反，不过我们在 cmd_set_viewport 处理了
         let ubo = UniformBufferObject { view, projection };

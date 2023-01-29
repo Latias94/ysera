@@ -9,12 +9,12 @@ use imgui::TextureId;
 use imgui_rs_vulkan_renderer::{Options, Renderer};
 use typed_builder::TypedBuilder;
 
-use crate::{DeviceError, MAX_FRAMES_IN_FLIGHT};
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::descriptor_set_allocator::DescriptorSetAllocator;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::texture::VulkanTexture;
+use crate::{DeviceError, MAX_FRAMES_IN_FLIGHT};
 
 pub struct ImguiRenderer {
     _device: Rc<Device>,
@@ -90,9 +90,10 @@ impl ImguiRenderer {
         texture: &VulkanTexture,
         image_layout: vk::ImageLayout,
     ) -> Result<TextureId, DeviceError> {
-        let set = self.descriptor_set_allocator
+        let set = self
+            .descriptor_set_allocator
             .allocate_texture_descriptor_set(texture, image_layout)?;
-        let texture_id= self.renderer.textures().insert(set);
+        let texture_id = self.renderer.textures().insert(set);
         Ok(texture_id)
     }
 }

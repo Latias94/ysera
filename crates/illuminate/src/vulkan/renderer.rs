@@ -6,10 +6,10 @@ use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use imgui::Context as ImguiContext;
 use parking_lot::Mutex;
 use winit::dpi::PhysicalSize;
+use winit::event::{ElementState, Event, KeyboardInput, WindowEvent};
 use winit::window::Window;
 
 use eureka_imgui::gui::GuiContext;
-use math::vec2;
 
 use crate::gui::GuiState;
 use crate::vulkan::adapter::Adapter;
@@ -249,10 +249,7 @@ impl VulkanRenderer {
             frame: 0,
             instant,
             imgui_renderer,
-            gui_state: GuiState::new(
-                vec2(inner_size.width as f32, inner_size.height as f32),
-                Some(test_texture_id),
-            ),
+            gui_state: GuiState::new(Some(test_texture_id)),
             misc: Misc { test_texture },
         })
     }
@@ -363,6 +360,29 @@ impl VulkanRenderer {
         };
         log::debug!("======== Swapchain recreated.========");
         Ok(())
+    }
+
+    pub fn handle_event(&mut self, window: &Window, event: &Event<()>) {
+        match *event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id() => match event {
+                WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state: ElementState::Pressed,
+                            virtual_keycode: Some(key),
+                            ..
+                        },
+                    ..
+                } => {
+                    // log::info!("press {:?}", key);
+                }
+                _ => {}
+            },
+            _ => (),
+        }
     }
 }
 

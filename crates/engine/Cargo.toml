@@ -1,17 +1,17 @@
 [package]
-name = "playground"
+name = "eureka-engine"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
 illuminate.workspace = true
-eureka-imgui.workspace = true
-engine.workspace = true
 log.workspace = true
 env_logger.workspace = true
+raw-window-handle.workspace = true
 
 # profiling
 # uncomment if needed, will keep increase memory usage
 #profiling = { workspace = true, features = ["profile-with-tracy"] }
 profiling.workspace = true
+eureka-imgui.workspace = true
