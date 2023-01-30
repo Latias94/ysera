@@ -6,6 +6,9 @@ rust-version.workspace = true
 
 [dependencies]
 illuminate.workspace = true
+math.workspace = true
+eureka-imgui.workspace = true
+
 log.workspace = true
 env_logger.workspace = true
 raw-window-handle.workspace = true
@@ -14,4 +17,3 @@ raw-window-handle.workspace = true
 # uncomment if needed, will keep increase memory usage
 #profiling = { workspace = true, features = ["profile-with-tracy"] }
 profiling.workspace = true
-eureka-imgui.workspace = true

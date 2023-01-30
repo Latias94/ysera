@@ -518,6 +518,7 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "eureka-imgui",
+ "eureka-math",
  "illuminate",
  "log",
  "profiling",
@@ -1482,6 +1483,7 @@ dependencies = [
  "env_logger",
  "eureka-engine",
  "eureka-imgui",
+ "eureka-math",
  "illuminate",
  "log",
  "profiling",

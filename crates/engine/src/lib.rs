@@ -4,6 +4,8 @@ use eureka_imgui::controls::InputState;
 use eureka_imgui::gui::{GuiContext, GuiContextDescriptor};
 use eureka_imgui::GuiTheme;
 use illuminate::vulkan::renderer::VulkanRenderer;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Instant;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, Event, KeyboardInput, StartCause, VirtualKeyCode, WindowEvent};
@@ -11,20 +13,21 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
 pub use illuminate::winit;
+use math::Mat4;
 
 #[derive(Copy, Clone)]
-pub struct GameConfig<'a> {
+pub struct AppConfig<'a> {
     pub name: &'a str,
     pub window_size: [u32; 2],
 }
 
-pub trait Game {
+pub trait EurekaEngine {
     fn new() -> Self
     where
         Self: Sized;
 
     fn on_init(&mut self);
-    fn on_update(&mut self, delta_time: f32);
+    fn on_update(&mut self, delta_time: f32, engine: &mut Engine);
     fn on_render(&mut self, delta_time: f32);
     fn on_shutdown(&mut self);
 
@@ -32,7 +35,7 @@ pub trait Game {
     fn on_window_input(&mut self, keycode: VirtualKeyCode);
 }
 
-pub fn create<T: 'static + Game + Send>(config: GameConfig) {
+pub fn create<T: 'static + EurekaEngine + Send>(config: AppConfig) {
     let game = T::new();
 
     let event_loop = EventLoop::new();
@@ -47,17 +50,21 @@ pub fn create<T: 'static + Game + Send>(config: GameConfig) {
     run(event_loop, window, config, game);
 }
 
-struct State<T: 'static + Game + Send> {
+struct State<T: 'static + EurekaEngine + Send> {
     name: String,
     window_size: [u32; 2],
-    renderer: VulkanRenderer,
+    engine: Engine,
     gui_context: GuiContext,
     window_id: WindowId,
     game: T,
 }
 
-impl<T: 'static + Game + Send> State<T> {
-    fn new(window: &Window, config: GameConfig, mut game: T) -> Self {
+pub struct Engine {
+    renderer: Rc<RefCell<VulkanRenderer>>,
+}
+
+impl<T: 'static + EurekaEngine + Send> State<T> {
+    fn new(window: &Window, config: AppConfig, mut game: T) -> Self {
         let editor_context_desc = GuiContextDescriptor {
             window,
             hidpi_factor: window.scale_factor(),
@@ -66,12 +73,15 @@ impl<T: 'static + Game + Send> State<T> {
 
         let mut gui_context = GuiContext::new(&editor_context_desc);
         let renderer = VulkanRenderer::new(window, gui_context.get_context()).unwrap();
+        let engine = Engine {
+            renderer: Rc::new(RefCell::new(renderer)),
+        };
         game.on_init();
 
         Self {
             name: config.name.to_string(),
             window_size: config.window_size,
-            renderer,
+            engine,
             gui_context,
             window_id: window.id(),
             game,
@@ -81,7 +91,11 @@ impl<T: 'static + Game + Send> State<T> {
     fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.window_size = [new_size.width, new_size.height];
-            self.renderer.recreate_swapchain(new_size).unwrap();
+            self.engine
+                .renderer
+                .borrow_mut()
+                .recreate_swapchain(new_size)
+                .unwrap();
             self.game.on_window_resize(new_size.width, new_size.height);
         }
     }
@@ -107,11 +121,15 @@ impl<T: 'static + Game + Send> State<T> {
     }
 
     fn update(&mut self, delta_time: f32) {
-        self.game.on_update(delta_time);
+        self.game.on_update(delta_time, &mut self.engine);
     }
 
     fn render(&mut self, window: &Window, delta_time: f32) {
-        self.renderer.render(window, &mut self.gui_context).unwrap();
+        self.engine
+            .renderer
+            .borrow_mut()
+            .render(window, &mut self.gui_context)
+            .unwrap();
         self.game.on_render(delta_time);
     }
 
@@ -120,10 +138,16 @@ impl<T: 'static + Game + Send> State<T> {
     }
 }
 
-fn run<T: 'static + Game + Send>(
+impl Engine {
+    pub fn renderer_set_view(&mut self, view: Mat4) {
+        self.renderer.borrow_mut().set_view(view);
+    }
+}
+
+fn run<T: 'static + EurekaEngine + Send>(
     event_loop: EventLoop<()>,
     window: Window,
-    config: GameConfig,
+    config: AppConfig,
     game: T,
 ) {
     // State::new uses async code, so we're going to wait for it to finish
@@ -139,7 +163,10 @@ fn run<T: 'static + Game + Send>(
     event_loop.run(move |event, _, control_flow| {
         let app = state.as_mut().unwrap();
         app.gui_context.handle_event(&window, &event);
-        app.renderer.handle_event(&window, &event);
+        app.engine
+            .renderer
+            .borrow_mut()
+            .handle_event(&window, &event);
         input_state = input_state.update(&event);
 
         match event {

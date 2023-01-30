@@ -8,6 +8,7 @@ rust-version.workspace = true
 illuminate.workspace = true
 eureka-imgui.workspace = true
 engine.workspace = true
+math.workspace = true
 log.workspace = true
 env_logger.workspace = true
 

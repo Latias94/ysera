@@ -10,6 +10,7 @@ use winit::event::{ElementState, Event, KeyboardInput, WindowEvent};
 use winit::window::Window;
 
 use eureka_imgui::gui::GuiContext;
+use math::Mat4;
 
 use crate::gui::GuiState;
 use crate::vulkan::adapter::Adapter;
@@ -382,6 +383,17 @@ impl VulkanRenderer {
                 _ => {}
             },
             _ => (),
+        }
+    }
+}
+
+impl VulkanRenderer {
+    pub fn set_view(&mut self, view: Mat4) {
+        if self.swapchain.is_some() {
+            self.swapchain
+                .as_mut()
+                .unwrap()
+                .set_render_system_state(view);
         }
     }
 }

@@ -36,3 +36,31 @@ pub mod prelude {
         Rect2D, UVec2, UVec3, UVec4, Vec2, Vec3, Vec4, Vertex3D,
     };
 }
+
+pub fn deg_to_rad(degrees: f32) -> f32 {
+    degrees * DEG2RAD_MULTIPLIER
+}
+
+pub fn mat4_translation(position: Vec3) -> Mat4 {
+    let mut matrix = Mat4::identity();
+    matrix.m14 = position.x;
+    matrix.m24 = position.y;
+    matrix.m34 = position.z;
+    matrix
+}
+
+pub fn mat4_forward(matrix: Mat4) -> Vec3 {
+    vec3(-matrix.m31, -matrix.m32, -matrix.m33).normalize()
+}
+
+pub fn mat4_backward(matrix: Mat4) -> Vec3 {
+    vec3(matrix.m31, matrix.m32, matrix.m33).normalize()
+}
+
+pub fn mat4_left(matrix: Mat4) -> Vec3 {
+    vec3(-matrix.m11, -matrix.m12, -matrix.m13).normalize()
+}
+
+pub fn mat4_right(matrix: Mat4) -> Vec3 {
+    vec3(matrix.m11, matrix.m12, matrix.m13).normalize()
+}

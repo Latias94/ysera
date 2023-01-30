@@ -66,6 +66,14 @@ pub struct Swapchain {
     model: Rc<Model>,
     mip_levels: u32,
     instant: Instant,
+    render_system_state: RenderSystemState,
+}
+
+pub struct RenderSystemState {
+    projection: Mat4,
+    view: Mat4,
+    near_clip: f32,
+    far_clip: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -323,6 +331,29 @@ impl Swapchain {
         let per_frame_descriptor_sets = descriptor_set_allocator
             .allocate_per_frame_descriptor_sets(&descriptor_sets_create_info)?;
 
+        // init renderer state
+        let near_clip = 0.1f32;
+        let far_clip = 1000.0f32;
+        let view = math::look_at(
+            &vec3(2.0, 2.0, 2.0),
+            &vec3(0.0, 0.0, 0.0),
+            &vec3(0.0, 0.0, 1.0),
+        );
+        let projection = math::perspective_rh_zo(
+            extent.width as f32 / extent.height as f32,
+            math::radians(&math::vec1(90.0))[0],
+            // math::radians(&math::vec1(ui_state.fovy))[0],
+            near_clip,
+            far_clip,
+        );
+
+        let render_system_state = RenderSystemState {
+            projection,
+            view,
+            near_clip,
+            far_clip,
+        };
+
         let swapchain = Self {
             raw: swapchain,
             loader: swapchain_loader,
@@ -355,6 +386,7 @@ impl Swapchain {
             model: desc.model.clone(),
             mip_levels: desc.mip_levels,
             instant: desc.instant,
+            render_system_state,
         };
 
         Ok(swapchain)
@@ -369,7 +401,7 @@ impl Swapchain {
         ui_state: &mut GuiState,
         ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
     ) -> Result<vk::CommandBuffer, DeviceError> {
-        self.update_uniform_buffer(image_index, ui_state);
+        self.update_uniform_buffer(image_index);
 
         let command_buffer = self.update_command_buffers(
             image_index,
@@ -463,7 +495,7 @@ impl Swapchain {
         let model = math::rotate(
             &math::identity(),
             // time *  math::radians(&math::vec1(90.0))[0],
-            math::radians(&math::vec1(ui_state.value))[0],
+            math::radians(&math::vec1(90.0f32))[0],
             &vec3(0.0, 0.0, 1.0),
         );
 
@@ -483,8 +515,7 @@ impl Swapchain {
             vk::ShaderStageFlags::FRAGMENT,
             64,
             // &0.75f32.to_ne_bytes()[..],
-            // &1f32.to_ne_bytes()[..],
-            &ui_state.opacity.to_ne_bytes()[..],
+            &1f32.to_ne_bytes()[..],
         );
 
         self.device.cmd_draw_indexed(
@@ -512,24 +543,19 @@ impl Swapchain {
         Ok(command_buffer)
     }
 
-    fn update_uniform_buffer(&mut self, image_index: usize, ui_state: &GuiState) {
-        let view = math::look_at(
-            &vec3(2.0, 2.0, 2.0),
-            &vec3(0.0, 0.0, 0.0),
-            &vec3(0.0, 0.0, 1.0),
-        );
-        let projection = math::perspective_rh_zo(
-            self.extent.width as f32 / self.extent.height as f32,
-            // math::radians(&math::vec1(45.0))[0],
-            math::radians(&math::vec1(ui_state.fovy))[0],
-            ui_state.near_clip,
-            ui_state.far_clip,
-        );
+    fn update_uniform_buffer(&mut self, image_index: usize) {
         // projection[(1, 1)] *= -1.0; // openGL clip space y 和 vulkan 相反，不过我们在 cmd_set_viewport 处理了
-        let ubo = UniformBufferObject { view, projection };
+        let ubo = UniformBufferObject {
+            view: self.render_system_state.view,
+            projection: self.render_system_state.projection,
+        };
 
         let uniform_buffer = &mut self.uniform_buffers[image_index];
         uniform_buffer.copy_memory(&[ubo]);
+    }
+
+    pub fn set_render_system_state(&mut self, view: Mat4) {
+        self.render_system_state.view = view;
     }
 
     pub fn update_submitted_command_buffer(&mut self, command_buffer_index: usize) {
