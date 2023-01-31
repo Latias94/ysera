@@ -7,13 +7,14 @@ use winit::event::{ElementState, Event, KeyboardInput, StartCause, VirtualKeyCod
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
+use crate::engine::Engine;
 use eureka_imgui::controls::InputState;
 use eureka_imgui::gui::{GuiContext, GuiContextDescriptor};
 use eureka_imgui::GuiTheme;
-use math::Mat4;
 use rhi::vulkan::renderer::VulkanRenderer;
 pub use rhi::winit;
 
+pub mod engine;
 pub mod event;
 
 #[derive(Copy, Clone)]
@@ -58,10 +59,6 @@ struct State<T: 'static + EurekaEngine + Send> {
     gui_context: GuiContext,
     window_id: WindowId,
     game: T,
-}
-
-pub struct Engine {
-    renderer: Rc<RefCell<VulkanRenderer>>,
 }
 
 impl<T: 'static + EurekaEngine + Send> State<T> {
@@ -136,12 +133,6 @@ impl<T: 'static + EurekaEngine + Send> State<T> {
 
     fn exit(mut self) {
         self.game.on_shutdown();
-    }
-}
-
-impl Engine {
-    pub fn renderer_set_view(&mut self, view: Mat4) {
-        self.renderer.borrow_mut().set_view(view);
     }
 }
 

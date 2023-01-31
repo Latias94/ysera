@@ -261,9 +261,7 @@ impl Swapchain {
         let frag_shader_desc = ShaderDescriptor {
             label: Some("Triangle Frag"),
             device,
-            spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
-                "triangle_uniform.frag",
-            ),
+            spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.frag"),
             entry_name: "main",
         };
         let frag_shader = Shader::new_frag(&frag_shader_desc)?;

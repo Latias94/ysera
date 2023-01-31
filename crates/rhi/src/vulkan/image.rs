@@ -4,7 +4,7 @@ use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::DeviceError;
 use ash::vk;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use std::rc::Rc;
@@ -129,6 +129,7 @@ impl Image {
                 requirements,
                 location: MemoryLocation::GpuOnly,
                 linear: true,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
             })
             .unwrap();
 

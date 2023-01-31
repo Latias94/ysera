@@ -2,7 +2,7 @@ use alloc::rc::Rc;
 use std::mem::size_of;
 
 use ash::vk;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
@@ -92,6 +92,7 @@ impl Buffer {
                 requirements,
                 location: desc.memory_location,
                 linear: true,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
             })
             .unwrap();
 
