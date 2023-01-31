@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-illuminate.workspace = true
+rhi.workspace = true
 eureka-imgui.workspace = true
 engine.workspace = true
 math.workspace = true

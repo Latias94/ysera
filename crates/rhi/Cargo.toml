@@ -1,5 +1,5 @@
 [package]
-name = "illuminate"
+name = "eureka-rhi"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true

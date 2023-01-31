@@ -32,7 +32,6 @@ impl PipelineLayout {
             .push_constant_ranges(&push_constant_ranges);
 
         let raw = device.create_pipeline_layout(&create_info)?;
-        log::debug!("Vulkan pipeline layout created.");
         Ok(Self {
             raw,
             device: device.clone(),
