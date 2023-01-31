@@ -7,7 +7,6 @@ use winit::event::{ElementState, Event, KeyboardInput, StartCause, VirtualKeyCod
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
-use crate::engine::Engine;
 use eureka_imgui::controls::InputState;
 use eureka_imgui::gui::{GuiContext, GuiContextDescriptor};
 use eureka_imgui::GuiTheme;
@@ -16,6 +15,7 @@ pub use rhi::winit;
 
 pub mod engine;
 pub mod event;
+pub use engine::Engine;
 
 #[derive(Copy, Clone)]
 pub struct AppConfig<'a> {
