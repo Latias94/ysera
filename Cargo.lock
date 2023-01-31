@@ -1867,9 +1867,9 @@ dependencies = [
 
 [[package]]
 name = "spirq"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75080254f6bc78bc57c1bc6f3ecd25448d736bb5f76b09d9fa9df2fec2998b70"
+checksum = "71c88764cd9145ec7ae858530ece53950f5674b97c048e6567ef4fa59e3fdb0b"
 dependencies = [
  "fnv",
  "num-derive",

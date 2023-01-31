@@ -31,6 +31,11 @@ pub fn load_shader(src_path: PathBuf) -> Result<()> {
         _ => bail!("Unsupported shader: {}", src_path.display()),
     };
 
+    if name == "triangle_push_constant.frag" {
+        // ban this shader temporarily
+        return Ok(());
+    }
+
     let src = fs::read_to_string(src_path.clone())?;
 
     let output_name = format!("{}/{}", env::var("OUT_DIR")?, &name);
@@ -99,7 +104,6 @@ fn get_root_path() -> &'static Path {
 // 对于 naga 踩坑的的实践可以参考 bevy。
 // https://github.com/gfx-rs/naga/issues/1012 不支持 sample2D 属性
 // glsl fragment shader 里的 push constant 好像也不支持，可以用回 uniform buffer
-// triangle_push_constant.vert 编译出来的 spv，spirq 也认不了，https://github.com/PENGUINLIONG/spirq-rs/issues/102
 
 // not window use naga
 #[cfg(not(target_os = "windows"))]

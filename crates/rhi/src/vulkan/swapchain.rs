@@ -262,7 +262,7 @@ impl Swapchain {
             label: Some("Triangle Frag"),
             device,
             spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
-                "triangle_push_constant.frag",
+                "triangle_uniform.frag",
             ),
             entry_name: "main",
         };
@@ -509,14 +509,14 @@ impl Swapchain {
             model_bytes,
         );
 
-        self.device.cmd_push_constants(
-            command_buffer.raw(),
-            self.pipeline.raw_pipeline_layout(),
-            vk::ShaderStageFlags::FRAGMENT,
-            64,
-            // &0.75f32.to_ne_bytes()[..],
-            &1f32.to_ne_bytes()[..],
-        );
+        // self.device.cmd_push_constants(
+        //     command_buffer.raw(),
+        //     self.pipeline.raw_pipeline_layout(),
+        //     vk::ShaderStageFlags::FRAGMENT,
+        //     64,
+        //     // &0.75f32.to_ne_bytes()[..],
+        //     &1f32.to_ne_bytes()[..],
+        // );
 
         self.device.cmd_draw_indexed(
             command_buffer.raw(),
