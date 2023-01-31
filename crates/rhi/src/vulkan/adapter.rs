@@ -5,8 +5,8 @@ use std::ffi::{c_char, CStr};
 use ash::extensions::khr;
 use ash::vk;
 
-use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::instance::InstanceFlags;
+use crate::vulkan_v2::debug::DebugUtils;
 use crate::{AdapterRequirements, QueueFamilyIndices};
 
 use super::{device::Device, instance::Instance, surface::Surface, utils};

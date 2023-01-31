@@ -4,10 +4,11 @@ use std::ffi::{c_void, CStr};
 use ash::{extensions::*, vk};
 use log::LevelFilter;
 
-use crate::vulkan::{debug, platforms};
+use crate::vulkan::platforms;
+use crate::vulkan_v2::debug;
+use crate::vulkan_v2::debug::DebugUtils;
 use crate::{InstanceDescriptor, InstanceError};
 
-use super::debug::DebugUtils;
 use super::{adapter::Adapter, surface::Surface};
 
 bitflags::bitflags! {

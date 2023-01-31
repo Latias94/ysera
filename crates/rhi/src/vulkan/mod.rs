@@ -3,7 +3,6 @@ pub mod buffer;
 pub mod command_buffer;
 pub mod command_buffer_allocator;
 pub mod conv;
-pub mod debug;
 pub mod descriptor_pool;
 pub mod descriptor_set_allocator;
 pub mod descriptor_set_layout;

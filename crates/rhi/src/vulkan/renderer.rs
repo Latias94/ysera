@@ -15,13 +15,13 @@ use math::Mat4;
 use crate::gui::GuiState;
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
-use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::descriptor_set_allocator::DescriptorSetAllocator;
 use crate::vulkan::imgui::{ImguiRenderer, ImguiRendererDescriptor};
 use crate::vulkan::model::{Model, ModelDescriptor};
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureFromPathDescriptor};
 use crate::vulkan::utils;
+use crate::vulkan_v2::debug::DebugUtils;
 use crate::{
     AdapterRequirements, InstanceDescriptor, QueueFamilyIndices, SurfaceError, MAX_FRAMES_IN_FLIGHT,
 };
