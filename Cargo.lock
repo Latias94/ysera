@@ -555,6 +555,7 @@ dependencies = [
  "ash",
  "ash-molten",
  "bitflags",
+ "env_logger",
  "eureka-imgui",
  "eureka-math",
  "fs_extra",

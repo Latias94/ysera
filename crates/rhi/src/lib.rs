@@ -21,6 +21,11 @@ pub use winit;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
+pub mod api {
+    // #[cfg(feature = "vulkan")]
+    pub use super::vulkan_v2::Api as Vulkan;
+}
+
 // refer to wgpu-hal
 pub trait GraphicsApi: Clone + Sized {
     type Instance: Instance<Self>;
@@ -44,12 +49,15 @@ pub trait Instance<Api: GraphicsApi>: Sized {
         window_handle: raw_window_handle::RawWindowHandle,
     ) -> Result<Api::Surface, InstanceError>;
     unsafe fn destroy_surface(&self, surface: Api::Surface);
-    unsafe fn enumerate_physical_devices(&self, surface: &Api::Surface)
-        -> Vec<ExposedAdapter<Api>>;
+    unsafe fn enumerate_physical_devices(
+        &self,
+        surface: &Api::Surface,
+    ) -> Vec<ExposedPhysicalDevice<Api>>;
 }
 
 pub trait PhysicalDevice<Api: GraphicsApi>: Send + Sync {
-    unsafe fn open(&self) -> Result<OpenDevice<Api>, DeviceError>;
+    unsafe fn open(&self, features: Features) -> Result<OpenDevice<Api>, DeviceError>;
+    unsafe fn surface_capabilities(&self, surface: &Api::Surface) -> Option<SurfaceCapabilities>;
 }
 
 pub trait Surface<Api: GraphicsApi> {
@@ -62,7 +70,9 @@ pub trait Surface<Api: GraphicsApi> {
     unsafe fn unconfigure(&mut self, device: &Api::Device);
 }
 
-pub trait Device<Api: GraphicsApi> {}
+pub trait Device<Api: GraphicsApi> {
+    unsafe fn shutdown(self, queue: Api::Queue);
+}
 
 #[derive(Debug)]
 pub struct OpenDevice<Api: GraphicsApi> {

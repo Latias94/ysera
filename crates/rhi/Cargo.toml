@@ -52,3 +52,6 @@ anyhow.workspace = true
 rayon.workspace = true
 glob.workspace = true
 fs_extra.workspace = true
+
+[dev-dependencies]
+env_logger.workspace = true

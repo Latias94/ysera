@@ -1,3 +1,4 @@
+use crate::DownlevelFlags;
 use ash::extensions::khr;
 use ash::vk;
 use physical_device::PhysicalDeviceCapabilities;
@@ -5,15 +6,20 @@ use std::ffi::CStr;
 use std::sync::Arc;
 
 pub mod buffer;
+pub mod conv;
 pub mod debug;
 pub mod device;
 pub mod image;
 pub mod instance;
 pub mod physical_device;
 pub mod pipeline;
+pub mod platforms;
 pub mod queue;
 pub mod sampler;
 pub mod shader;
+pub mod surface;
+pub mod swapchain;
+pub mod utils;
 
 #[derive(Clone)]
 pub struct Api;
@@ -71,6 +77,7 @@ pub struct PhysicalDevice {
     surface: Option<Arc<SurfaceShared>>,
     known_memory_flags: vk::MemoryPropertyFlags,
     phd_capabilities: PhysicalDeviceCapabilities,
+    downlevel_flags: DownlevelFlags,
 }
 
 pub struct DeviceShared {
@@ -90,10 +97,16 @@ pub struct DeviceShared {
 
 pub struct Device {
     shared: Arc<DeviceShared>,
+    valid_memory_types: u32,
+    naga_options: naga::back::spv::Options,
 }
 
-#[derive(Debug)]
-pub struct Queue {}
+pub struct Queue {
+    raw: vk::Queue,
+    swapchain_loader: khr::Swapchain,
+    device: Arc<DeviceShared>,
+    family_index: u32,
+}
 
 #[derive(Debug)]
 pub struct Buffer {}

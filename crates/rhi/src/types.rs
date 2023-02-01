@@ -1,19 +1,18 @@
 use crate::vulkan::instance::InstanceFlags;
 use crate::GraphicsApi;
 use alloc::borrow::Cow;
-use log::LevelFilter;
 use std::ffi::CStr;
 use std::ops::RangeInclusive;
 use typed_builder::TypedBuilder;
 
 #[derive(Debug)]
-pub struct ExposedAdapter<Api: GraphicsApi> {
+pub struct ExposedPhysicalDevice<Api: GraphicsApi> {
     pub physical_device: Api::PhysicalDevice,
-    pub info: AdapterInfo,
+    pub info: PhysicalDeviceInfo,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdapterInfo {
+pub struct PhysicalDeviceInfo {
     pub name: String,
     /// Vendor PCI id of the physical device
     ///
@@ -28,6 +27,8 @@ pub struct AdapterInfo {
     pub driver: String,
     /// Driver info
     pub driver_info: String,
+    /// Graphic Backend used for device
+    pub backend: Backend,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,7 +73,21 @@ pub struct InstanceDescriptor<'a> {
     #[builder(default = InstanceFlags::all())]
     pub flags: InstanceFlags,
     #[builder(default = log::LevelFilter::Warn)]
-    pub debug_level_filter: LevelFilter,
+    pub debug_level_filter: log::LevelFilter,
+}
+
+impl<'a> Default for InstanceDescriptor<'a> {
+    fn default() -> Self {
+        Self {
+            name: "Eureka App",
+            flags: if cfg!(debug_assertions) {
+                InstanceFlags::all()
+            } else {
+                InstanceFlags::empty()
+            },
+            debug_level_filter: log::LevelFilter::Warn,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -100,7 +115,7 @@ pub struct SurfaceCapabilities {
     /// Supported texture usage flags.
     ///
     /// Must have at least `TextureUses::COLOR_TARGET`
-    pub usage: TextureUses,
+    pub usage: ImageUses,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -127,7 +142,7 @@ pub enum PresentMode {
 }
 
 bitflags::bitflags! {
-    pub struct TextureUses: u16 {
+    pub struct ImageUses: u16 {
         /// The texture is in unknown state.
         const UNINITIALIZED = 1 << 0;
         /// Ready to present image to the surface.
@@ -223,7 +238,44 @@ pub struct SurfaceConfiguration {
     /// Requested texture extent.
     pub extent: Extent3d,
     /// Allowed usage of surface textures,
-    pub usage: TextureUses,
+    pub usage: ImageUses,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Backend {
+    Empty = 0,
+    /// Vulkan API
+    Vulkan = 1,
+}
+
+bitflags::bitflags! {
+    /// 一些物理设备支持的可选特性
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPhysicalDeviceFeatures.html>"]
+    pub struct DownlevelFlags: u32 {
+        const COMPUTE_SHADERS = 1 << 0;
+        const ANISOTROPIC_FILTERING = 1 << 1;
+        const MULTISAMPLED_SHADING = 1 << 2;
+    }
+}
+
+bitflags::bitflags! {
+    /// vulkan PhysicalDeviceFeature 的抽象
+    /// 一些物理设备支持的可选特性
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPhysicalDeviceFeatures.html>"]
+    #[derive(Default)]
+    pub struct Features: u64 {
+
+    }
+}
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum VertexFormat {
+    Float32x2,
+    Float32x3,
+
+    Depth32Float,
+    Depth32FloatStencil8,
+    Depth24UnormStencil8,
 }
 
 #[derive(Debug, Default, Copy, Clone)]

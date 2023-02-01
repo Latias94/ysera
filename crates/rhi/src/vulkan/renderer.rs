@@ -78,8 +78,7 @@ impl VulkanRenderer {
             .build();
         let mut selected_adapter = None;
         for adapter in adapters {
-            if unsafe { adapter.meet_requirements(&instance.raw(), &surface, &requirements) }
-                .is_ok()
+            if unsafe { adapter.meet_requirements(instance.raw(), &surface, &requirements) }.is_ok()
             {
                 selected_adapter = Some(adapter);
                 break;
@@ -96,7 +95,7 @@ impl VulkanRenderer {
         log::debug!("Find the require device.");
         let debug_utils = instance.debug_utils().clone();
 
-        let indices = utils::get_queue_family_indices(&instance.raw(), adapter.raw(), &surface)?;
+        let indices = utils::get_queue_family_indices(instance.raw(), adapter.raw(), &surface)?;
         indices.log_debug();
 
         let device =

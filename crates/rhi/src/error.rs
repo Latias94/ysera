@@ -1,7 +1,6 @@
 use thiserror::Error;
 
 // refer to spec: https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkResult.html
-
 #[derive(Clone, Debug, Eq, PartialEq, Error)]
 pub enum DeviceError {
     #[error("out of memory")]
