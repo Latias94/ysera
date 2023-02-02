@@ -323,7 +323,6 @@ impl super::Instance {
         super::Surface {
             shared: Arc::new(super::SurfaceShared { raw: surface, fp }),
             instance: Arc::clone(&self.shared),
-            swapchain: None,
         }
     }
 
@@ -420,5 +419,20 @@ impl super::Instance {
                 "Unsupport"
             }
         );
+    }
+}
+
+use crate::{SurfaceConfiguration, SurfaceError, Swapchain};
+
+impl crate::Surface<super::Api> for super::Surface {
+    unsafe fn configure(
+        &mut self,
+        device: &super::Device,
+        config: &SurfaceConfiguration,
+        mut old_swapchain: Option<super::Swapchain>,
+    ) -> Result<super::Swapchain, SurfaceError> {
+        let old = old_swapchain.take().map(|sc| sc.release_resources());
+        let swapchain = device.create_swapchain(self, config, old)?;
+        Ok(swapchain)
     }
 }

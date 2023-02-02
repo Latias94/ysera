@@ -25,7 +25,7 @@ pub struct PhysicalDeviceCapabilities {
 unsafe impl Send for PhysicalDeviceCapabilities {}
 unsafe impl Sync for PhysicalDeviceCapabilities {}
 
-impl crate::PhysicalDevice<super::Api> for super::PhysicalDevice {
+impl crate::PhysicalDevice<Api> for super::PhysicalDevice {
     unsafe fn open(&self, features: Features) -> Result<OpenDevice<Api>, DeviceError> {
         profiling::scope!("PhysicalDevice open");
 
@@ -50,12 +50,6 @@ impl crate::PhysicalDevice<super::Api> for super::PhysicalDevice {
             .build();
         let queue_create_infos = [queue_create_info];
 
-        // TODO configurable according to request device features
-        let physical_device_features = vk::PhysicalDeviceFeatures::builder()
-            .sampler_anisotropy(true)
-            .sample_rate_shading(true)
-            .build();
-
         let enabled_extension_names = enabled_extensions
             .iter()
             .map(|&s| {
@@ -67,8 +61,7 @@ impl crate::PhysicalDevice<super::Api> for super::PhysicalDevice {
         // 如果要顾及兼容性，需要在这里加上 Device 的 validation layer
         let device_create_pre_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_create_infos)
-            .enabled_extension_names(&enabled_extension_names)
-            .enabled_features(&physical_device_features);
+            .enabled_extension_names(&enabled_extension_names);
 
         let device_create_info = enabled_phd_features
             .add_to_device_create_builder(device_create_pre_info)
@@ -181,7 +174,7 @@ impl super::PhysicalDevice {
 
     pub fn physical_device_features(
         &self,
-        enabled_extensions: &Vec<&'static CStr>,
+        enabled_extensions: &[&'static CStr],
         features: Features,
     ) -> PhysicalDeviceFeatures {
         PhysicalDeviceFeatures::from_extensions_and_requested_features(
@@ -223,7 +216,7 @@ impl super::PhysicalDevice {
         features: Features,
         family_index: u32,
         queue_index: u32,
-    ) -> Result<crate::OpenDevice<super::Api>, crate::DeviceError> {
+    ) -> Result<OpenDevice<Api>, DeviceError> {
         // 返回的 vk::PhysicalDeviceMemoryProperties 结构有两个数组内存类型和内存堆。内存堆是不同的内存资源，
         // 如专用 VRAM 和当 VRAM 耗尽时 RAM 中的交换空间。不同类型的内存存在于这些堆中。现在我们只关心内存的类型，
         // 而不关心它来自的堆，但是您可以想象这可能会影响性能。
@@ -308,7 +301,7 @@ impl super::PhysicalDevice {
             valid_memory_types,
             naga_options,
         };
-        Ok(crate::OpenDevice { device, queue })
+        Ok(OpenDevice { device, queue })
     }
 
     fn find_queue_family(&self) -> QueueFamilyIndices {
@@ -357,7 +350,7 @@ impl PhysicalDeviceFeatures {
     }
 
     fn from_extensions_and_requested_features(
-        enabled_extensions: &Vec<&'static CStr>,
+        enabled_extensions: &[&'static CStr],
         requested_features: Features,
         downlevel_flags: DownlevelFlags,
     ) -> Self {

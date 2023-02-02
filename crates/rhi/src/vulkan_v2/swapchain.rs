@@ -1,3 +1,4 @@
+use crate::ImageFormat;
 use ash::vk;
 
 pub struct SwapChainSupportDetail {
@@ -13,13 +14,33 @@ pub struct SwapchainProperties {
     pub extent: vk::Extent2D,
 }
 
-impl super::Swapchain {
-    pub unsafe fn release_resources(self, device: &ash::Device) -> Self {
-        profiling::scope!("Swapchain::release_resources");
+impl crate::Swapchain<super::Api> for super::Swapchain {
+    fn get_width(&self) -> u32 {
+        self.config.extent.width
+    }
+
+    fn get_height(&self) -> u32 {
+        self.config.extent.height
+    }
+
+    fn get_image_index(&self) -> u32 {
+        self.image_index
+    }
+
+    fn get_format(&self) -> ImageFormat {
+        self.config.format
+    }
+
+    unsafe fn release_resources(self) -> Self {
         {
-            let _ = device.device_wait_idle();
+            let _ = self.device.raw.device_wait_idle();
         };
-        device.destroy_fence(self.fence, None);
+        self.device.raw.destroy_fence(self.fence, None);
         self
+    }
+
+    unsafe fn destroy(self) {
+        let sc = self.release_resources();
+        sc.loader.destroy_swapchain(sc.raw, None);
     }
 }

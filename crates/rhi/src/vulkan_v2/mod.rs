@@ -16,8 +16,8 @@ pub mod pipeline;
 pub mod platforms;
 pub mod queue;
 pub mod sampler;
+pub mod semaphore;
 pub mod shader;
-pub mod surface;
 pub mod swapchain;
 pub mod utils;
 
@@ -29,6 +29,8 @@ impl crate::GraphicsApi for Api {
     type Surface = Surface;
     type PhysicalDevice = PhysicalDevice;
     type Device = Device;
+    type Swapchain = Swapchain;
+    type Semaphore = Semaphore;
     type Queue = Queue;
     type Buffer = Buffer;
     type Image = Image;
@@ -54,7 +56,6 @@ pub struct Instance {
 pub struct Surface {
     shared: Arc<SurfaceShared>,
     instance: Arc<InstanceShared>,
-    swapchain: Option<Swapchain>,
 }
 
 pub struct SurfaceShared {
@@ -65,9 +66,11 @@ pub struct SurfaceShared {
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
     loader: khr::Swapchain,
+    surface: Arc<SurfaceShared>,
     device: Arc<DeviceShared>,
     fence: vk::Fence,
     images: Vec<vk::Image>,
+    image_index: u32,
     config: crate::SurfaceConfiguration,
 }
 
@@ -116,6 +119,12 @@ pub struct Image {}
 
 #[derive(Debug)]
 pub struct Sampler {}
+
+pub struct Semaphore {
+    raw: vk::Semaphore,
+    is_timeline: bool,
+    device: Arc<DeviceShared>,
+}
 
 pub struct Pipeline {}
 

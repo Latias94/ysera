@@ -4,6 +4,10 @@ use ash::vk;
 use std::sync::Arc;
 
 impl crate::Device<super::Api> for super::Device {
+    unsafe fn present_queue(&self, image_index: u32, wait_semaphore: &[super::Semaphore]) {
+        todo!()
+    }
+
     unsafe fn shutdown(self, queue: super::Queue) {
         self.shared.free_resources();
     }
@@ -103,9 +107,11 @@ impl super::Device {
         Ok(super::Swapchain {
             raw,
             loader: swapchain_loader,
+            surface: surface.shared.clone(),
             device: Arc::clone(&self.shared),
             fence,
             images: swapchain_images,
+            image_index: 0,
             config: config.clone(),
         })
     }

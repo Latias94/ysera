@@ -32,6 +32,8 @@ pub trait GraphicsApi: Clone + Sized {
     type Surface: Surface<Self>;
     type PhysicalDevice: PhysicalDevice<Self>;
     type Device: Device<Self>;
+    type Swapchain: Swapchain<Self>;
+    type Semaphore: Semaphore<Self> + Send + Sync;
 
     type Queue: Queue<Self>;
     type Buffer: Debug + Send + Sync + 'static;
@@ -65,19 +67,37 @@ pub trait Surface<Api: GraphicsApi> {
         &mut self,
         device: &Api::Device,
         config: &SurfaceConfiguration,
-    ) -> Result<(), SurfaceError>;
-
-    unsafe fn unconfigure(&mut self, device: &Api::Device);
+        old_swapchain: Option<Api::Swapchain>,
+    ) -> Result<Api::Swapchain, SurfaceError>;
 }
 
 pub trait Device<Api: GraphicsApi> {
+    unsafe fn present_queue(&self, image_index: u32, wait_semaphore: &[Api::Semaphore]);
     unsafe fn shutdown(self, queue: Api::Queue);
+}
+
+pub trait Swapchain<Api: GraphicsApi> {
+    fn get_width(&self) -> u32;
+    fn get_height(&self) -> u32;
+    fn get_image_index(&self) -> u32;
+    fn get_format(&self) -> ImageFormat;
+
+    unsafe fn release_resources(self) -> Self;
+    unsafe fn destroy(self);
 }
 
 #[derive(Debug)]
 pub struct OpenDevice<Api: GraphicsApi> {
     pub device: Api::Device,
     pub queue: Api::Queue,
+}
+
+pub trait Semaphore<Api: GraphicsApi> {
+    fn is_timeline_semaphore(&self) -> bool;
+
+    unsafe fn wait(&self, value: u64, timeout: u64) -> Self;
+    unsafe fn signal(&self, value: u64);
+    unsafe fn reset(&self);
 }
 
 pub trait Queue<Api: GraphicsApi> {}

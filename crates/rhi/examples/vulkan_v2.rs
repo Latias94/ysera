@@ -1,6 +1,6 @@
 use eureka_rhi::{
     Device, Extent3d, GraphicsApi, ImageFormat, ImageUses, Instance, InstanceDescriptor,
-    OpenDevice, PhysicalDevice, PresentMode, ShaderInput, Surface, SurfaceConfiguration,
+    OpenDevice, PhysicalDevice, PresentMode, ShaderInput, Surface, SurfaceConfiguration, Swapchain,
 };
 use eureka_rhi::{Features, InstanceError};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -10,10 +10,11 @@ use std::time::Instant;
 struct Application<Api: GraphicsApi> {
     instance: Api::Instance,
     surface: Api::Surface,
-    surface_format: ImageFormat,
     physical_device: Api::PhysicalDevice,
     device: Api::Device,
+    swapchain: Api::Swapchain,
     queue: Api::Queue,
+    surface_format: ImageFormat,
     // command_pool: Api::CommandPool,
     // local_buffer: Api::Buffer,
 }
@@ -69,9 +70,13 @@ impl<Api: GraphicsApi> Application<Api> {
             },
             usage: ImageUses::COLOR_TARGET,
         };
-        unsafe {
-            surface.configure(&device, &surface_config).unwrap();
-        };
+
+        let swapchain = unsafe { surface.configure(&device, &surface_config, None).unwrap() };
+        log::info!(
+            "Current window size: ({}, {})",
+            swapchain.get_width(),
+            swapchain.get_height()
+        );
 
         let vert_shader =
             ShaderInput::SpirV(&load_pre_compiled_spv_bytes_from_name("triangle.vert"));
@@ -104,16 +109,17 @@ impl<Api: GraphicsApi> Application<Api> {
         Ok(Self {
             instance,
             surface,
-            surface_format: surface_config.format,
             physical_device,
             device,
+            swapchain,
             queue,
+            surface_format: surface_config.format,
         })
     }
 
     fn exit(mut self) {
         unsafe {
-            self.surface.unconfigure(&self.device);
+            self.swapchain.destroy();
             self.device.shutdown(self.queue);
             self.instance.destroy_surface(self.surface);
             drop(self.physical_device)
