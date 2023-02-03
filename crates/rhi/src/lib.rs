@@ -4,7 +4,12 @@ extern crate alloc;
 extern crate core;
 
 use core::fmt::Debug;
+
+pub use ash;
+pub use winit;
+
 pub use error::*;
+pub use types::*;
 
 use crate::vulkan::instance::InstanceFlags;
 
@@ -13,11 +18,6 @@ mod gui;
 pub mod types;
 pub mod vulkan;
 mod vulkan_v2;
-
-pub use types::*;
-
-pub use ash;
-pub use winit;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
@@ -95,9 +95,15 @@ pub struct OpenDevice<Api: GraphicsApi> {
 pub trait Semaphore<Api: GraphicsApi> {
     fn is_timeline_semaphore(&self) -> bool;
 
-    unsafe fn wait(&self, value: u64, timeout: u64) -> Self;
-    unsafe fn signal(&self, value: u64);
-    unsafe fn reset(&self);
+    unsafe fn create(
+        device: &Api::Device,
+        is_timeline: bool,
+        name: Label,
+    ) -> Result<Api::Semaphore, DeviceError>;
+    unsafe fn wait(&self, value: u64, timeout: u64) -> Result<(), DeviceError>;
+    unsafe fn signal(&self, value: u64) -> Result<(), DeviceError>;
+    unsafe fn reset(&mut self) -> Result<(), DeviceError>;
+    unsafe fn get_value(&self) -> Result<u64, DeviceError>;
 }
 
 pub trait Queue<Api: GraphicsApi> {}

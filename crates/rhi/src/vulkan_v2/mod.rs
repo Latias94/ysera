@@ -1,9 +1,12 @@
-use crate::DownlevelFlags;
-use ash::extensions::khr;
-use ash::vk;
-use physical_device::PhysicalDeviceCapabilities;
 use std::ffi::CStr;
 use std::sync::Arc;
+
+use ash::extensions::khr;
+use ash::vk;
+
+use physical_device::PhysicalDeviceCapabilities;
+
+use crate::DownlevelFlags;
 
 pub mod buffer;
 pub mod conv;
