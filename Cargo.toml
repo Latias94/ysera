@@ -13,10 +13,10 @@ edition = "2021"
 rust-version = "1.65"
 
 [workspace.dependencies]
-math = { package = "eureka-math", path = "crates/math" }
-engine = { package = "eureka-engine", path = "crates/engine" }
-rhi = { package = "eureka-rhi", path = "crates/rhi" }
-eureka-imgui = { package = "eureka-imgui", path = "crates/imgui" }
+math = { package = "ysera-math", path = "crates/math" }
+engine = { package = "ysera-engine", path = "crates/engine" }
+rhi = { package = "ysera-rhi", path = "crates/rhi" }
+ysera-imgui = { package = "ysera-imgui", path = "crates/imgui" }
 
 image = "0.24"
 profiling = "=1.0.7"
@@ -36,10 +36,11 @@ bitflags = "1"
 winapi = "0.3"
 windows = "0.44"
 fxhash = "0.2"
-parking_lot = "0.12"
 rayon = "1"
 glob = "0.3"
 fs_extra = "1"
+arrayvec = "0.7"
+bytemuck = "1.13"
 #ordered-float = "3.4.0"
 
 # model

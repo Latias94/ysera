@@ -1,5 +1,5 @@
 [package]
-name = "eureka-rhi"
+name = "ysera-rhi"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ vulkan = ["naga/spv-out", "ash"]
 
 [dependencies]
 math.workspace = true
-eureka-imgui.workspace = true
+ysera-imgui.workspace = true
 
 ash = { workspace = true, default-features = false, features = ["linked", "debug"], optional = true }
 raw-window-handle.workspace = true
@@ -26,12 +26,13 @@ typed-builder.workspace = true
 bitflags.workspace = true
 winit.workspace = true
 fxhash.workspace = true
-parking_lot.workspace = true
 gpu-allocator.workspace = true
 lazy_static.workspace = true
 rand.workspace = true
 image.workspace = true
 tobj.workspace = true
+arrayvec.workspace = true
+bytemuck.workspace = true
 #vk-mem.workspace = true
 naga = { workspace = true, features = ["clone"] }
 

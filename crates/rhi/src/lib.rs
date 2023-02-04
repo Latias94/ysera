@@ -4,116 +4,124 @@ extern crate alloc;
 extern crate core;
 
 use core::fmt::Debug;
+use std::ffi::CStr;
 
 pub use ash;
+use typed_builder::TypedBuilder;
 pub use winit;
 
 pub use error::*;
-pub use types::*;
-
-use crate::vulkan::instance::InstanceFlags;
 
 mod error;
 mod gui;
-pub mod types;
 pub mod vulkan;
 mod vulkan_v2;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-pub mod api {
-    // #[cfg(feature = "vulkan")]
-    pub use super::vulkan_v2::Api as Vulkan;
+pub type Label<'a> = Option<&'a str>;
+
+#[derive(Debug, TypedBuilder)]
+pub struct AdapterRequirements {
+    #[builder(default = true)]
+    pub graphics: bool,
+    #[builder(default = true)]
+    pub present: bool,
+    #[builder(default = false)]
+    pub compute: bool,
+    #[builder(default = true)]
+    pub transfer: bool,
+    #[builder(default = true)]
+    pub sampler_anisotropy: bool,
+    #[builder(default = true)]
+    pub sample_rate_shading: bool,
+    #[builder(default = true)]
+    pub discrete_gpu: bool,
+    pub adapter_extension_names: Vec<&'static CStr>,
 }
 
-// refer to wgpu-hal
-pub trait GraphicsApi: Clone + Sized {
-    type Instance: Instance<Self>;
-    type Surface: Surface<Self>;
-    type PhysicalDevice: PhysicalDevice<Self>;
-    type Device: Device<Self>;
-    type Swapchain: Swapchain<Self>;
-    type Semaphore: Semaphore<Self> + Send + Sync;
-
-    type Queue: Queue<Self>;
-    type Buffer: Debug + Send + Sync + 'static;
-    type Image: Debug + Send + Sync + 'static;
-    type Sampler: Debug + Send + Sync;
-    type Pipeline: Send + Sync;
-    type Shader: Debug + Send + Sync;
+bitflags::bitflags! {
+    pub struct InstanceFlags: u16 {
+        const DEBUG = 1 << 0;
+        const VALIDATION = 1 << 1;
+    }
 }
 
-pub trait Instance<Api: GraphicsApi>: Sized {
-    unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, InstanceError>;
-    unsafe fn create_surface(
-        &self,
-        display_handle: raw_window_handle::RawDisplayHandle,
-        window_handle: raw_window_handle::RawWindowHandle,
-    ) -> Result<Api::Surface, InstanceError>;
-    unsafe fn destroy_surface(&self, surface: Api::Surface);
-    unsafe fn enumerate_physical_devices(
-        &self,
-        surface: &Api::Surface,
-    ) -> Vec<ExposedPhysicalDevice<Api>>;
+#[derive(Clone, Debug, TypedBuilder)]
+pub struct InstanceDescriptor<'a> {
+    #[builder(default)]
+    pub name: &'a str,
+    #[builder(default = InstanceFlags::all())]
+    pub flags: InstanceFlags,
+    #[builder(default = log::LevelFilter::Warn)]
+    pub debug_level_filter: log::LevelFilter,
 }
 
-pub trait PhysicalDevice<Api: GraphicsApi>: Send + Sync {
-    unsafe fn open(&self, features: Features) -> Result<OpenDevice<Api>, DeviceError>;
-    unsafe fn surface_capabilities(&self, surface: &Api::Surface) -> Option<SurfaceCapabilities>;
+#[derive(Debug, Default, Copy, Clone)]
+pub struct QueueFamilyIndices {
+    pub(crate) graphics_family: Option<u32>,
+    pub(crate) present_family: Option<u32>,
+    pub(crate) compute_family: Option<u32>,
+    pub(crate) transfer_family: Option<u32>,
 }
 
-pub trait Surface<Api: GraphicsApi> {
-    unsafe fn configure(
-        &mut self,
-        device: &Api::Device,
-        config: &SurfaceConfiguration,
-        old_swapchain: Option<Api::Swapchain>,
-    ) -> Result<Api::Swapchain, SurfaceError>;
+impl QueueFamilyIndices {
+    pub fn has_meet_requirement(&self, requirements: &AdapterRequirements) -> bool {
+        if requirements.graphics && self.graphics_family.is_none() {
+            return false;
+        }
+        if requirements.present && self.present_family.is_none() {
+            return false;
+        }
+        if requirements.compute && self.compute_family.is_none() {
+            return false;
+        }
+        if requirements.transfer && self.transfer_family.is_none() {
+            return false;
+        }
+        true
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.graphics_family.is_some()
+            && self.transfer_family.is_some()
+            && self.present_family.is_some()
+            && self.compute_family.is_some()
+    }
+
+    pub fn log_debug(&self) {
+        if self.graphics_family.is_some() {
+            log::debug!(
+                "graphics family indices is {}, ",
+                self.graphics_family.unwrap()
+            );
+        }
+        if self.present_family.is_some() {
+            log::debug!("present family indices is {}", self.present_family.unwrap());
+        }
+        if self.compute_family.is_some() {
+            log::debug!("compute family indices is {}", self.compute_family.unwrap());
+        }
+        if self.transfer_family.is_some() {
+            log::debug!(
+                "transfer family indices is {}",
+                self.transfer_family.unwrap()
+            );
+        }
+    }
 }
 
-pub trait Device<Api: GraphicsApi> {
-    unsafe fn present_queue(&self, image_index: u32, wait_semaphore: &[Api::Semaphore]);
-    unsafe fn shutdown(self, queue: Api::Queue);
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Color {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
 }
 
-pub trait Swapchain<Api: GraphicsApi> {
-    fn get_width(&self) -> u32;
-    fn get_height(&self) -> u32;
-    fn get_image_index(&self) -> u32;
-    fn get_format(&self) -> ImageFormat;
-
-    unsafe fn release_resources(self) -> Self;
-    unsafe fn destroy(self);
+impl Color {
+    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self { r, g, b, a }
+    }
 }
-
-#[derive(Debug)]
-pub struct OpenDevice<Api: GraphicsApi> {
-    pub device: Api::Device,
-    pub queue: Api::Queue,
-}
-
-pub trait Semaphore<Api: GraphicsApi> {
-    fn is_timeline_semaphore(&self) -> bool;
-
-    unsafe fn create(
-        device: &Api::Device,
-        is_timeline: bool,
-        name: Label,
-    ) -> Result<Api::Semaphore, DeviceError>;
-    unsafe fn wait(&self, value: u64, timeout: u64) -> Result<(), DeviceError>;
-    unsafe fn signal(&self, value: u64) -> Result<(), DeviceError>;
-    unsafe fn reset(&mut self) -> Result<(), DeviceError>;
-    unsafe fn get_value(&self) -> Result<u64, DeviceError>;
-}
-
-pub trait Queue<Api: GraphicsApi> {}
-
-pub trait Buffer<Api: GraphicsApi> {}
-
-pub trait Image<Api: GraphicsApi> {}
-
-pub trait Sampler<Api: GraphicsApi> {}
-
-pub trait Pipeline<Api: GraphicsApi> {}
-
-pub trait Shader<Api: GraphicsApi> {}

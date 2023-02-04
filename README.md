@@ -1,6 +1,6 @@
-# Eureka Engine
+# Ysera Engine
 
-Eureka Engine, a scratch engine for learning purpose.
+Ysera Engine, a scratch engine for learning purpose.
 
 This engine is mainly for self-learning to build game engine, it also highlights the focus on graphics rendering and add a touch of creativity. 
 
@@ -9,8 +9,8 @@ It is the place to collect my _Eureka_ moment😊.
 ## Build
 
 ```shell
-git clone https://github.com/Latias94/eureka.git
-cd eureka
+git clone https://github.com/Latias94/ysera.git
+cd ysera
 cargo r
 ```
 

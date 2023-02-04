@@ -5,12 +5,12 @@ use ash::extensions::khr;
 use ash::vk;
 use gpu_allocator::vulkan::Allocator;
 use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
-use parking_lot::Mutex;
+use std::sync::Mutex;
 use typed_builder::TypedBuilder;
 use winit::window::Window;
 
-use eureka_imgui::gui::GuiContext;
 use math::prelude::*;
+use ysera_imgui::gui::GuiContext;
 
 use crate::gui::GuiState;
 use crate::vulkan::adapter::Adapter;
@@ -661,20 +661,26 @@ impl Swapchain {
         desc: FramebufferDescriptor,
     ) -> Result<vk::Framebuffer, DeviceError> {
         use std::collections::hash_map::Entry;
-        Ok(match map.lock().entry(desc) {
-            Entry::Occupied(e) => *e.get(),
-            Entry::Vacant(e) => {
-                let desc = e.key();
-                let create_info = vk::FramebufferCreateInfo::builder()
-                    .render_pass(desc.render_pass)
-                    .attachments(&desc.texture_views)
-                    .width(desc.swapchain_extent.width)
-                    .height(desc.swapchain_extent.height)
-                    .layers(1)
-                    .build();
-                device.create_framebuffer(&create_info)?
-            }
-        })
+        Ok(
+            match map
+                .lock()
+                .expect("create_framebuffer map lock fail")
+                .entry(desc)
+            {
+                Entry::Occupied(e) => *e.get(),
+                Entry::Vacant(e) => {
+                    let desc = e.key();
+                    let create_info = vk::FramebufferCreateInfo::builder()
+                        .render_pass(desc.render_pass)
+                        .attachments(&desc.texture_views)
+                        .width(desc.swapchain_extent.width)
+                        .height(desc.swapchain_extent.height)
+                        .layers(1)
+                        .build();
+                    device.create_framebuffer(&create_info)?
+                }
+            },
+        )
     }
 
     pub fn acquire_next_image(

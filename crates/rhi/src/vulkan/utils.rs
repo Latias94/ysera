@@ -61,7 +61,7 @@ pub fn get_queue_family_indices(
             surface
                 .loader()
                 .get_physical_device_surface_support(adapter, index, surface.raw())
-                .map_err(crate::DeviceError::VulkanError)?
+                .map_err(crate::DeviceError::Vulkan)?
         };
 
         if support_present {

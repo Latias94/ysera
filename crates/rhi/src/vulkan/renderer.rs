@@ -4,13 +4,13 @@ use std::time::Instant;
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use imgui::Context as ImguiContext;
-use parking_lot::Mutex;
+use std::sync::Mutex;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, KeyboardInput, WindowEvent};
 use winit::window::Window;
 
-use eureka_imgui::gui::GuiContext;
 use math::Mat4;
+use ysera_imgui::gui::GuiContext;
 
 use crate::gui::GuiState;
 use crate::vulkan::adapter::Adapter;

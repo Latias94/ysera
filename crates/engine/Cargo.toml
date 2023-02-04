@@ -1,5 +1,5 @@
 [package]
-name = "eureka-engine"
+name = "ysera-engine"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,7 @@ rust-version.workspace = true
 [dependencies]
 rhi.workspace = true
 math.workspace = true
-eureka-imgui.workspace = true
+ysera-imgui.workspace = true
 
 log.workspace = true
 env_logger.workspace = true

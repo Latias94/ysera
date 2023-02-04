@@ -7,16 +7,9 @@ use log::LevelFilter;
 use crate::vulkan::platforms;
 use crate::vulkan_v2::debug;
 use crate::vulkan_v2::debug::DebugUtils;
-use crate::{InstanceDescriptor, InstanceError};
+use crate::{InstanceDescriptor, InstanceError, InstanceFlags};
 
 use super::{adapter::Adapter, surface::Surface};
-
-bitflags::bitflags! {
-    pub struct InstanceFlags: u16 {
-        const DEBUG = 1 << 0;
-        const VALIDATION = 1 << 1;
-    }
-}
 
 pub struct Instance {
     /// Loads instance level functions. Needs to outlive the Devices it has created.

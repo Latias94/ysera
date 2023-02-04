@@ -1,4 +1,4 @@
-use crate::vulkan::surface::Surface;
+use crate::vulkan_v2::surface::Surface;
 use crate::QueueFamilyIndices;
 use ash::vk;
 use std::ffi::CStr;
@@ -61,7 +61,7 @@ pub fn get_queue_family_indices(
             surface
                 .loader()
                 .get_physical_device_surface_support(adapter, index, surface.raw())
-                .map_err(crate::DeviceError::VulkanError)?
+                .map_err(crate::DeviceError::Vulkan)?
         };
 
         if support_present {

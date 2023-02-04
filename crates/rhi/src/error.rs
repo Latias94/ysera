@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 // refer to spec: https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkResult.html
-#[derive(Clone, Debug, Eq, PartialEq, Error)]
+#[derive(Debug, Error)]
 pub enum DeviceError {
     #[error("out of memory")]
     OutOfMemory,
@@ -15,13 +15,14 @@ pub enum DeviceError {
     Other(&'static str),
     #[error(transparent)]
     #[cfg(all(feature = "vulkan"))]
-    VulkanError(#[from] ash::vk::Result),
+    Vulkan(#[from] ash::vk::Result),
+    #[error("Allocation error: {0}")]
+    Allocator(#[from] gpu_allocator::AllocationError),
     #[error(transparent)]
-    #[cfg(all(feature = "dx12"))]
-    Dx12Error(#[from] windows::core::Error),
+    AnyOther(#[from] anyhow::Error),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Error)]
+#[derive(Debug, Error)]
 pub enum SurfaceError {
     #[error("A surface is no longer available")]
     Lost,
@@ -35,7 +36,7 @@ pub enum SurfaceError {
     Other(&'static str),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Error)]
+#[derive(Debug, Error)]
 pub enum ShaderError {
     #[error("compilation failed: {0:?}")]
     Compilation(String),
@@ -59,12 +60,4 @@ pub enum InstanceError {
     #[error(transparent)]
     #[cfg(all(feature = "dx12"))]
     Dx12Error(#[from] windows::core::Error),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Error)]
-pub enum PipelineError {
-    #[error("entry point for stage {0:?} is invalid")]
-    EntryPoint(naga::ShaderStage),
-    #[error(transparent)]
-    Device(#[from] DeviceError),
 }
