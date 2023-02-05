@@ -1,55 +1,38 @@
 use alloc::ffi::CString;
 use std::ffi::{c_void, CStr};
+use std::sync::Arc;
 
 use ash::{extensions::*, vk};
 use log::LevelFilter;
 
 use crate::vulkan::platforms;
+use crate::vulkan_v2::adapter::Surface;
 use crate::vulkan_v2::debug;
 use crate::vulkan_v2::debug::DebugUtils;
 use crate::{InstanceDescriptor, InstanceError, InstanceFlags};
 
-use super::{adapter::Adapter, surface::Surface};
+use super::adapter::Adapter;
 
 pub struct Instance {
+    pub shared: Arc<InstanceShared>,
+}
+pub struct InstanceShared {
     /// Loads instance level functions. Needs to outlive the Devices it has created.
-    raw: ash::Instance,
+    pub raw: ash::Instance,
     /// Loads the Vulkan library. Needs to outlive Instance and Device.
-    entry: ash::Entry,
-    debug_utils: Option<DebugUtils>,
-    extensions: Vec<&'static CStr>,
-    flags: InstanceFlags,
+    pub(crate) entry: ash::Entry,
+    pub(crate) debug_utils: Option<DebugUtils>,
+    pub(crate) extensions: Vec<&'static CStr>,
+    pub flags: InstanceFlags,
 }
 
-impl Instance {
-    pub fn new(
-        raw: ash::Instance,
-        entry: ash::Entry,
-        debug_utils: Option<DebugUtils>,
-        extensions: Vec<&'static CStr>,
-        flags: InstanceFlags,
-    ) -> Self {
-        Self {
-            raw,
-            entry,
-            debug_utils,
-            extensions,
-            flags,
-        }
-    }
-
+impl InstanceShared {
     pub fn raw(&self) -> &ash::Instance {
         &self.raw
     }
+}
 
-    pub fn flags(&self) -> InstanceFlags {
-        self.flags
-    }
-
-    pub fn debug_utils(&self) -> &Option<DebugUtils> {
-        &self.debug_utils
-    }
-
+impl Instance {
     pub unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, InstanceError> {
         #[cfg(not(target_os = "macos"))]
         let vulkan_api_version = vk::API_VERSION_1_3;
@@ -140,16 +123,18 @@ impl Instance {
         let flags = desc.flags;
 
         Ok(Self {
-            raw: instance,
-            entry,
-            debug_utils,
-            extensions: extension_cstr_names,
-            flags,
+            shared: Arc::new(InstanceShared {
+                raw: instance,
+                entry,
+                debug_utils,
+                extensions: extension_cstr_names,
+                flags,
+            }),
         })
     }
 
     pub fn enumerate_adapters(&self) -> Result<Vec<Adapter>, InstanceError> {
-        let instance = &self.raw;
+        let instance = &self.shared.raw;
         let adapters = unsafe {
             instance
                 .enumerate_physical_devices()
@@ -164,7 +149,7 @@ impl Instance {
 
         for &each_adapter in adapters.iter() {
             let adapter = Adapter::new(each_adapter, self);
-            adapter.log_adapter_information(&self.raw);
+            adapter.log_adapter_information(&self.shared.raw);
             result.push(adapter);
         }
         Ok(result)
@@ -173,8 +158,8 @@ impl Instance {
         &self,
         window: &winit::window::Window,
     ) -> Result<Surface, InstanceError> {
-        let surface = platforms::create_surface(&self.entry, self.raw(), window)?;
-        let surface_loader = khr::Surface::new(&self.entry, &self.raw);
+        let surface = platforms::create_surface(&self.shared.entry, &self.shared.raw, window)?;
+        let surface_loader = khr::Surface::new(&self.shared.entry, &self.shared.raw);
         Ok(Surface::new(surface, surface_loader))
     }
 }
@@ -187,7 +172,7 @@ impl Instance {
         hinstance: *mut c_void,
         hwnd: *mut c_void,
     ) -> Result<Surface, InstanceError> {
-        if !self.extensions.contains(&khr::Win32Surface::name()) {
+        if !self.shared.extensions.contains(&khr::Win32Surface::name()) {
             panic!("Vulkan driver does not support `VK_KHR_WIN32_SURFACE`");
         }
 
@@ -196,11 +181,25 @@ impl Instance {
                 .flags(vk::Win32SurfaceCreateFlagsKHR::empty())
                 .hinstance(hinstance)
                 .hwnd(hwnd);
-            let win32_loader = khr::Win32Surface::new(&self.entry, &self.raw);
+            let win32_loader = khr::Win32Surface::new(&self.shared.entry, &self.shared.raw);
             unsafe { win32_loader.create_win32_surface(&info, None)? }
         };
 
-        let surface_loader = khr::Surface::new(&self.entry, &self.raw);
+        let surface_loader = khr::Surface::new(&self.shared.entry, &self.shared.raw);
         Ok(Surface::new(surface, surface_loader))
+    }
+}
+
+impl Drop for InstanceShared {
+    fn drop(&mut self) {
+        if let Some(DebugUtils {
+            extension,
+            messenger,
+        }) = self.debug_utils.take()
+        {
+            unsafe {
+                extension.destroy_debug_utils_messenger(messenger, None);
+            }
+        }
     }
 }

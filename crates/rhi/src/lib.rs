@@ -15,7 +15,7 @@ pub use error::*;
 mod error;
 mod gui;
 pub mod vulkan;
-mod vulkan_v2;
+pub mod vulkan_v2;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
@@ -59,10 +59,10 @@ pub struct InstanceDescriptor<'a> {
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct QueueFamilyIndices {
-    pub(crate) graphics_family: Option<u32>,
-    pub(crate) present_family: Option<u32>,
-    pub(crate) compute_family: Option<u32>,
-    pub(crate) transfer_family: Option<u32>,
+    pub graphics_family: Option<u32>,
+    pub present_family: Option<u32>,
+    pub compute_family: Option<u32>,
+    pub transfer_family: Option<u32>,
 }
 
 impl QueueFamilyIndices {
@@ -123,5 +123,21 @@ pub struct Color {
 impl Color {
     pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r, g, b, a }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct Extent3d {
+    pub width: u32,
+    pub height: u32,
+    pub depth: u32,
+}
+impl Extent3d {
+    pub fn new(width: u32, height: u32, depth: u32) -> Self {
+        Self {
+            width,
+            height,
+            depth,
+        }
     }
 }

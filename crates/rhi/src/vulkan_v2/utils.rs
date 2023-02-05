@@ -1,4 +1,4 @@
-use crate::vulkan_v2::surface::Surface;
+use crate::vulkan_v2::adapter::Surface;
 use crate::QueueFamilyIndices;
 use ash::vk;
 use std::ffi::CStr;
@@ -57,12 +57,8 @@ pub fn get_queue_family_indices(
         if queue_family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
             indices.transfer_family = Some(index);
         };
-        let support_present = unsafe {
-            surface
-                .loader()
-                .get_physical_device_surface_support(adapter, index, surface.raw())
-                .map_err(crate::DeviceError::Vulkan)?
-        };
+        let support_present =
+            unsafe { surface.get_physical_device_surface_support(adapter, index)? };
 
         if support_present {
             indices.present_family = Some(index);
