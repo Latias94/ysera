@@ -3,10 +3,11 @@ use std::ffi::{c_void, CStr};
 
 use ash::{extensions::*, vk};
 use log::LevelFilter;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
+use crate::vulkan::debug;
+use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::platforms;
-use crate::vulkan_v2::debug;
-use crate::vulkan_v2::debug::DebugUtils;
 use crate::{InstanceDescriptor, InstanceError, InstanceFlags};
 
 use super::{adapter::Adapter, surface::Surface};
@@ -52,7 +53,7 @@ impl Instance {
 
     pub unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, InstanceError> {
         #[cfg(not(target_os = "macos"))]
-        let vulkan_api_version = vk::API_VERSION_1_3;
+        let vulkan_api_version = desc.vulkan_version;
 
         #[cfg(target_os = "macos")]
         // https://github.com/KhronosGroup/MoltenVK/issues/1567
@@ -169,11 +170,19 @@ impl Instance {
         }
         Ok(result)
     }
+
     pub unsafe fn create_surface(
         &self,
-        window: &winit::window::Window,
+        window_handle: &dyn HasRawWindowHandle,
+        display_handle: &dyn HasRawDisplayHandle,
     ) -> Result<Surface, InstanceError> {
-        let surface = platforms::create_surface(&self.entry, self.raw(), window)?;
+        let surface = ash_window::create_surface(
+            &self.entry,
+            &self.raw,
+            display_handle.raw_display_handle(),
+            window_handle.raw_window_handle(),
+            None,
+        )?;
         let surface_loader = khr::Surface::new(&self.entry, &self.raw);
         Ok(Surface::new(surface, surface_loader))
     }

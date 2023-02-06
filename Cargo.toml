@@ -50,6 +50,7 @@ tobj = "3.2"
 
 # Vulkan
 ash = "0.37"
+ash-window = "0.12"
 ash-molten = "0.14"
 naga = "0.11"
 gpu-allocator = "0.22"

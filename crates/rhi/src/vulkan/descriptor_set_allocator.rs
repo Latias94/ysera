@@ -11,7 +11,6 @@ use crate::vulkan::descriptor_set_layout::{
 };
 use crate::vulkan::device::Device;
 use crate::vulkan::texture::VulkanTexture;
-use crate::vulkan::uniform_buffer::UniformBufferObject;
 use crate::DeviceError;
 
 #[derive(TypedBuilder)]

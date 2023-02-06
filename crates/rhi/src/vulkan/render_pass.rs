@@ -4,12 +4,12 @@ use crate::vulkan::device::Device;
 use crate::vulkan::render_pass::RenderPassState::{InRenderPass, Recording};
 use crate::{Color, DeviceError};
 use ash::vk;
-use std::rc::Rc;
+use std::sync::Arc;
 use typed_builder::TypedBuilder;
 
 pub struct RenderPass {
     raw: vk::RenderPass,
-    device: Rc<Device>,
+    device: Arc<Device>,
     state: RenderPassState,
     render_area: math::Rect2D,
     clear_values: Vec<vk::ClearValue>,
@@ -31,7 +31,7 @@ pub enum RenderPassState {
 
 #[derive(Clone, TypedBuilder)]
 pub struct RenderPassDescriptor<'a> {
-    pub device: &'a Rc<Device>,
+    pub device: &'a Arc<Device>,
     pub surface_format: vk::Format,
     pub depth_format: vk::Format,
     pub render_area: math::Rect2D,
@@ -43,7 +43,7 @@ pub struct RenderPassDescriptor<'a> {
 
 #[derive(Clone, TypedBuilder)]
 pub struct ImguiRenderPassDescriptor<'a> {
-    pub device: &'a Rc<Device>,
+    pub device: &'a Arc<Device>,
     pub render_area: math::Rect2D,
     pub surface_format: vk::Format,
 }

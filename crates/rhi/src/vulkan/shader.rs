@@ -8,15 +8,11 @@ use std::borrow::Cow;
 use std::ffi::CString;
 use std::mem::size_of;
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 use typed_builder::TypedBuilder;
 
-pub enum ShaderStage {
-    S,
-}
-
 pub struct Shader {
-    device: Rc<Device>,
+    device: Arc<Device>,
     shader: vk::ShaderModule,
     entry_point: EntryPoint,
     name: CString,
@@ -26,7 +22,7 @@ pub struct Shader {
 #[derive(Clone, TypedBuilder)]
 pub struct ShaderDescriptor<'a> {
     pub label: Label<'a>,
-    pub device: &'a Rc<Device>,
+    pub device: &'a Arc<Device>,
     pub spv_bytes: &'a [u32],
     pub entry_name: &'a str,
 }
@@ -101,7 +97,7 @@ impl Shader {
 
     pub fn create_shader_module(
         label: Label,
-        device: &Rc<Device>,
+        device: &Device,
         bytes: &[u32],
     ) -> Result<vk::ShaderModule, ShaderError> {
         let spv = Cow::Borrowed(bytes);

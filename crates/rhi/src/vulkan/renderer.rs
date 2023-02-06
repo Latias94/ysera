@@ -21,7 +21,7 @@ use crate::vulkan::model::{Model, ModelDescriptor};
 use crate::vulkan::swapchain::SwapchainDescriptor;
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureFromPathDescriptor};
 use crate::vulkan::utils;
-use crate::vulkan_v2::debug::DebugUtils;
+use crate::vulkan::debug::DebugUtils;
 use crate::{
     AdapterRequirements, InstanceDescriptor, QueueFamilyIndices, SurfaceError, MAX_FRAMES_IN_FLIGHT,
 };
@@ -308,12 +308,9 @@ impl VulkanRenderer {
 
         let swapchains = [swapchain.raw()];
         let image_indices = [image_index];
-        let present_info = vk::PresentInfoKHR::builder()
-            .wait_semaphores(signal_semaphores)
-            .swapchains(&swapchains)
-            .image_indices(&image_indices);
 
-        match swapchain.queue_present(&present_info) {
+
+        match swapchain.queue_present(&present_info,image_index, signal_semaphores ) {
             Ok(suboptimal) => suboptimal,
             Err(SurfaceError::OutOfDate) => {
                 self.swapchain = None;
@@ -360,6 +357,20 @@ impl VulkanRenderer {
         };
         log::debug!("======== Swapchain recreated.========");
         Ok(())
+    }
+
+    fn create_pipeline_layout(&self){
+        let push_constant_ranges = shaders
+            .iter()
+            .map(|shader| shader.get_push_constant_range())
+            .filter_map(|mut push_const| push_const.take())
+            .collect::<Vec<_>>();
+
+        let create_info = vk::PipelineLayoutCreateInfo::builder()
+            .set_layouts(layouts)
+            .push_constant_ranges(&push_constant_ranges);
+
+        let raw = device.create_pipeline_layout(&create_info)?;
     }
 
     pub fn handle_event(&mut self, window: &Window, event: &Event<()>) {

@@ -2,10 +2,9 @@ use alloc::ffi::CString;
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr};
 
-use ash::extensions::khr;
 use ash::vk;
 
-use crate::vulkan_v2::debug::DebugUtils;
+use crate::vulkan::debug::DebugUtils;
 use crate::{AdapterRequirements, InstanceFlags, QueueFamilyIndices};
 
 use super::{device::Device, instance::Instance, surface::Surface, utils};
@@ -112,22 +111,31 @@ impl Adapter {
             .map(|layer_name| layer_name.as_ptr())
             .collect();
 
-        let enable_extensions = Self::get_required_device_extensions();
+        let device_extensions_ptrs = requirement
+            .required_extension
+            .iter()
+            .map(|e| CString::new(*e))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let device_extensions_ptrs = device_extensions_ptrs
+            .iter()
+            // Safe because `enabled_extensions` entries have static lifetime.
+            .map(|e| e.as_ptr())
+            .collect::<Vec<_>>();
 
-        let support_extensions = Self::check_device_extension_support(instance, self.raw);
+        let support_extensions = Self::check_device_extension_support(
+            instance,
+            self.raw,
+            requirement.required_extension,
+        );
         if !support_extensions {
             log::error!("device extensions not support");
         }
 
-        let enable_extension_names = enable_extensions
-            .iter()
-            // Safe because `enabled_extensions` entries have static lifetime.
-            .map(|&s| s.as_ptr())
-            .collect::<Vec<_>>();
         let device_create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_create_infos)
             .enabled_layer_names(&enable_layer_names)
-            .enabled_extension_names(&enable_extension_names)
+            .enabled_extension_names(&device_extensions_ptrs)
             .enabled_features(&physical_device_features);
 
         let ash_device: ash::Device =
@@ -139,13 +147,11 @@ impl Adapter {
         Ok(device)
     }
 
-    fn get_required_device_extensions() -> [&'static CStr; 1] {
-        [khr::Swapchain::name()]
-    }
-
-    fn check_device_extension_support(instance: &Instance, device: vk::PhysicalDevice) -> bool {
-        let required_extensions = Self::get_required_device_extensions();
-
+    fn check_device_extension_support(
+        instance: &Instance,
+        device: vk::PhysicalDevice,
+        extensions: &[&str],
+    ) -> bool {
         let extension_props = unsafe {
             instance
                 .raw()
@@ -153,10 +159,10 @@ impl Adapter {
                 .expect("Failed to enumerate device extension properties")
         };
 
-        for required in required_extensions.iter() {
+        for required in extensions.iter() {
             let found = extension_props.iter().any(|ext| {
                 let name = unsafe { CStr::from_ptr(ext.extension_name.as_ptr()) };
-                required == &name
+                *required == name.to_str().unwrap().to_owned()
             });
 
             if !found {

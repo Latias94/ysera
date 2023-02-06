@@ -102,7 +102,7 @@ pub fn setup_debug_utils(
     entry: &ash::Entry,
     instance: &ash::Instance,
     min_level: vk::DebugUtilsMessageSeverityFlagsEXT,
-) -> Result<(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT), crate::InstanceError> {
+) -> Result<(ext::DebugUtils, vk::DebugUtilsMessengerEXT), crate::InstanceError> {
     let debug_utils_loader = ash::extensions::ext::DebugUtils::new(entry, instance);
 
     let messenger_ci = populate_debug_messenger_create_info(min_level);

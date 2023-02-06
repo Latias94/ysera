@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
@@ -14,8 +14,8 @@ use crate::DeviceError;
 
 pub struct Image {
     raw: vk::Image,
-    device: Rc<Device>,
-    allocator: Rc<Mutex<Allocator>>,
+    device: Arc<Device>,
+    allocator: Arc<Mutex<Allocator>>,
     allocation: Option<Allocation>,
     format: vk::Format,
     width: u32,
@@ -25,7 +25,7 @@ pub struct Image {
 
 #[derive(TypedBuilder)]
 pub struct ImageDescriptor<'a> {
-    pub device: &'a Rc<Device>,
+    pub device: &'a Arc<Device>,
     pub image_type: vk::ImageType,
     pub format: vk::Format,
     pub dimension: [u32; 2],
@@ -35,13 +35,13 @@ pub struct ImageDescriptor<'a> {
     pub tiling: vk::ImageTiling,
     pub usage: vk::ImageUsageFlags,
     pub sharing_mode: vk::SharingMode,
-    pub allocator: Rc<Mutex<Allocator>>,
+    pub allocator: Arc<Mutex<Allocator>>,
 }
 
 #[derive(TypedBuilder)]
 pub struct ColorImageDescriptor<'a> {
-    pub device: &'a Rc<Device>,
-    pub allocator: Rc<Mutex<Allocator>>,
+    pub device: &'a Arc<Device>,
+    pub allocator: Arc<Mutex<Allocator>>,
     pub width: u32,
     pub height: u32,
     pub mip_levels: u32,
@@ -52,10 +52,10 @@ pub struct ColorImageDescriptor<'a> {
 
 #[derive(TypedBuilder)]
 pub struct DepthImageDescriptor<'a> {
-    pub device: &'a Rc<Device>,
+    pub device: &'a Arc<Device>,
     pub instance: &'a Instance,
     pub adapter: &'a Adapter,
-    pub allocator: Rc<Mutex<Allocator>>,
+    pub allocator: Arc<Mutex<Allocator>>,
     pub width: u32,
     pub height: u32,
     pub command_buffer_allocator: &'a CommandBufferAllocator,
@@ -174,7 +174,7 @@ impl Image {
         Self::new(&image_desc)
     }
 
-    pub fn new_depth_image(desc: &DepthImageDescriptor) -> Result<Self, DeviceError> {
+    pub unsafe fn new_depth_image(desc: &DepthImageDescriptor) -> Result<Self, DeviceError> {
         let depth_format = Image::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
 
         let depth_image_desc = ImageDescriptor {
@@ -192,13 +192,15 @@ impl Image {
         };
 
         let mut depth_image = Self::new(&depth_image_desc)?;
-        depth_image.transit_layout(
-            depth_format,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            desc.command_buffer_allocator,
-            1,
-        )?;
+        unsafe {
+            depth_image.transit_layout(
+                depth_format,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                desc.command_buffer_allocator,
+                1,
+            )?;
+        }
         Ok(depth_image)
     }
 
@@ -246,7 +248,7 @@ impl Image {
     }
 
     /// 屏障主要用于同步目的，因此必须指定哪些类型的涉及资源的操作必须发生在屏障之前，哪些涉及资源的操作必须等待屏障。
-    pub fn transit_layout(
+    pub unsafe fn transit_layout(
         &mut self,
         format: vk::Format,
         old_layout: vk::ImageLayout,
@@ -254,118 +256,123 @@ impl Image {
         command_buffer_allocator: &CommandBufferAllocator,
         mip_levels: u32,
     ) -> Result<(), DeviceError> {
-        command_buffer_allocator.create_single_use(|device, command_buffer| {
-            let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
-                match format {
-                    vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT => {
-                        vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
+        unsafe {
+            command_buffer_allocator.create_single_use(|device, command_buffer| {
+                let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                {
+                    match format {
+                        vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT => {
+                            vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
+                        }
+                        _ => vk::ImageAspectFlags::DEPTH,
                     }
-                    _ => vk::ImageAspectFlags::DEPTH,
-                }
-            } else {
-                vk::ImageAspectFlags::COLOR
-            };
-            let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) =
-                match (old_layout, new_layout) {
-                    // 将读取深度缓冲区以执行深度测试以查看片段是否可见，并在绘制新片段时写入。
-                    // 读取发生在 vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS 阶段，
-                    // 写入发生在 vk::PipelineStageFlags::LATE_FRAGMENT_TESTS 阶段。
-                    (
-                        vk::ImageLayout::UNDEFINED,
-                        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                    ) => (
-                        vk::AccessFlags::empty(),
-                        vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
-                            | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
-                        vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
-                    ),
-                    (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
-                        vk::AccessFlags::empty(),
-                        vk::AccessFlags::TRANSFER_WRITE,
-                        vk::PipelineStageFlags::TOP_OF_PIPE,
-                        vk::PipelineStageFlags::TRANSFER,
-                    ),
-                    (
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    ) => (
-                        vk::AccessFlags::TRANSFER_WRITE,
-                        vk::AccessFlags::SHADER_READ,
-                        vk::PipelineStageFlags::TRANSFER,
-                        vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    ),
-                    _ => panic!("Unsupported image layout transition!"),
+                } else {
+                    vk::ImageAspectFlags::COLOR
                 };
+                let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) =
+                    match (old_layout, new_layout) {
+                        // 将读取深度缓冲区以执行深度测试以查看片段是否可见，并在绘制新片段时写入。
+                        // 读取发生在 vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS 阶段，
+                        // 写入发生在 vk::PipelineStageFlags::LATE_FRAGMENT_TESTS 阶段。
+                        (
+                            vk::ImageLayout::UNDEFINED,
+                            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        ) => (
+                            vk::AccessFlags::empty(),
+                            vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
+                                | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                            vk::PipelineStageFlags::TOP_OF_PIPE,
+                            vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+                        ),
+                        (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
+                            vk::AccessFlags::empty(),
+                            vk::AccessFlags::TRANSFER_WRITE,
+                            vk::PipelineStageFlags::TOP_OF_PIPE,
+                            vk::PipelineStageFlags::TRANSFER,
+                        ),
+                        (
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        ) => (
+                            vk::AccessFlags::TRANSFER_WRITE,
+                            vk::AccessFlags::SHADER_READ,
+                            vk::PipelineStageFlags::TRANSFER,
+                            vk::PipelineStageFlags::FRAGMENT_SHADER,
+                        ),
+                        _ => panic!("Unsupported image layout transition!"),
+                    };
 
-            let subresource = vk::ImageSubresourceRange::builder()
-                .aspect_mask(aspect_mask)
-                .base_mip_level(0)
-                .level_count(mip_levels)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build();
-            let barrier = vk::ImageMemoryBarrier::builder()
-                .old_layout(old_layout)
-                .new_layout(new_layout)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .image(self.raw)
-                .subresource_range(subresource)
-                .src_access_mask(src_access_mask)
-                .dst_access_mask(dst_access_mask)
-                .build();
-            // https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#synchronization-access-types-supported
-            device.cmd_pipeline_barrier(
-                command_buffer.raw(),
-                src_stage_mask,
-                dst_stage_mask,
-                vk::DependencyFlags::empty(),
-                &[] as &[vk::MemoryBarrier],
-                &[] as &[vk::BufferMemoryBarrier],
-                &[barrier],
-            );
-        })?;
+                let subresource = vk::ImageSubresourceRange::builder()
+                    .aspect_mask(aspect_mask)
+                    .base_mip_level(0)
+                    .level_count(mip_levels)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build();
+                let barrier = vk::ImageMemoryBarrier::builder()
+                    .old_layout(old_layout)
+                    .new_layout(new_layout)
+                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .image(self.raw)
+                    .subresource_range(subresource)
+                    .src_access_mask(src_access_mask)
+                    .dst_access_mask(dst_access_mask)
+                    .build();
+                // https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#synchronization-access-types-supported
+                device.cmd_pipeline_barrier(
+                    command_buffer.raw(),
+                    src_stage_mask,
+                    dst_stage_mask,
+                    vk::DependencyFlags::empty(),
+                    &[] as &[vk::MemoryBarrier],
+                    &[] as &[vk::BufferMemoryBarrier],
+                    &[barrier],
+                );
+            })?;
+        }
 
         Ok(())
     }
 
-    pub fn copy_from(
+    pub unsafe fn copy_from(
         &mut self,
         buffer: vk::Buffer,
         width: u32,
         height: u32,
         command_buffer_allocator: &CommandBufferAllocator,
     ) -> Result<(), DeviceError> {
-        command_buffer_allocator.create_single_use(|device, command_buffer| {
-            let subresource = vk::ImageSubresourceLayers::builder()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(0)
-                .layer_count(1)
-                .build();
+        unsafe {
+            command_buffer_allocator.create_single_use(|device, command_buffer| {
+                let subresource = vk::ImageSubresourceLayers::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .mip_level(0)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                    .build();
 
-            let region = vk::BufferImageCopy::builder()
-                .buffer_offset(0)
-                .buffer_row_length(0)
-                .buffer_image_height(0)
-                .image_subresource(subresource)
-                .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-                .image_extent(vk::Extent3D {
-                    width,
-                    height,
-                    depth: 1,
-                })
-                .build();
+                let region = vk::BufferImageCopy::builder()
+                    .buffer_offset(0)
+                    .buffer_row_length(0)
+                    .buffer_image_height(0)
+                    .image_subresource(subresource)
+                    .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+                    .image_extent(vk::Extent3D {
+                        width,
+                        height,
+                        depth: 1,
+                    })
+                    .build();
 
-            device.cmd_copy_buffer_to_image(
-                command_buffer.raw(),
-                buffer,
-                self.raw,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[region],
-            );
-        })?;
+                device.cmd_copy_buffer_to_image(
+                    command_buffer.raw(),
+                    buffer,
+                    self.raw,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[region],
+                );
+            })?;
+        }
 
         Ok(())
     }

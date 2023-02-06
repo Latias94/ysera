@@ -2,7 +2,7 @@ use std::ffi::CStr;
 
 use ash::vk;
 
-use crate::vulkan_v2::debug::DebugUtils;
+use crate::vulkan::debug::DebugUtils;
 use crate::DeviceError;
 
 pub struct Device {
@@ -10,6 +10,8 @@ pub struct Device {
     raw: ash::Device,
     debug_utils: Option<DebugUtils>,
 }
+
+pub struct DeviceFeatures {}
 
 impl Device {
     pub fn raw(&self) -> &ash::Device {

@@ -3,11 +3,11 @@ use crate::vulkan::device::Device;
 use crate::DeviceError;
 use ash::vk;
 use ash::vk::CommandBufferResetFlags;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct CommandBufferAllocator {
-    device: Rc<Device>,
+    device: Arc<Device>,
     queue: vk::Queue,
     command_pool: vk::CommandPool,
 }
@@ -20,7 +20,7 @@ impl CommandBufferAllocator {
         self.command_pool
     }
 
-    pub fn new(device: &Rc<Device>, command_pool: vk::CommandPool, queue: vk::Queue) -> Self {
+    pub fn new(device: &Arc<Device>, command_pool: vk::CommandPool, queue: vk::Queue) -> Self {
         Self {
             device: device.clone(),
             command_pool,
@@ -28,12 +28,15 @@ impl CommandBufferAllocator {
         }
     }
 
-    pub fn allocate_command_buffer(&self, is_primary: bool) -> Result<CommandBuffer, DeviceError> {
-        let mut command_buffer = self.allocate_command_buffers(is_primary, 1)?;
+    pub unsafe fn allocate_command_buffer(
+        &self,
+        is_primary: bool,
+    ) -> Result<CommandBuffer, DeviceError> {
+        let mut command_buffer = unsafe { self.allocate_command_buffers(is_primary, 1)? };
         Ok(command_buffer.pop().unwrap())
     }
 
-    pub fn allocate_command_buffers(
+    pub unsafe fn allocate_command_buffers(
         &self,
         is_primary: bool,
         count: u32,
@@ -49,21 +52,24 @@ impl CommandBufferAllocator {
             .command_buffer_count(count)
             .build();
 
-        let command_buffers = self.device.allocate_command_buffers(&create_info)?;
+        let command_buffers = unsafe { self.device.raw().allocate_command_buffers(&create_info)? };
         Ok(command_buffers
             .iter()
             .map(|x| CommandBuffer::new(*x))
             .collect())
     }
 
-    pub fn free_command_buffer(&self, command_buffer: &mut CommandBuffer) {
+    pub unsafe fn free_command_buffer(&self, command_buffer: &mut CommandBuffer) {
         let command_buffers = [command_buffer.raw()];
-        self.device
-            .free_command_buffers(self.command_pool, &command_buffers);
+        unsafe {
+            self.device
+                .raw()
+                .free_command_buffers(self.command_pool, &command_buffers);
+        }
         command_buffer.set_state(CommandBufferState::NotAllocated)
     }
 
-    pub fn begin_command_buffer(
+    pub unsafe fn begin_command_buffer(
         &self,
         command_buffer: &mut CommandBuffer,
         is_single_use: bool,
@@ -88,17 +94,22 @@ impl CommandBufferAllocator {
             .inheritance_info(&inheritance)
             .build(); // Optional.
 
-        self.device
-            .begin_command_buffer(command_buffer.raw(), &info)?;
+        unsafe {
+            self.device
+                .raw()
+                .begin_command_buffer(command_buffer.raw(), &info)?;
+        }
         command_buffer.set_state(CommandBufferState::Recording);
         Ok(())
     }
 
-    pub fn end_command_buffer(
+    pub unsafe fn end_command_buffer(
         &self,
         command_buffer: &mut CommandBuffer,
     ) -> Result<(), DeviceError> {
-        self.device.end_command_buffer(command_buffer.raw())?;
+        unsafe {
+            self.device.raw().end_command_buffer(command_buffer.raw())?;
+        }
         command_buffer.set_state(CommandBufferState::RecordingEnded);
         Ok(())
     }
@@ -107,34 +118,43 @@ impl CommandBufferAllocator {
         command_buffer.set_state(CommandBufferState::Submitted);
     }
 
-    pub fn reset_command_buffer(
+    pub unsafe fn reset_command_buffer(
         &self,
         command_buffer: &mut CommandBuffer,
     ) -> Result<(), DeviceError> {
-        self.device
-            .reset_command_buffer(command_buffer.raw(), CommandBufferResetFlags::empty())?;
+        unsafe {
+            self.device
+                .raw()
+                .reset_command_buffer(command_buffer.raw(), CommandBufferResetFlags::empty())?;
+        }
         command_buffer.set_state(CommandBufferState::Ready);
         Ok(())
     }
 
-    pub fn create_single_use<F>(&self, action: F) -> Result<(), DeviceError>
+    pub unsafe fn create_single_use<F>(&self, action: F) -> Result<(), DeviceError>
     where
-        F: FnOnce(&Rc<Device>, &CommandBuffer),
+        F: FnOnce(&Arc<Device>, &CommandBuffer),
     {
-        let mut command_buffer = self.allocate_and_begin_single_use()?;
+        let mut command_buffer = unsafe { self.allocate_and_begin_single_use()? };
         action(&self.device, &command_buffer);
-        self.end_single_use(&mut command_buffer)
+        unsafe { self.end_single_use(&mut command_buffer) }
     }
 
-    pub fn allocate_and_begin_single_use(&self) -> Result<CommandBuffer, DeviceError> {
-        let mut command_buffer = self.allocate_command_buffer(true)?;
-        self.begin_command_buffer(&mut command_buffer, true, false, false)?;
-        Ok(command_buffer)
+    pub unsafe fn allocate_and_begin_single_use(&self) -> Result<CommandBuffer, DeviceError> {
+        unsafe {
+            let mut command_buffer = self.allocate_command_buffer(true)?;
+            self.begin_command_buffer(&mut command_buffer, true, false, false)?;
+            Ok(command_buffer)
+        }
     }
 
-    pub fn end_single_use(&self, command_buffer: &mut CommandBuffer) -> Result<(), DeviceError> {
-        self.end_command_buffer(command_buffer)?;
-
+    pub unsafe fn end_single_use(
+        &self,
+        command_buffer: &mut CommandBuffer,
+    ) -> Result<(), DeviceError> {
+        unsafe {
+            self.end_command_buffer(command_buffer)?;
+        }
         let command_buffers = [command_buffer.raw()];
         let submit_info = vk::SubmitInfo::builder()
             .command_buffers(&command_buffers)
@@ -144,7 +164,9 @@ impl CommandBufferAllocator {
 
         // since we dont use fence here, we wait for it to finish
         self.device.queue_wait_idle(self.queue)?;
-        self.free_command_buffer(command_buffer);
+        unsafe {
+            self.free_command_buffer(command_buffer);
+        }
         Ok(())
     }
 }

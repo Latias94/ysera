@@ -1,5 +1,5 @@
-use alloc::rc::Rc;
 use std::mem::size_of;
+use std::sync::Arc;
 
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
@@ -30,8 +30,8 @@ impl BufferType {
 
 pub struct Buffer {
     raw: vk::Buffer,
-    device: Rc<Device>,
-    allocator: Rc<Mutex<Allocator>>,
+    device: Arc<Device>,
+    allocator: Arc<Mutex<Allocator>>,
     allocation: Option<Allocation>,
     buffer_size: u64,
     element_size: usize,
@@ -41,8 +41,8 @@ pub struct Buffer {
 #[derive(Clone, TypedBuilder)]
 pub struct BufferDescriptor<'a> {
     pub label: crate::Label<'a>,
-    pub device: &'a Rc<Device>,
-    pub allocator: Rc<Mutex<Allocator>>,
+    pub device: &'a Arc<Device>,
+    pub allocator: Arc<Mutex<Allocator>>,
     pub element_size: usize,
     pub element_count: u32,
     pub buffer_usage: vk::BufferUsageFlags,
@@ -52,8 +52,8 @@ pub struct BufferDescriptor<'a> {
 #[derive(Clone, TypedBuilder)]
 pub struct StagingBufferDescriptor<'a, T> {
     pub label: crate::Label<'a>,
-    pub device: &'a Rc<Device>,
-    pub allocator: Rc<Mutex<Allocator>>,
+    pub device: &'a Arc<Device>,
+    pub allocator: Arc<Mutex<Allocator>>,
     pub elements: &'a [T],
     pub command_buffer_allocator: &'a CommandBufferAllocator,
 }
@@ -61,8 +61,8 @@ pub struct StagingBufferDescriptor<'a, T> {
 #[derive(Clone, TypedBuilder)]
 pub struct UniformBufferDescriptor<'a, T> {
     pub label: crate::Label<'a>,
-    pub device: &'a Rc<Device>,
-    pub allocator: Rc<Mutex<Allocator>>,
+    pub device: &'a Arc<Device>,
+    pub allocator: Arc<Mutex<Allocator>>,
     pub elements: &'a [T],
     pub buffer_type: BufferType,
     pub command_buffer_allocator: &'a CommandBufferAllocator,
@@ -112,7 +112,9 @@ impl Buffer {
     // https://developer.nvidia.com/vulkan-memory-management
     // recommend that you also store multiple buffers, like the vertex and index buffer,
     // into a single vk::Buffer and use offsets in commands like cmd_bind_vertex_buffers.
-    pub fn new_staging_buffer<T>(desc: &StagingBufferDescriptor<T>) -> Result<Buffer, DeviceError> {
+    pub unsafe fn new_staging_buffer<T>(
+        desc: &StagingBufferDescriptor<T>,
+    ) -> Result<Buffer, DeviceError> {
         let staging_buffer_desc = BufferDescriptor {
             label: Some("Staging Buffer"),
             device: desc.device,
@@ -123,11 +125,13 @@ impl Buffer {
             memory_location: MemoryLocation::CpuToGpu,
         };
         let mut staging_buffer = Self::new(staging_buffer_desc)?;
-        staging_buffer.copy_memory(desc.elements);
+        unsafe {
+            staging_buffer.copy_memory(desc.elements);
+        }
         Ok(staging_buffer)
     }
 
-    pub fn new_buffer_copy_from_staging_buffer<T>(
+    pub unsafe fn new_buffer_copy_from_staging_buffer<T>(
         desc: &StagingBufferDescriptor<T>,
         buffer_type: BufferType,
     ) -> Result<Buffer, DeviceError> {
@@ -143,7 +147,9 @@ impl Buffer {
             memory_location: MemoryLocation::GpuOnly,
         };
         let buffer = Self::new(buffer_desc)?;
-        staging_buffer.copy_buffer(&buffer, desc.command_buffer_allocator)?;
+        unsafe {
+            staging_buffer.copy_buffer(&buffer, desc.command_buffer_allocator)?;
+        }
         Ok(buffer)
     }
 
@@ -161,7 +167,7 @@ impl Buffer {
         Ok(buffer)
     }
 
-    pub fn copy_memory<T>(&mut self, data: &[T]) {
+    pub unsafe fn copy_memory<T>(&mut self, data: &[T]) {
         if let Some(allocation) = &self.allocation {
             let dst = allocation.mapped_ptr().unwrap().cast().as_ptr();
             unsafe {
@@ -171,15 +177,17 @@ impl Buffer {
         }
     }
 
-    pub fn copy_buffer(
+    pub unsafe fn copy_buffer(
         &self,
         destination: &Buffer,
         command_buffer_allocator: &CommandBufferAllocator,
     ) -> Result<(), DeviceError> {
-        command_buffer_allocator.create_single_use(|device, command_buffer| {
-            let regions = [vk::BufferCopy::builder().size(self.buffer_size).build()];
-            device.cmd_copy_buffer(command_buffer.raw(), self.raw, destination.raw, &regions);
-        })?;
+        unsafe {
+            command_buffer_allocator.create_single_use(|device, command_buffer| {
+                let regions = [vk::BufferCopy::builder().size(self.buffer_size).build()];
+                device.cmd_copy_buffer(command_buffer.raw(), self.raw, destination.raw, &regions);
+            })?;
+        }
         Ok(())
     }
 }

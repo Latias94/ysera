@@ -1,72 +1,31 @@
-use std::rc::Rc;
-use std::time::Instant;
-
-use ash::extensions::khr;
-use ash::vk;
-use gpu_allocator::vulkan::Allocator;
-use imgui_rs_vulkan_renderer::Renderer as GuiRenderer;
-use parking_lot::Mutex;
-use typed_builder::TypedBuilder;
-use winit::window::Window;
-
-use math::prelude::*;
-use ysera_imgui::gui::GuiContext;
-
-use crate::gui::GuiState;
 use crate::vulkan::adapter::Adapter;
-use crate::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor, UniformBufferDescriptor};
-use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
-use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
-use crate::vulkan::conv;
-use crate::vulkan::descriptor_set_allocator::{
-    DescriptorSetAllocator, PerFrameDescriptorSetsCreateInfo,
-};
+use crate::vulkan::context::Context;
 use crate::vulkan::device::Device;
-use crate::vulkan::image::{DepthImageDescriptor, Image, ImageDescriptor};
+use crate::vulkan::image::{Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
-use crate::vulkan::model::Model;
-use crate::vulkan::pipeline::Pipeline;
-use crate::vulkan::render_pass::{ImguiRenderPassDescriptor, RenderPass, RenderPassDescriptor};
-use crate::vulkan::shader::{Shader, ShaderDescriptor};
-use crate::vulkan::surface::Surface;
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
-use crate::vulkan::uniform_buffer::UniformBufferObject;
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
+use ash::extensions::khr;
+use ash::vk;
+use math::prelude::*;
+use parking_lot::Mutex;
+use std::sync::Arc;
+use typed_builder::TypedBuilder;
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
     loader: khr::Swapchain,
-    adapter: Rc<Adapter>,
-    instance: Rc<Instance>,
-    device: Rc<Device>,
-    family_index: QueueFamilyIndices,
-    swapchain_images: Vec<vk::Image>,
-    image_views: Vec<ImageView>,
-    surface_format: vk::SurfaceFormatKHR,
-    depth_format: vk::Format,
-    extent: vk::Extent2D,
-    capabilities: vk::SurfaceCapabilitiesKHR,
-    render_pass: RenderPass,
-    imgui_render_pass: RenderPass,
-    pipeline: Pipeline,
-    command_buffers: Vec<CommandBuffer>,
-    framebuffers: Vec<vk::Framebuffer>,
-    imgui_framebuffers: Vec<vk::Framebuffer>,
-    graphics_queue: vk::Queue,
-    present_queue: vk::Queue,
-    command_buffer_allocator: Rc<CommandBufferAllocator>,
-    descriptor_set_allocator: Rc<DescriptorSetAllocator>,
-    depth_texture: VulkanTexture,
-    color_texture: VulkanTexture,
-    vertex_buffer: Buffer,
-    index_buffer: Buffer,
-    uniform_buffers: Vec<Buffer>,
-    per_frame_descriptor_sets: Vec<vk::DescriptorSet>,
-    model: Rc<Model>,
-    mip_levels: u32,
-    instant: Instant,
-    render_system_state: RenderSystemState,
+    adapter: Arc<Adapter>,
+    instance: Arc<Instance>,
+    device: Arc<Device>,
+    pub swapchain_images: Vec<vk::Image>,
+    pub image_views: Vec<ImageView>,
+    pub surface_format: vk::SurfaceFormatKHR,
+    // depth_format: vk::Format,
+    pub extent: vk::Extent2D,
+    pub capabilities: vk::SurfaceCapabilitiesKHR,
+    pub max_frame_in_flight: u32,
 }
 
 pub struct RenderSystemState {
@@ -91,22 +50,11 @@ struct SwapChainSupportDetail {
 
 #[derive(TypedBuilder)]
 pub struct SwapchainDescriptor<'a> {
-    pub adapter: Rc<Adapter>,
-    pub surface: &'a Surface,
-    pub instance: Rc<Instance>,
-    pub device: &'a Rc<Device>,
-    pub max_frame_in_flight: u32,
-    pub graphics_queue: vk::Queue,
-    pub present_queue: vk::Queue,
-    pub queue_family: QueueFamilyIndices,
+    pub context: &'a Context,
     pub dimensions: [u32; 2],
-    pub command_pool: vk::CommandPool,
-    pub allocator: Rc<Mutex<Allocator>>,
-    pub command_buffer_allocator: Rc<CommandBufferAllocator>,
     pub old_swapchain: Option<vk::SwapchainKHR>,
-    pub model: Rc<Model>,
-    pub mip_levels: u32,
-    pub instant: Instant,
+    pub max_frame_in_flight: u32,
+    pub queue_family: QueueFamilyIndices,
 }
 
 #[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
@@ -133,28 +81,8 @@ impl Swapchain {
         self.extent
     }
 
-    pub fn color_texture(&self) -> &VulkanTexture {
-        &self.color_texture
-    }
-
-    pub fn render_pass(&self) -> &RenderPass {
-        &self.render_pass
-    }
-
-    pub fn imgui_render_pass(&self) -> &RenderPass {
-        &self.imgui_render_pass
-    }
-
-    pub fn pipeline(&self) -> &Pipeline {
-        &self.pipeline
-    }
-
-    pub fn command_buffer_allocator(&self) -> &CommandBufferAllocator {
-        &self.command_buffer_allocator
-    }
-
-    pub fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
-        let device = desc.device;
+    pub unsafe fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
+        let device = &desc.context.device;
         let (swapchain_loader, swapchain, properties, support, image_count) =
             Self::create_swapchain(&desc)?;
         let extent = properties.extent;
@@ -184,11 +112,11 @@ impl Swapchain {
         //         .get_physical_device_memory_properties(desc.adapter.raw())
         // };
 
-        let color_format = properties.surface_format.format;
-        let color_texture = Self::create_color_objects(desc, color_format, extent)?;
+        // let color_format = properties.surface_format.format;
+        // let color_texture = Self::create_color_objects(desc, color_format, extent)?;
 
-        let depth_texture = Self::create_depth_objects(desc, extent)?;
-        let depth_format = depth_texture.image().format();
+        // let depth_texture = Self::create_depth_objects(desc, extent)?;
+        // let depth_format = depth_texture.image().format();
 
         let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
         let rect2d = Rect2D {
@@ -198,368 +126,397 @@ impl Swapchain {
             height: extent.height as f32,
         };
 
-        let map = Default::default();
-
-        let render_pass_desc = RenderPassDescriptor {
-            device,
-            surface_format: color_format,
-            depth_format,
-            render_area: rect2d,
-            clear_color,
-            max_msaa_samples: desc.adapter.max_msaa_samples(),
-            depth: 1.0,
-            stencil: 0,
-        };
-        let render_pass = RenderPass::new(&render_pass_desc)?;
-
-        let framebuffers = swapchain_image_views
-            .iter()
-            .map(|i| {
-                let image_view = i.raw();
-                let framebuffer_desc = FramebufferDescriptor::builder()
-                    .texture_views(vec![
-                        color_texture.image_view().raw(),
-                        depth_texture.image_view().raw(),
-                        image_view,
-                    ])
-                    .swapchain_extent(extent)
-                    .render_pass(render_pass.raw())
-                    .build();
-                Self::create_framebuffer(device, &map, framebuffer_desc)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let imgui_render_pass_desc = ImguiRenderPassDescriptor {
-            device,
-            surface_format: properties.surface_format.format,
-            render_area: rect2d,
-        };
-        let imgui_render_pass = RenderPass::new_imgui_render_pass(&imgui_render_pass_desc)?;
-
-        let imgui_framebuffers = swapchain_image_views
-            .iter()
-            .map(|i| {
-                let image_view = i.raw();
-                let framebuffer_desc = FramebufferDescriptor::builder()
-                    .texture_views(vec![image_view])
-                    .swapchain_extent(extent)
-                    .render_pass(imgui_render_pass.raw())
-                    .build();
-                Self::create_framebuffer(device, &map, framebuffer_desc)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let vert_shader_desc = ShaderDescriptor {
-            label: Some("Triangle Vert"),
-            device,
-            spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
-                "triangle_push_constant.vert",
-            ),
-            entry_name: "main",
-        };
-        let vert_shader = Shader::new_vert(&vert_shader_desc)?;
-        let frag_shader_desc = ShaderDescriptor {
-            label: Some("Triangle Frag"),
-            device,
-            spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.frag"),
-            entry_name: "main",
-        };
-        let frag_shader = Shader::new_frag(&frag_shader_desc)?;
-
-        let vertex_buffer_desc = StagingBufferDescriptor {
-            label: Some("Vertex Buffer"),
-            device,
-            allocator: desc.allocator.clone(),
-            elements: desc.model.vertices(),
-            command_buffer_allocator: &desc.command_buffer_allocator,
-        };
-        let vertex_buffer =
-            Buffer::new_buffer_copy_from_staging_buffer(&vertex_buffer_desc, BufferType::Vertex)?;
-
-        let index_buffer_desc = StagingBufferDescriptor {
-            label: Some("Index Buffer"),
-            device,
-            allocator: desc.allocator.clone(),
-            elements: desc.model.indices(),
-            command_buffer_allocator: &desc.command_buffer_allocator,
-        };
-        let index_buffer =
-            Buffer::new_buffer_copy_from_staging_buffer(&index_buffer_desc, BufferType::Index)?;
-
-        let uniform_buffer_desc = UniformBufferDescriptor {
-            label: Some("Uniform Buffer"),
-            device,
-            allocator: desc.allocator.clone(),
-            elements: &[Default::default()] as &[UniformBufferObject],
-            buffer_type: BufferType::Uniform,
-            command_buffer_allocator: &desc.command_buffer_allocator,
-        };
-        let uniform_buffers = swapchain_image_views
-            .iter()
-            .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(device, image_count)?);
-
-        let descriptor_set_layouts = &[
-            descriptor_set_allocator.raw_per_frame_layout(),
-            descriptor_set_allocator.raw_texture_layout(),
-        ];
-
-        let shaders = &[vert_shader, frag_shader];
-        let pipeline = Pipeline::new(
-            device,
-            render_pass.raw(),
-            desc.adapter.max_msaa_samples(),
-            descriptor_set_layouts,
-            shaders,
-        )?;
-
-        let command_buffers = desc
-            .command_buffer_allocator
-            .allocate_command_buffers(true, swapchain_image_views.len() as u32)?;
-
-        let model_texture = desc.model.texture();
-        let descriptor_sets_create_info = PerFrameDescriptorSetsCreateInfo {
-            uniform_buffers: &uniform_buffers,
-            texture_image_view: model_texture.raw_image_view(),
-            texture_sampler: model_texture.raw_sampler(),
-        };
-
-        let per_frame_descriptor_sets = descriptor_set_allocator
-            .allocate_per_frame_descriptor_sets(&descriptor_sets_create_info)?;
-
-        // init renderer state
-        let near_clip = 0.1f32;
-        let far_clip = 1000.0f32;
-        let view = math::look_at(
-            &vec3(2.0, 2.0, 2.0),
-            &vec3(0.0, 0.0, 0.0),
-            &vec3(0.0, 0.0, 1.0),
-        );
-        let projection = math::perspective_rh_zo(
-            extent.width as f32 / extent.height as f32,
-            math::radians(&math::vec1(90.0))[0],
-            // math::radians(&math::vec1(ui_state.fovy))[0],
-            near_clip,
-            far_clip,
-        );
-
-        let render_system_state = RenderSystemState {
-            projection,
-            view,
-            near_clip,
-            far_clip,
-        };
+        // let map = Default::default();
+        //
+        // let render_pass_desc = RenderPassDescriptor {
+        //     device: device,
+        //     surface_format: color_format,
+        //     depth_format,
+        //     render_area: rect2d,
+        //     clear_color,
+        //     max_msaa_samples: desc.context.adapter.max_msaa_samples(),
+        //     depth: 1.0,
+        //     stencil: 0,
+        // };
+        // let render_pass = RenderPass::new(&render_pass_desc)?;
+        //
+        // let framebuffers = swapchain_image_views
+        //     .iter()
+        //     .map(|i| {
+        //         let image_view = i.raw();
+        //         let framebuffer_desc = FramebufferDescriptor::builder()
+        //             .texture_views(vec![
+        //                 color_texture.image_view().raw(),
+        //                 depth_texture.image_view().raw(),
+        //                 image_view,
+        //             ])
+        //             .swapchain_extent(extent)
+        //             .render_pass(render_pass.raw())
+        //             .build();
+        //         Self::create_framebuffer(&device, &map, framebuffer_desc)
+        //     })
+        //     .collect::<Result<Vec<_>, _>>()?;
+        //
+        // let imgui_render_pass_desc = ImguiRenderPassDescriptor {
+        //     device:&device,
+        //     surface_format: properties.surface_format.format,
+        //     render_area: rect2d,
+        // };
+        // let imgui_render_pass = RenderPass::new_imgui_render_pass(&imgui_render_pass_desc)?;
+        //
+        // let imgui_framebuffers = swapchain_image_views
+        //     .iter()
+        //     .map(|i| {
+        //         let image_view = i.raw();
+        //         let framebuffer_desc = FramebufferDescriptor::builder()
+        //             .texture_views(vec![image_view])
+        //             .swapchain_extent(extent)
+        //             .render_pass(imgui_render_pass.raw())
+        //             .build();
+        //         Self::create_framebuffer(&device, &map, framebuffer_desc)
+        //     })
+        //     .collect::<Result<Vec<_>, _>>()?;
+        //
+        // let vert_shader_desc = ShaderDescriptor {
+        //     label: Some("Triangle Vert"),
+        //     device,
+        //     spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
+        //         "triangle_push_constant.vert",
+        //     ),
+        //     entry_name: "main",
+        // };
+        // let vert_shader = Shader::new_vert(&vert_shader_desc)?;
+        // let frag_shader_desc = ShaderDescriptor {
+        //     label: Some("Triangle Frag"),
+        //     device,
+        //     spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.frag"),
+        //     entry_name: "main",
+        // };
+        // let frag_shader = Shader::new_frag(&frag_shader_desc)?;
+        //
+        // let vertex_buffer_desc = StagingBufferDescriptor {
+        //     label: Some("Vertex Buffer"),
+        //     device,
+        //     allocator: desc.context.allocator.clone(),
+        //     elements: desc.model.vertices(),
+        //     command_buffer_allocator: &desc.command_buffer_allocator,
+        // };
+        // let vertex_buffer =
+        //     Buffer::new_buffer_copy_from_staging_buffer(&vertex_buffer_desc, BufferType::Vertex)?;
+        //
+        // let index_buffer_desc = StagingBufferDescriptor {
+        //     label: Some("Index Buffer"),
+        //     device,
+        //     allocator: desc.context.allocator.clone(),
+        //     elements: desc.model.indices(),
+        //     command_buffer_allocator: &desc.command_buffer_allocator,
+        // };
+        // let index_buffer =
+        //     Buffer::new_buffer_copy_from_staging_buffer(&index_buffer_desc, BufferType::Index)?;
+        //
+        // let uniform_buffer_desc = UniformBufferDescriptor {
+        //     label: Some("Uniform Buffer"),
+        //     device,
+        //     allocator: desc.context.allocator.clone(),
+        //     elements: &[Default::default()] as &[UniformBufferObject],
+        //     buffer_type: BufferType::Uniform,
+        //     command_buffer_allocator: &desc.command_buffer_allocator,
+        // };
+        // let uniform_buffers = swapchain_image_views
+        //     .iter()
+        //     .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
+        //     .collect::<Result<Vec<_>, _>>()?;
+        //
+        // let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(device, image_count)?);
+        //
+        // let descriptor_set_layouts = &[
+        //     descriptor_set_allocator.raw_per_frame_layout(),
+        //     descriptor_set_allocator.raw_texture_layout(),
+        // ];
+        //
+        // let shaders = &[vert_shader, frag_shader];
+        // let pipeline = Pipeline::new(
+        //     device,
+        //     render_pass.raw(),
+        //     desc.adapter.max_msaa_samples(),
+        //     descriptor_set_layouts,
+        //     shaders,
+        // )?;
+        //
+        // let command_buffers = desc
+        //     .command_buffer_allocator
+        //     .allocate_command_buffers(true, swapchain_image_views.len() as u32)?;
+        //
+        // let model_texture = desc.model.texture();
+        // let descriptor_sets_create_info = PerFrameDescriptorSetsCreateInfo {
+        //     uniform_buffers: &uniform_buffers,
+        //     texture_image_view: model_texture.raw_image_view(),
+        //     texture_sampler: model_texture.raw_sampler(),
+        // };
+        //
+        // let per_frame_descriptor_sets = descriptor_set_allocator
+        //     .allocate_per_frame_descriptor_sets(&descriptor_sets_create_info)?;
+        //
+        // // init renderer state
+        // let near_clip = 0.1f32;
+        // let far_clip = 1000.0f32;
+        // let view = math::look_at(
+        //     &vec3(2.0, 2.0, 2.0),
+        //     &vec3(0.0, 0.0, 0.0),
+        //     &vec3(0.0, 0.0, 1.0),
+        // );
+        // let projection = math::perspective_rh_zo(
+        //     extent.width as f32 / extent.height as f32,
+        //     math::radians(&math::vec1(90.0))[0],
+        //     // math::radians(&math::vec1(ui_state.fovy))[0],
+        //     near_clip,
+        //     far_clip,
+        // );
+        //
+        // let render_system_state = RenderSystemState {
+        //     projection,
+        //     view,
+        //     near_clip,
+        //     far_clip,
+        // };
 
         let swapchain = Self {
             raw: swapchain,
             loader: swapchain_loader,
-            adapter: desc.adapter.clone(),
-            instance: desc.instance.clone(),
-            device: desc.device.clone(),
-            family_index: desc.queue_family,
+            adapter: desc.context.adapter.clone(),
+            instance: desc.context.instance.clone(),
+            device: device.clone(),
             swapchain_images,
-            surface_format: properties.surface_format,
-            depth_format,
-            extent: properties.extent,
-            capabilities,
             image_views: swapchain_image_views,
-            framebuffers,
-            render_pass,
-            imgui_framebuffers,
-            imgui_render_pass,
-            pipeline,
-            command_buffers,
-            graphics_queue: desc.graphics_queue,
-            present_queue: desc.present_queue,
-            command_buffer_allocator: desc.command_buffer_allocator.clone(),
-            descriptor_set_allocator,
-            depth_texture,
-            color_texture,
-            vertex_buffer,
-            index_buffer,
-            uniform_buffers,
-            per_frame_descriptor_sets,
-            model: desc.model.clone(),
-            mip_levels: desc.mip_levels,
-            instant: desc.instant,
-            render_system_state,
+            surface_format: properties.surface_format,
+            extent,
+            capabilities,
+            max_frame_in_flight: desc.max_frame_in_flight,
         };
 
         Ok(swapchain)
     }
 
-    pub fn render(
+    pub unsafe fn resize(
         &mut self,
-        image_index: usize,
-        window: &Window,
-        gui_context: &mut GuiContext,
-        gui_renderer: &mut GuiRenderer,
-        ui_state: &mut GuiState,
-        ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
-    ) -> Result<vk::CommandBuffer, DeviceError> {
-        self.update_uniform_buffer(image_index);
-
-        let command_buffer = self.update_command_buffers(
-            image_index,
-            window,
-            gui_context,
-            gui_renderer,
-            ui_state,
-            ui_func,
-        )?;
-
-        Ok(command_buffer.raw())
-    }
-
-    fn update_command_buffers(
-        &mut self,
-        image_index: usize,
-        window: &Window,
-        gui_context: &mut GuiContext,
-        gui_renderer: &mut GuiRenderer,
-        ui_state: &mut GuiState,
-        ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
-    ) -> Result<&CommandBuffer, DeviceError> {
-        let command_buffer = &self.command_buffers[image_index];
-
-        self.device
-            .reset_command_buffer(command_buffer.raw(), vk::CommandBufferResetFlags::empty())?;
-        self.device.begin_command_buffer(
-            command_buffer.raw(),
-            &vk::CommandBufferBeginInfo::builder()
-                // since we are now only submitting our command buffers once before resetting them,
-                // we can add ONE_TIME_SUBMIT for better optimize by Vulkan driver
-                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-                .build(),
-        )?;
-
-        let framebuffer = self.framebuffers[image_index];
-        self.render_pass.begin(command_buffer, framebuffer);
-
-        self.device.cmd_bind_pipeline(
-            command_buffer.raw(),
-            vk::PipelineBindPoint::GRAPHICS,
-            self.pipeline.raw(),
-        );
-
-        // 改为左手坐标系 NDC
-        let viewport_rect2d = Rect2D {
-            x: 0f32,
-            y: self.extent.height as f32,
-            width: self.extent.width as f32,
-            height: -(self.extent.height as f32),
+        context: &Context,
+        width: u32,
+        height: u32,
+    ) -> Result<(), DeviceError> {
+        self.destroy();
+        let desc = SwapchainDescriptor {
+            context: &context,
+            dimensions: [width, height],
+            old_swapchain: None,
+            max_frame_in_flight: self.max_frame_in_flight,
+            queue_family: context.indices,
         };
-        self.device
-            .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
+        let (swapchain_loader, swapchain, properties, support, _) = Self::create_swapchain(&desc)?;
 
-        let scissor_rect2d = Rect2D {
-            x: 0.0,
-            y: 0.0,
-            width: self.extent.width as f32,
-            height: self.extent.height as f32,
-        };
-        self.device.cmd_set_scissor(
-            command_buffer.raw(),
-            0,
-            &[conv::convert_rect2d(scissor_rect2d)],
-        );
+        let extent = properties.extent;
+        // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
+        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
 
-        self.device.cmd_bind_vertex_buffers(
-            command_buffer.raw(),
-            0,
-            &[self.vertex_buffer.raw()],
-            &[0],
-        );
+        let mut capabilities = support.capabilities;
 
-        self.device.cmd_bind_index_buffer(
-            command_buffer.raw(),
-            self.index_buffer.raw(),
-            0,
-            vk::IndexType::UINT32, // Model.indices
-        );
-
-        self.device.cmd_bind_descriptor_sets(
-            command_buffer.raw(),
-            vk::PipelineBindPoint::GRAPHICS,
-            self.pipeline.raw_pipeline_layout(),
-            0,
-            &[self.per_frame_descriptor_sets[image_index]],
-            &[],
-        );
-
-        let time = self.instant.elapsed().as_secs_f32();
-        let model = math::rotate(
-            &math::identity(),
-            // time *  math::radians(&math::vec1(90.0))[0],
-            math::radians(&math::vec1(90.0f32))[0],
-            &vec3(0.0, 0.0, 1.0),
-        );
-
-        let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
-
-        self.device.cmd_push_constants(
-            command_buffer.raw(),
-            self.pipeline.raw_pipeline_layout(),
-            vk::ShaderStageFlags::VERTEX,
-            0,
-            model_bytes,
-        );
-
-        // self.device.cmd_push_constants(
-        //     command_buffer.raw(),
-        //     self.pipeline.raw_pipeline_layout(),
-        //     vk::ShaderStageFlags::FRAGMENT,
-        //     64,
-        //     // &0.75f32.to_ne_bytes()[..],
-        //     &1f32.to_ne_bytes()[..],
-        // );
-
-        self.device.cmd_draw_indexed(
-            command_buffer.raw(),
-            self.model.indices().len() as u32,
-            1,
-            0,
-            0,
-            0,
-        );
-
-        self.render_pass.end(command_buffer);
-
-        self.imgui_render_pass
-            .begin(command_buffer, self.imgui_framebuffers[image_index]);
-
-        let draw_data = gui_context.render(window, ui_state, ui_func);
-        gui_renderer
-            .cmd_draw(command_buffer.raw(), draw_data)
-            .unwrap();
-
-        self.imgui_render_pass.end(command_buffer);
-
-        self.device.end_command_buffer(command_buffer.raw())?;
-        Ok(command_buffer)
+        capabilities.current_extent.width = capabilities.current_extent.width.max(1);
+        capabilities.current_extent.height = capabilities.current_extent.height.max(1);
+        let swapchain_image_views = swapchain_images
+            .iter()
+            .map(|i| {
+                ImageView::new_color_image_view(
+                    Some("swapchain image view"),
+                    &context.device,
+                    *i,
+                    properties.surface_format.format,
+                    1,
+                )
+            })
+            .collect::<Result<Vec<ImageView>, DeviceError>>()?;
+        self.capabilities = capabilities;
+        self.swapchain_images = swapchain_images;
+        self.image_views = swapchain_image_views;
+        self.extent = extent;
+        Ok(())
     }
 
-    fn update_uniform_buffer(&mut self, image_index: usize) {
-        // projection[(1, 1)] *= -1.0; // openGL clip space y 和 vulkan 相反，不过我们在 cmd_set_viewport 处理了
-        let ubo = UniformBufferObject {
-            view: self.render_system_state.view,
-            projection: self.render_system_state.projection,
-        };
-
-        let uniform_buffer = &mut self.uniform_buffers[image_index];
-        uniform_buffer.copy_memory(&[ubo]);
+    pub fn destroy(&mut self) {
+        unsafe {
+            self.loader.destroy_swapchain(self.raw, None);
+        }
+        log::debug!("Swapchain destroyed.");
     }
 
-    pub fn set_render_system_state(&mut self, view: Mat4) {
-        self.render_system_state.view = view;
-    }
+    // pub fn render(
+    //     &mut self,
+    //     image_index: usize,
+    //     window: &Window,
+    //     gui_context: &mut GuiContext,
+    //     gui_renderer: &mut GuiRenderer,
+    //     ui_state: &mut GuiState,
+    //     ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
+    // ) -> Result<vk::CommandBuffer, DeviceError> {
+    //     self.update_uniform_buffer(image_index);
+    //
+    //     let command_buffer = self.update_command_buffers(
+    //         image_index,
+    //         window,
+    //         gui_context,
+    //         gui_renderer,
+    //         ui_state,
+    //         ui_func,
+    //     )?;
+    //
+    //     Ok(command_buffer.raw())
+    // }
 
-    pub fn update_submitted_command_buffer(&mut self, command_buffer_index: usize) {
-        let command_buffer = &mut self.command_buffers[command_buffer_index];
-        command_buffer.set_state(CommandBufferState::Submitted);
-    }
+    // fn update_command_buffers(
+    //     &mut self,
+    //     image_index: usize,
+    //     window: &Window,
+    //     gui_context: &mut GuiContext,
+    //     gui_renderer: &mut GuiRenderer,
+    //     ui_state: &mut GuiState,
+    //     ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
+    // ) -> Result<&CommandBuffer, DeviceError> {
+    //     let command_buffer = &self.command_buffers[image_index];
+    //
+    //     self.device
+    //         .reset_command_buffer(command_buffer.raw(), vk::CommandBufferResetFlags::empty())?;
+    //     self.device.begin_command_buffer(
+    //         command_buffer.raw(),
+    //         &vk::CommandBufferBeginInfo::builder()
+    //             // since we are now only submitting our command buffers once before resetting them,
+    //             // we can add ONE_TIME_SUBMIT for better optimize by Vulkan driver
+    //             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+    //             .build(),
+    //     )?;
+    //
+    //     let framebuffer = self.framebuffers[image_index];
+    //     self.render_pass.begin(command_buffer, framebuffer);
+    //
+    //     self.device.cmd_bind_pipeline(
+    //         command_buffer.raw(),
+    //         vk::PipelineBindPoint::GRAPHICS,
+    //         self.pipeline.raw(),
+    //     );
+    //
+    //     // 改为左手坐标系 NDC
+    //     let viewport_rect2d = Rect2D {
+    //         x: 0f32,
+    //         y: self.extent.height as f32,
+    //         width: self.extent.width as f32,
+    //         height: -(self.extent.height as f32),
+    //     };
+    //     self.device
+    //         .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
+    //
+    //     let scissor_rect2d = Rect2D {
+    //         x: 0.0,
+    //         y: 0.0,
+    //         width: self.extent.width as f32,
+    //         height: self.extent.height as f32,
+    //     };
+    //     self.device.cmd_set_scissor(
+    //         command_buffer.raw(),
+    //         0,
+    //         &[conv::convert_rect2d(scissor_rect2d)],
+    //     );
+    //
+    //     self.device.cmd_bind_vertex_buffers(
+    //         command_buffer.raw(),
+    //         0,
+    //         &[self.vertex_buffer.raw()],
+    //         &[0],
+    //     );
+    //
+    //     self.device.cmd_bind_index_buffer(
+    //         command_buffer.raw(),
+    //         self.index_buffer.raw(),
+    //         0,
+    //         vk::IndexType::UINT32, // Model.indices
+    //     );
+    //
+    //     self.device.cmd_bind_descriptor_sets(
+    //         command_buffer.raw(),
+    //         vk::PipelineBindPoint::GRAPHICS,
+    //         self.pipeline.raw_pipeline_layout(),
+    //         0,
+    //         &[self.per_frame_descriptor_sets[image_index]],
+    //         &[],
+    //     );
+    //
+    //     let time = self.instant.elapsed().as_secs_f32();
+    //     let model = math::rotate(
+    //         &math::identity(),
+    //         // time *  math::radians(&math::vec1(90.0))[0],
+    //         math::radians(&math::vec1(90.0f32))[0],
+    //         &vec3(0.0, 0.0, 1.0),
+    //     );
+    //
+    //     let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
+    //
+    //     self.device.cmd_push_constants(
+    //         command_buffer.raw(),
+    //         self.pipeline.raw_pipeline_layout(),
+    //         vk::ShaderStageFlags::VERTEX,
+    //         0,
+    //         model_bytes,
+    //     );
+    //
+    //     // self.device.cmd_push_constants(
+    //     //     command_buffer.raw(),
+    //     //     self.pipeline.raw_pipeline_layout(),
+    //     //     vk::ShaderStageFlags::FRAGMENT,
+    //     //     64,
+    //     //     // &0.75f32.to_ne_bytes()[..],
+    //     //     &1f32.to_ne_bytes()[..],
+    //     // );
+    //
+    //     self.device.cmd_draw_indexed(
+    //         command_buffer.raw(),
+    //         self.model.indices().len() as u32,
+    //         1,
+    //         0,
+    //         0,
+    //         0,
+    //     );
+    //
+    //     self.render_pass.end(command_buffer);
+    //
+    //     self.imgui_render_pass
+    //         .begin(command_buffer, self.imgui_framebuffers[image_index]);
+    //
+    //     let draw_data = gui_context.render(window, ui_state, ui_func);
+    //     gui_renderer
+    //         .cmd_draw(command_buffer.raw(), draw_data)
+    //         .unwrap();
+    //
+    //     self.imgui_render_pass.end(command_buffer);
+    //
+    //     self.device.end_command_buffer(command_buffer.raw())?;
+    //     Ok(command_buffer)
+    // }
+    //
+    // fn update_uniform_buffer(&mut self, image_index: usize) {
+    //     // projection[(1, 1)] *= -1.0; // openGL clip space y 和 vulkan 相反，不过我们在 cmd_set_viewport 处理了
+    //     let ubo = UniformBufferObject {
+    //         view: self.render_system_state.view,
+    //         projection: self.render_system_state.projection,
+    //     };
+    //
+    //     let uniform_buffer = &mut self.uniform_buffers[image_index];
+    //     uniform_buffer.copy_memory(&[ubo]);
+    // }
+    //
+    // pub fn set_render_system_state(&mut self, view: Mat4) {
+    //     self.render_system_state.view = view;
+    // }
+    //
+    // pub fn update_submitted_command_buffer(&mut self, command_buffer_index: usize) {
+    //     let command_buffer = &mut self.command_buffers[command_buffer_index];
+    //     command_buffer.set_state(CommandBufferState::Submitted);
+    // }
 
     fn create_swapchain(
         desc: &SwapchainDescriptor,
@@ -577,9 +534,9 @@ impl Swapchain {
 
         let swapchain_support = unsafe {
             SwapChainSupportDetail::new(
-                desc.adapter.raw(),
-                desc.surface.loader(),
-                desc.surface.raw(),
+                desc.context.adapter.raw(),
+                desc.context.surface.loader(),
+                desc.context.surface.raw(),
             )
         }?;
         let properties = swapchain_support.get_ideal_swapchain_properties(desc.dimensions);
@@ -620,7 +577,7 @@ impl Swapchain {
         };
 
         let create_info = vk::SwapchainCreateInfoKHR::builder()
-            .surface(desc.surface.raw())
+            .surface(desc.context.surface.raw())
             .min_image_count(image_count)
             .image_color_space(surface_format.color_space)
             .image_format(surface_format.format)
@@ -642,7 +599,8 @@ impl Swapchain {
             .image_array_layers(1)
             .old_swapchain(old_swapchain);
 
-        let swapchain_loader = khr::Swapchain::new(desc.instance.raw(), desc.device.raw());
+        let swapchain_loader =
+            khr::Swapchain::new(desc.context.instance.raw(), desc.context.device.raw());
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
         log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 
@@ -699,8 +657,19 @@ impl Swapchain {
         }
     }
 
-    pub fn queue_present(&self, present_info: &vk::PresentInfoKHR) -> Result<bool, SurfaceError> {
-        match unsafe { self.loader.queue_present(self.present_queue, present_info) } {
+    pub fn queue_present(
+        &self,
+        present_queue: vk::Queue,
+        image_index: u32,
+        wait_semaphores: &[vk::Semaphore],
+    ) -> Result<bool, SurfaceError> {
+        let swapchains = &[self.raw];
+        let indices = &[image_index];
+        let present_info = vk::PresentInfoKHR::builder()
+            .wait_semaphores(wait_semaphores)
+            .swapchains(swapchains)
+            .image_indices(indices);
+        match unsafe { self.loader.queue_present(present_queue, &present_info) } {
             Ok(suboptimal) => Ok(suboptimal),
             Err(error) => match error {
                 vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
@@ -734,82 +703,82 @@ impl Swapchain {
             .expect("Failed to find suitable memory type!")
     }
 
-    fn create_depth_objects(
-        desc: &SwapchainDescriptor,
-        extent: vk::Extent2D,
-    ) -> Result<VulkanTexture, DeviceError> {
-        let depth_image_desc = DepthImageDescriptor {
-            device: desc.device,
-            instance: &desc.instance,
-            adapter: &desc.adapter,
-            allocator: desc.allocator.clone(),
-            width: extent.width,
-            height: extent.height,
-            command_buffer_allocator: &desc.command_buffer_allocator,
-        };
-        let depth_image = Image::new_depth_image(&depth_image_desc)?;
+    // fn create_depth_objects(
+    //     desc: &SwapchainDescriptor,
+    //     extent: vk::Extent2D,
+    // ) -> Result<VulkanTexture, DeviceError> {
+    //     let depth_image_desc = DepthImageDescriptor {
+    //         device: desc.device,
+    //         instance: &desc.instance,
+    //         adapter: &desc.adapter,
+    //         allocator: desc.allocator.clone(),
+    //         width: extent.width,
+    //         height: extent.height,
+    //         command_buffer_allocator: &desc.command_buffer_allocator,
+    //     };
+    //     let depth_image = Image::new_depth_image(&depth_image_desc)?;
+    //
+    //     let depth_image_view = ImageView::new_depth_image_view(
+    //         Some("Depth Image View"),
+    //         desc.device,
+    //         depth_image.raw(),
+    //         depth_image.format(),
+    //     )?;
+    //
+    //     let texture_desc = VulkanTextureDescriptor {
+    //         adapter: &desc.adapter,
+    //         instance: &desc.instance,
+    //         device: desc.device,
+    //         command_buffer_allocator: &desc.command_buffer_allocator,
+    //         image: depth_image,
+    //         image_view: depth_image_view,
+    //         generate_mipmaps: false,
+    //     };
+    //     let texture = VulkanTexture::new(texture_desc)?;
+    //
+    //     Ok(texture)
+    // }
 
-        let depth_image_view = ImageView::new_depth_image_view(
-            Some("Depth Image View"),
-            desc.device,
-            depth_image.raw(),
-            depth_image.format(),
-        )?;
-
-        let texture_desc = VulkanTextureDescriptor {
-            adapter: &desc.adapter,
-            instance: &desc.instance,
-            device: desc.device,
-            command_buffer_allocator: &desc.command_buffer_allocator,
-            image: depth_image,
-            image_view: depth_image_view,
-            generate_mipmaps: false,
-        };
-        let texture = VulkanTexture::new(texture_desc)?;
-
-        Ok(texture)
-    }
-
-    fn create_color_objects(
+    unsafe fn create_color_objects(
         desc: &SwapchainDescriptor,
         format: vk::Format,
         extent: vk::Extent2D,
     ) -> Result<VulkanTexture, DeviceError> {
         let color_image_desc = ImageDescriptor {
-            device: desc.device,
+            device: &desc.context.device,
             image_type: vk::ImageType::TYPE_2D,
             format,
             dimension: [extent.width, extent.height],
             mip_levels: 1,
             array_layers: 1,
-            samples: desc.adapter.max_msaa_samples(),
+            samples: desc.context.adapter.max_msaa_samples(),
             tiling: vk::ImageTiling::OPTIMAL,
             usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
                 | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
-            allocator: desc.allocator.clone(),
+            allocator: desc.context.allocator.clone(),
         };
 
         let color_image = Image::new(&color_image_desc)?;
 
         let color_image_view = ImageView::new_color_image_view(
             Some("Color Image View"),
-            desc.device,
+            &desc.context.device,
             color_image.raw(),
             format,
             1,
         )?;
 
         let texture_desc = VulkanTextureDescriptor {
-            adapter: &desc.adapter,
-            instance: &desc.instance,
-            device: desc.device,
-            command_buffer_allocator: &desc.command_buffer_allocator,
+            adapter: &desc.context.adapter,
+            instance: &desc.context.instance,
+            device: &desc.context.device,
+            command_buffer_allocator: &desc.context.command_buffer_allocator,
             image: color_image,
             image_view: color_image_view,
             generate_mipmaps: false,
         };
-        let texture = VulkanTexture::new(texture_desc)?;
+        let texture = unsafe { VulkanTexture::new(texture_desc)? };
 
         Ok(texture)
     }
@@ -919,14 +888,10 @@ impl SwapChainSupportDetail {
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
-        log::debug!("Swapchain start destroy!");
-        self.framebuffers
-            .iter()
-            .for_each(|e| self.device.destroy_framebuffer(*e));
+        // self.framebuffers
+        //     .iter()
+        //     .for_each(|e| self.device.destroy_framebuffer(*e));
 
-        unsafe {
-            self.loader.destroy_swapchain(self.raw, None);
-        }
-        log::debug!("Swapchain destroyed.");
+        self.destroy();
     }
 }

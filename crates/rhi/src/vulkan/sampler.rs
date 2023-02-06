@@ -1,11 +1,11 @@
 use crate::vulkan::device::Device;
 use crate::DeviceError;
 use ash::vk;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Sampler {
-    device: Rc<Device>,
+    device: Arc<Device>,
     sampler: vk::Sampler,
 }
 
@@ -14,7 +14,7 @@ impl Sampler {
         self.sampler
     }
 
-    pub fn new(device: &Rc<Device>, mip_levels: u32) -> Result<Self, DeviceError> {
+    pub fn new(device: &Arc<Device>, mip_levels: u32) -> Result<Self, DeviceError> {
         let create_info = vk::SamplerCreateInfo::builder()
             .mag_filter(vk::Filter::LINEAR)
             .min_filter(vk::Filter::LINEAR)

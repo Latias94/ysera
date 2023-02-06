@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use ash::vk;
 use gpu_allocator::vulkan::Allocator;
@@ -25,11 +25,11 @@ pub struct Model {
 #[derive(Clone, TypedBuilder)]
 pub struct ModelDescriptor<'a> {
     pub file_name: &'a str,
-    pub device: &'a Rc<Device>,
-    pub allocator: Rc<Mutex<Allocator>>,
+    pub device: &'a Arc<Device>,
+    pub allocator: Arc<Mutex<Allocator>>,
     pub command_buffer_allocator: &'a CommandBufferAllocator,
-    pub adapter: Rc<Adapter>, // check mipmap format support
-    pub instance: Rc<Instance>,
+    pub adapter: Arc<Adapter>, // check mipmap format support
+    pub instance: Arc<Instance>,
 }
 
 impl Model {
@@ -45,7 +45,7 @@ impl Model {
         &self.texture
     }
 
-    pub fn load_obj(desc: &ModelDescriptor) -> anyhow::Result<Self> {
+    pub unsafe fn load_obj(desc: &ModelDescriptor) -> anyhow::Result<Self> {
         let format = vk::Format::R8G8B8A8_UNORM;
 
         let mut texture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -62,7 +62,7 @@ impl Model {
             enable_mip_levels: true,
         };
 
-        let texture = VulkanTexture::new_from_path(texture_desc)?;
+        let texture = unsafe { VulkanTexture::new_from_path(texture_desc)? };
 
         let mut model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         model_path.push(format!("../../resources/objs/{}.obj", desc.file_name));

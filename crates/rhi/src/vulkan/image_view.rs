@@ -1,7 +1,7 @@
 use crate::vulkan::device::Device;
 use crate::Label;
 use ash::vk;
-use std::rc::Rc;
+use std::sync::Arc;
 use typed_builder::TypedBuilder;
 
 #[derive(Clone, Debug, TypedBuilder)]
@@ -17,7 +17,7 @@ pub struct ImageViewDescriptor<'a> {
 
 pub struct ImageView {
     raw: vk::ImageView,
-    device: Rc<Device>,
+    device: Arc<Device>,
 }
 
 impl ImageView {
@@ -27,7 +27,7 @@ impl ImageView {
 
     pub fn new_color_image_view(
         label: Label,
-        device: &Rc<Device>,
+        device: &Arc<Device>,
         image: vk::Image,
         format: vk::Format,
         mip_levels: u32,
@@ -44,7 +44,7 @@ impl ImageView {
 
     pub fn new_depth_image_view(
         label: Label,
-        device: &Rc<Device>,
+        device: &Arc<Device>,
         image: vk::Image,
         format: vk::Format,
     ) -> Result<ImageView, crate::DeviceError> {
@@ -59,7 +59,7 @@ impl ImageView {
     }
 
     fn new(
-        device: &Rc<Device>,
+        device: &Arc<Device>,
         image: vk::Image,
         desc: &ImageViewDescriptor,
     ) -> Result<ImageView, crate::DeviceError> {

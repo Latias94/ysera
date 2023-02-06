@@ -4,7 +4,6 @@ extern crate alloc;
 extern crate core;
 
 use core::fmt::Debug;
-use std::ffi::CStr;
 
 pub use ash;
 use typed_builder::TypedBuilder;
@@ -15,14 +14,13 @@ pub use error::*;
 mod error;
 mod gui;
 pub mod vulkan;
-pub mod vulkan_v2;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub type Label<'a> = Option<&'a str>;
 
 #[derive(Debug, TypedBuilder)]
-pub struct AdapterRequirements {
+pub struct AdapterRequirements<'a> {
     #[builder(default = true)]
     pub graphics: bool,
     #[builder(default = true)]
@@ -37,7 +35,7 @@ pub struct AdapterRequirements {
     pub sample_rate_shading: bool,
     #[builder(default = true)]
     pub discrete_gpu: bool,
-    pub adapter_extension_names: Vec<&'static CStr>,
+    pub required_extension: &'a [&'a str],
 }
 
 bitflags::bitflags! {
@@ -55,6 +53,8 @@ pub struct InstanceDescriptor<'a> {
     pub flags: InstanceFlags,
     #[builder(default = log::LevelFilter::Warn)]
     pub debug_level_filter: log::LevelFilter,
+    #[builder(default = ash::vk::API_VERSION_1_3)]
+    pub vulkan_version: u32,
 }
 
 #[derive(Debug, Default, Copy, Clone)]
