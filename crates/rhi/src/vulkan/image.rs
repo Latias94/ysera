@@ -1,14 +1,16 @@
+use std::rc::Rc;
+
+use ash::vk;
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
+use gpu_allocator::MemoryLocation;
+use parking_lot::Mutex;
+use typed_builder::TypedBuilder;
+
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::DeviceError;
-use ash::vk;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
-use gpu_allocator::MemoryLocation;
-use std::rc::Rc;
-use std::sync::Mutex;
-use typed_builder::TypedBuilder;
 
 pub struct Image {
     raw: vk::Image,
@@ -124,7 +126,6 @@ impl Image {
         let allocator = desc.allocator.clone();
         let allocation = allocator
             .lock()
-            .expect("allocator lock fail")
             .allocate(&AllocationCreateDesc {
                 name: "Image",
                 requirements,
@@ -374,11 +375,7 @@ impl Drop for Image {
     fn drop(&mut self) {
         let allocation = self.allocation.take();
         if let Some(allocation) = allocation {
-            self.allocator
-                .lock()
-                .expect("allocator lock fail")
-                .free(allocation)
-                .unwrap();
+            self.allocator.lock().free(allocation).unwrap();
         }
         self.device.destroy_image(self.raw);
     }

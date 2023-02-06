@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use ash::vk;
 use gpu_allocator::vulkan::Allocator;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
 use math::{vec2, vec3, Vertex3D};

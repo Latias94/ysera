@@ -5,7 +5,7 @@ use ash::vk;
 use gpu_allocator::vulkan::Allocator;
 use image::io::Reader as ImageReader;
 use image::EncodableLayout;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
 use crate::vulkan::adapter::Adapter;

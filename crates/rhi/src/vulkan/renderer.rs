@@ -4,7 +4,7 @@ use std::time::Instant;
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use imgui::Context as ImguiContext;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, KeyboardInput, WindowEvent};
 use winit::window::Window;

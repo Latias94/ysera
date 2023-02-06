@@ -1,13 +1,15 @@
+use std::collections::HashSet;
+use std::ffi::{c_char, CStr, CString};
+use std::sync::{Arc, Mutex};
+
+use ash::extensions::khr;
+use ash::vk;
+use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+
 use crate::vulkan_v2::adapter::{Adapter, AdapterShared};
 use crate::vulkan_v2::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan_v2::instance::{Instance, InstanceShared};
 use crate::{AdapterRequirements, InstanceFlags, QueueFamilyIndices};
-use ash::extensions::khr;
-use ash::vk;
-use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
-use std::collections::HashSet;
-use std::ffi::{c_char, CStr, CString};
-use std::sync::{Arc, Mutex};
 
 pub struct Device {
     /// Loads device local functions.
@@ -129,6 +131,54 @@ impl Device {
         })
     }
 
+    pub unsafe fn set_object_name(
+        &self,
+        object_type: vk::ObjectType,
+        object: impl vk::Handle,
+        name: &str,
+    ) {
+        let debug_utils = match &self.instance.debug_utils {
+            Some(utils) => utils,
+            None => return,
+        };
+
+        let mut buffer: [u8; 64] = [0u8; 64];
+        let buffer_vec: Vec<u8>;
+
+        // Append a null terminator to the string
+        let name_bytes = if name.len() < buffer.len() {
+            // Common case, string is very small. Allocate a copy on the stack.
+            buffer[..name.len()].copy_from_slice(name.as_bytes());
+            // Add null terminator
+            buffer[name.len()] = 0;
+            &buffer[..name.len() + 1]
+        } else {
+            // Less common case, the string is large.
+            // This requires a heap allocation.
+            buffer_vec = name
+                .as_bytes()
+                .iter()
+                .cloned()
+                .chain(std::iter::once(0))
+                .collect();
+            &buffer_vec
+        };
+        let extension = &debug_utils.extension;
+        let _result = extension.set_debug_utils_object_name(
+            self.raw.handle(),
+            &vk::DebugUtilsObjectNameInfoEXT::builder()
+                .object_type(object_type)
+                .object_handle(object.as_raw())
+                .object_name(CStr::from_bytes_with_nul_unchecked(name_bytes)),
+        );
+    }
+
+    pub unsafe fn destroy(&self) {
+        log::debug!("device_destroy");
+    }
+}
+
+impl Device {
     fn get_required_device_extensions() -> [&'static CStr; 1] {
         [khr::Swapchain::name()]
     }
@@ -157,10 +207,4 @@ impl Device {
         }
         true
     }
-
-    pub unsafe fn destroy(&self) {
-        log::debug!("device_destroy");
-    }
 }
-
-impl Device {}

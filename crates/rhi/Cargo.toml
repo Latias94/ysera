@@ -33,6 +33,7 @@ image.workspace = true
 tobj.workspace = true
 arrayvec.workspace = true
 bytemuck.workspace = true
+parking_lot.workspace = true
 #vk-mem.workspace = true
 naga = { workspace = true, features = ["clone"] }
 
