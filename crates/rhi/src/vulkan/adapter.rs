@@ -1,17 +1,26 @@
 use alloc::ffi::CString;
+use ash::extensions::khr;
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr};
 
 use ash::vk;
 
 use crate::vulkan::debug::DebugUtils;
-use crate::{AdapterRequirements, InstanceFlags, QueueFamilyIndices};
+use crate::vulkan::device::DeviceFeatures;
+use crate::{
+    AdapterRequirements, DeviceError, DeviceRequirements, InstanceFlags, QueueFamilyIndices,
+};
 
 use super::{device::Device, instance::Instance, surface::Surface, utils};
 
 pub struct Adapter {
     raw: vk::PhysicalDevice,
     max_msaa_samples: vk::SampleCountFlags,
+    properties: vk::PhysicalDeviceProperties,
+    features: vk::PhysicalDeviceFeatures,
+    extra_features: DeviceFeatures,
+    queue_family_properties: Vec<vk::QueueFamilyProperties>,
+    queue_family_indices: QueueFamilyIndices,
 }
 
 impl Adapter {
@@ -23,42 +32,88 @@ impl Adapter {
         self.max_msaa_samples
     }
 
-    pub fn new(raw: vk::PhysicalDevice, instance: &Instance) -> Self {
+    pub fn queue_family_indices(&self) -> QueueFamilyIndices {
+        self.queue_family_indices
+    }
+
+    pub fn new(
+        raw: vk::PhysicalDevice,
+        instance: &ash::Instance,
+        surface: &Surface,
+    ) -> Result<Self, DeviceError> {
         let max_msaa_samples = Self::get_max_msaa_samples(raw, instance);
-        Self {
+        let properties = unsafe { instance.get_physical_device_properties(raw) };
+
+        let features = unsafe { instance.get_physical_device_features(raw) };
+
+        let queue_family_properties =
+            unsafe { instance.get_physical_device_queue_family_properties(raw) };
+
+        let mut ray_tracing_feature = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default();
+        let mut acceleration_struct_feature =
+            vk::PhysicalDeviceAccelerationStructureFeaturesKHR::default();
+        let mut vulkan_12_features = vk::PhysicalDeviceVulkan12Features::builder()
+            .runtime_descriptor_array(true)
+            .buffer_device_address(true);
+        let mut vulkan_13_features = vk::PhysicalDeviceVulkan13Features::default();
+        let mut features2 = vk::PhysicalDeviceFeatures2::builder()
+            .push_next(&mut ray_tracing_feature)
+            .push_next(&mut acceleration_struct_feature)
+            .push_next(&mut vulkan_12_features)
+            .push_next(&mut vulkan_13_features);
+
+        unsafe { instance.get_physical_device_features2(raw, &mut features2) };
+        let extra_features = DeviceFeatures {
+            ray_tracing_pipeline: ray_tracing_feature.ray_tracing_pipeline == vk::TRUE,
+            acceleration_structure: acceleration_struct_feature.acceleration_structure == vk::TRUE,
+            runtime_descriptor_array: vulkan_12_features.runtime_descriptor_array == vk::TRUE,
+            buffer_device_address: vulkan_12_features.buffer_device_address == vk::TRUE,
+            dynamic_rendering: vulkan_13_features.dynamic_rendering == vk::TRUE,
+            synchronization2: vulkan_13_features.synchronization2 == vk::TRUE,
+        };
+        let queue_family_indices =
+            Self::get_queue_family_indices(raw, &queue_family_properties, surface)?;
+
+        Ok(Self {
             raw,
             max_msaa_samples,
-        }
+            properties,
+            features,
+            extra_features,
+            queue_family_properties,
+            queue_family_indices,
+        })
     }
 
     pub unsafe fn meet_requirements(
         &self,
-        instance: &ash::Instance,
-        surface: &Surface,
         requirements: &AdapterRequirements,
-    ) -> Result<(), crate::DeviceError> {
-        let properties = unsafe { instance.get_physical_device_properties(self.raw) };
+    ) -> Result<(), DeviceError> {
         if requirements.discrete_gpu
-            && properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU
+            && self.properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU
         {
-            log::error!("Device is not a discrete GPU, and one is required!");
-            return Err(crate::DeviceError::NotMeetRequirement);
+            log::error!("This Physical Device is not a discrete GPU, and one is required!");
+            return Err(DeviceError::NotMeetRequirement);
         }
 
-        let features = unsafe { instance.get_physical_device_features(self.raw) };
-        if requirements.sampler_anisotropy && features.sampler_anisotropy != vk::TRUE {
-            log::error!("Device is not support sampler anisotropy!");
-            return Err(crate::DeviceError::NotMeetRequirement);
+        if requirements.sampler_anisotropy && self.features.sampler_anisotropy != vk::TRUE {
+            log::error!("This Physical Device is not support sampler anisotropy!");
+            return Err(DeviceError::NotMeetRequirement);
         }
 
-        let _queue_families =
-            unsafe { instance.get_physical_device_queue_family_properties(self.raw) };
-
-        let queue_family_indices = utils::get_queue_family_indices(instance, self.raw, surface)?;
-        if !queue_family_indices.has_meet_requirement(requirements) {
-            log::error!("Device is not meet queue family indices' requirement! \nindices is {:#?},\nbut requirement is {:#?}", queue_family_indices, requirements);
-            return Err(crate::DeviceError::NotMeetRequirement);
+        if !self.queue_family_indices.has_meet_requirement(requirements) {
+            log::error!("This Physical Device is not meet queue family indices' requirement! \nindices is {:#?},\nbut requirement is {:#?}", self.queue_family_indices, requirements);
+            return Err(DeviceError::NotMeetRequirement);
         }
+
+        if !self
+            .extra_features
+            .is_compatible_with(&requirements.extra_features)
+        {
+            log::error!("This Physical Device is not support extra features! \nsupport {:#?},\nbut requirement is {:#?}", self.extra_features, requirements.extra_features);
+            return Err(DeviceError::NotMeetRequirement);
+        }
+
         // log::info!(
         //     "indices is {:#?},\nrequirement is {:#?}",
         //     queue_family_indices,
@@ -68,13 +123,14 @@ impl Adapter {
         Ok(())
     }
 
-    pub unsafe fn open(
+    pub unsafe fn create_device(
         &self,
         instance: &Instance,
         indices: QueueFamilyIndices,
-        requirement: &AdapterRequirements,
+        adapter_req: &AdapterRequirements,
+        device_req: &DeviceRequirements,
         debug_utils: Option<DebugUtils>,
-    ) -> Result<Device, crate::DeviceError> {
+    ) -> Result<Device, DeviceError> {
         let instance_raw = instance.raw();
 
         let queue_priorities = &[1_f32];
@@ -93,10 +149,6 @@ impl Adapter {
             })
             .collect::<Vec<_>>();
 
-        let physical_device_features = vk::PhysicalDeviceFeatures::builder()
-            .sampler_anisotropy(requirement.sampler_anisotropy)
-            .sample_rate_shading(requirement.sample_rate_shading);
-
         let enable_validation = instance.flags().contains(InstanceFlags::VALIDATION);
         let mut required_layers = vec![];
         if enable_validation {
@@ -111,12 +163,39 @@ impl Adapter {
             .map(|layer_name| layer_name.as_ptr())
             .collect();
 
-        let device_extensions_ptrs = requirement
+        let mut device_extensions_ptrs = device_req
             .required_extension
             .iter()
             .map(|e| CString::new(*e))
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
+
+        if device_req.use_swapchain {
+            device_extensions_ptrs.push(khr::Swapchain::name().into());
+        }
+
+        let physical_device_features = vk::PhysicalDeviceFeatures::builder()
+            .sampler_anisotropy(adapter_req.sampler_anisotropy)
+            .sample_rate_shading(adapter_req.sample_rate_shading);
+
+        let mut ray_tracing_feature = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::builder()
+            .ray_tracing_pipeline(adapter_req.extra_features.ray_tracing_pipeline);
+        let mut acceleration_struct_feature =
+            vk::PhysicalDeviceAccelerationStructureFeaturesKHR::builder()
+                .acceleration_structure(adapter_req.extra_features.acceleration_structure);
+        let mut vulkan_12_features = vk::PhysicalDeviceVulkan12Features::builder()
+            .runtime_descriptor_array(adapter_req.extra_features.runtime_descriptor_array)
+            .buffer_device_address(adapter_req.extra_features.buffer_device_address);
+        let mut vulkan_13_features = vk::PhysicalDeviceVulkan13Features::builder()
+            .dynamic_rendering(adapter_req.extra_features.dynamic_rendering)
+            .synchronization2(adapter_req.extra_features.synchronization2);
+
+        let mut physical_device_features2 = vk::PhysicalDeviceFeatures2::builder()
+            .push_next(&mut ray_tracing_feature)
+            .push_next(&mut acceleration_struct_feature)
+            .push_next(&mut vulkan_12_features)
+            .push_next(&mut vulkan_13_features);
+
         let device_extensions_ptrs = device_extensions_ptrs
             .iter()
             // Safe because `enabled_extensions` entries have static lifetime.
@@ -126,8 +205,10 @@ impl Adapter {
         let support_extensions = Self::check_device_extension_support(
             instance,
             self.raw,
-            requirement.required_extension,
+            device_req.required_extension,
+            device_req.use_swapchain,
         );
+
         if !support_extensions {
             log::error!("device extensions not support");
         }
@@ -136,14 +217,15 @@ impl Adapter {
             .queue_create_infos(&queue_create_infos)
             .enabled_layer_names(&enable_layer_names)
             .enabled_extension_names(&device_extensions_ptrs)
-            .enabled_features(&physical_device_features);
+            .enabled_features(&physical_device_features)
+            .push_next(&mut physical_device_features2);
 
         let ash_device: ash::Device =
             unsafe { instance_raw.create_device(self.raw, &device_create_info, None)? };
 
         log::debug!("Vulkan logical device created.");
 
-        let device = Device::new(ash_device, debug_utils);
+        let device = Device::new(ash_device, debug_utils, indices);
         Ok(device)
     }
 
@@ -151,6 +233,7 @@ impl Adapter {
         instance: &Instance,
         device: vk::PhysicalDevice,
         extensions: &[&str],
+        use_swapchain: bool,
     ) -> bool {
         let extension_props = unsafe {
             instance
@@ -169,7 +252,44 @@ impl Adapter {
                 return false;
             }
         }
-        true
+
+        let swapchain_check =
+            use_swapchain && extensions.contains(&khr::Swapchain::name().to_str().unwrap());
+        swapchain_check
+    }
+
+    pub fn get_queue_family_indices(
+        adapter: vk::PhysicalDevice,
+        queue_family_properties: &[vk::QueueFamilyProperties],
+        surface: &Surface,
+    ) -> Result<QueueFamilyIndices, DeviceError> {
+        let mut indices = QueueFamilyIndices::default();
+        for (i, queue_family) in queue_family_properties.iter().enumerate() {
+            if indices.is_complete() {
+                break;
+            }
+            let index = i as u32;
+            if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+                indices.graphics_family = Some(index);
+            };
+            if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
+                indices.compute_family = Some(index);
+            };
+            if queue_family.queue_flags.contains(vk::QueueFlags::TRANSFER) {
+                indices.transfer_family = Some(index);
+            };
+            let support_present = unsafe {
+                surface
+                    .loader()
+                    .get_physical_device_surface_support(adapter, index, surface.raw())
+                    .map_err(DeviceError::Vulkan)?
+            };
+
+            if support_present {
+                indices.present_family = Some(index);
+            }
+        }
+        Ok(indices)
     }
 
     pub fn log_adapter_information(&self, instance: &ash::Instance) {
@@ -268,9 +388,9 @@ impl Adapter {
 
     fn get_max_msaa_samples(
         adapter: vk::PhysicalDevice,
-        instance: &Instance,
+        instance: &ash::Instance,
     ) -> vk::SampleCountFlags {
-        let properties = unsafe { instance.raw().get_physical_device_properties(adapter) };
+        let properties = unsafe { instance.get_physical_device_properties(adapter) };
         let counts = properties.limits.framebuffer_color_sample_counts
             & properties.limits.framebuffer_depth_sample_counts;
         [

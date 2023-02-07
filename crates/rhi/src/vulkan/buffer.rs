@@ -69,20 +69,20 @@ pub struct UniformBufferDescriptor<'a, T> {
 }
 
 impl Buffer {
-    pub fn raw(&self) -> vk::Buffer {
+    pub(crate) fn raw(&self) -> vk::Buffer {
         self.raw
     }
 
-    pub fn new(desc: BufferDescriptor) -> Result<Buffer, DeviceError> {
+    pub(crate) unsafe fn new(desc: BufferDescriptor) -> Result<Buffer, DeviceError> {
         let buffer_size = desc.element_count as u64 * desc.element_size as u64;
         let buffer_info = vk::BufferCreateInfo::builder()
             .size(buffer_size)
             .usage(desc.buffer_usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
         let device = desc.device;
-        let raw = device.create_buffer(&buffer_info)?;
+        let raw = unsafe { device.raw().create_buffer(&buffer_info, None)? };
 
-        let requirements = device.get_buffer_memory_requirements(raw);
+        let requirements = unsafe { device.raw().get_buffer_memory_requirements(raw) };
 
         let allocator = desc.allocator.clone();
         let allocation = allocator
@@ -135,7 +135,7 @@ impl Buffer {
         desc: &StagingBufferDescriptor<T>,
         buffer_type: BufferType,
     ) -> Result<Buffer, DeviceError> {
-        let staging_buffer = Self::new_staging_buffer(desc)?;
+        let staging_buffer = unsafe { Self::new_staging_buffer(desc)? };
 
         let buffer_desc = BufferDescriptor {
             label: desc.label,
@@ -153,7 +153,9 @@ impl Buffer {
         Ok(buffer)
     }
 
-    pub fn new_uniform_buffer<T>(desc: &UniformBufferDescriptor<T>) -> Result<Buffer, DeviceError> {
+    pub unsafe fn new_uniform_buffer<T>(
+        desc: &UniformBufferDescriptor<T>,
+    ) -> Result<Buffer, DeviceError> {
         let buffer_desc = BufferDescriptor {
             label: Some("Uniform Buffer"),
             device: desc.device,
@@ -163,7 +165,7 @@ impl Buffer {
             buffer_usage: vk::BufferUsageFlags::UNIFORM_BUFFER,
             memory_location: MemoryLocation::CpuToGpu,
         };
-        let buffer = Self::new(buffer_desc)?;
+        let buffer = unsafe { Self::new(buffer_desc)? };
         Ok(buffer)
     }
 

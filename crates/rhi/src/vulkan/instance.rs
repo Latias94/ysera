@@ -8,7 +8,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use crate::vulkan::debug;
 use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::platforms;
-use crate::{InstanceDescriptor, InstanceError, InstanceFlags};
+use crate::{DeviceError, InstanceDescriptor, InstanceError, InstanceFlags};
 
 use super::{adapter::Adapter, surface::Surface};
 
@@ -149,13 +149,9 @@ impl Instance {
         })
     }
 
-    pub fn enumerate_adapters(&self) -> Result<Vec<Adapter>, InstanceError> {
+    pub fn enumerate_adapters(&self, surface: &Surface) -> Result<Vec<Adapter>, DeviceError> {
         let instance = &self.raw;
-        let adapters = unsafe {
-            instance
-                .enumerate_physical_devices()
-                .map_err(InstanceError::VulkanError)?
-        };
+        let adapters = unsafe { instance.enumerate_physical_devices()? };
         log::info!(
             "{} devices (GPU) found with vulkan support.",
             adapters.len()
@@ -164,7 +160,7 @@ impl Instance {
         let mut result = vec![];
 
         for &each_adapter in adapters.iter() {
-            let adapter = Adapter::new(each_adapter, self);
+            let adapter = Adapter::new(each_adapter, self.raw(), surface)?;
             adapter.log_adapter_information(&self.raw);
             result.push(adapter);
         }

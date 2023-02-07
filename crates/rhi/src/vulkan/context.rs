@@ -3,8 +3,7 @@ use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::{Device, DeviceFeatures};
 use crate::vulkan::instance::Instance;
 use crate::vulkan::surface::Surface;
-use crate::vulkan::utils;
-use crate::{AdapterRequirements, InstanceDescriptor, QueueFamilyIndices};
+use crate::{AdapterRequirements, DeviceRequirements, InstanceDescriptor, QueueFamilyIndices};
 use anyhow::Result;
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
@@ -42,17 +41,18 @@ impl Context {
             .build();
         let instance = unsafe { Instance::init(&instance_desc)? };
         let surface = unsafe { instance.create_surface(desc.window_handle, desc.display_handle)? };
-        let adapters = instance.enumerate_adapters()?;
+        let adapters = instance.enumerate_adapters(&surface)?;
         assert!(!adapters.is_empty());
 
-        let requirements = AdapterRequirements::builder()
+        let adapter_requirements = AdapterRequirements::builder()
             // .compute(true)
+            .build();
+        let device_requirements = DeviceRequirements::builder()
             .required_extension(desc.required_extensions)
             .build();
         let mut selected_adapter = None;
         for adapter in adapters {
-            if unsafe { adapter.meet_requirements(instance.raw(), &surface, &requirements) }.is_ok()
-            {
+            if unsafe { adapter.meet_requirements(&adapter_requirements) }.is_ok() {
                 selected_adapter = Some(adapter);
                 break;
             }
@@ -69,11 +69,18 @@ impl Context {
         log::debug!("Find the require device.");
         let debug_utils = instance.debug_utils().clone();
 
-        let indices = utils::get_queue_family_indices(instance.raw(), adapter.raw(), &surface)?;
+        let indices = adapter.queue_family_indices();
         indices.log_debug();
 
-        let device =
-            unsafe { adapter.open(&instance, indices, &requirements, debug_utils.clone())? };
+        let device = unsafe {
+            adapter.create_device(
+                &instance,
+                indices,
+                &adapter_requirements,
+                &device_requirements,
+                debug_utils.clone(),
+            )?
+        };
 
         let allocator = Allocator::new(&AllocatorCreateDesc {
             instance: instance.raw().clone(),

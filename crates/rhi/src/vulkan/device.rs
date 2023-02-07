@@ -2,36 +2,67 @@ use std::ffi::CStr;
 
 use ash::vk;
 
+use crate::vulkan::buffer::{Buffer, BufferDescriptor};
 use crate::vulkan::debug::DebugUtils;
-use crate::DeviceError;
+use crate::{DeviceError, QueueFamilyIndices};
 
 pub struct Device {
     /// Loads device local functions.
     raw: ash::Device,
     debug_utils: Option<DebugUtils>,
+    indices: QueueFamilyIndices,
 }
 
-pub struct DeviceFeatures {}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DeviceFeatures {
+    pub ray_tracing_pipeline: bool,
+    pub acceleration_structure: bool,
+    pub runtime_descriptor_array: bool,
+    pub buffer_device_address: bool,
+    pub dynamic_rendering: bool,
+    pub synchronization2: bool,
+}
+
+impl DeviceFeatures {
+    pub fn is_compatible_with(&self, requirements: &Self) -> bool {
+        (!requirements.ray_tracing_pipeline || self.ray_tracing_pipeline)
+            && (!requirements.acceleration_structure || self.acceleration_structure)
+            && (!requirements.runtime_descriptor_array || self.runtime_descriptor_array)
+            && (!requirements.buffer_device_address || self.buffer_device_address)
+            && (!requirements.dynamic_rendering || self.dynamic_rendering)
+            && (!requirements.synchronization2 || self.synchronization2)
+    }
+}
 
 impl Device {
-    pub fn raw(&self) -> &ash::Device {
+    pub(crate) fn raw(&self) -> &ash::Device {
         &self.raw
     }
 
-    pub fn new(raw: ash::Device, debug_utils: Option<DebugUtils>) -> Self {
-        Self { raw, debug_utils }
+    pub(crate) fn new(
+        raw: ash::Device,
+        debug_utils: Option<DebugUtils>,
+        indices: QueueFamilyIndices,
+    ) -> Self {
+        Self {
+            raw,
+            debug_utils,
+            indices,
+        }
     }
 
-    pub fn wait_idle(&self) {
+    pub unsafe fn wait_idle(&self) -> Result<(), DeviceError> {
         unsafe { self.raw.device_wait_idle().unwrap() }
+        Ok(())
+    }
+
+    pub unsafe fn create_buffer(&self, desc: BufferDescriptor) -> Result<Buffer, DeviceError> {
+        let buffer = unsafe { Buffer::new(desc)? };
+        Ok(buffer)
     }
 
     pub fn get_image_memory_requirements(&self, image: vk::Image) -> vk::MemoryRequirements {
         unsafe { self.raw.get_image_memory_requirements(image) }
-    }
-
-    pub fn get_buffer_memory_requirements(&self, buffer: vk::Buffer) -> vk::MemoryRequirements {
-        unsafe { self.raw.get_buffer_memory_requirements(buffer) }
     }
 
     pub unsafe fn bind_buffer_memory(
@@ -227,13 +258,6 @@ impl Device {
     ) -> Result<(), DeviceError> {
         unsafe { self.raw.reset_command_pool(command_pool, flags)? };
         Ok(())
-    }
-
-    pub fn create_buffer(
-        &self,
-        create_info: &vk::BufferCreateInfo,
-    ) -> Result<vk::Buffer, DeviceError> {
-        Ok(unsafe { self.raw.create_buffer(create_info, None)? })
     }
 
     pub fn destroy_buffer(&self, buffer: vk::Buffer) {

@@ -9,6 +9,7 @@ pub use ash;
 use typed_builder::TypedBuilder;
 pub use winit;
 
+use crate::vulkan::device::DeviceFeatures;
 pub use error::*;
 
 mod error;
@@ -20,7 +21,8 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 pub type Label<'a> = Option<&'a str>;
 
 #[derive(Debug, TypedBuilder)]
-pub struct AdapterRequirements<'a> {
+pub struct AdapterRequirements {
+    // queue requirement
     #[builder(default = true)]
     pub graphics: bool,
     #[builder(default = true)]
@@ -29,13 +31,26 @@ pub struct AdapterRequirements<'a> {
     pub compute: bool,
     #[builder(default = true)]
     pub transfer: bool,
+
+    // vk::PhysicalDeviceFeatures
     #[builder(default = true)]
     pub sampler_anisotropy: bool,
     #[builder(default = true)]
     pub sample_rate_shading: bool,
+    // vk::PhysicalDeviceFeatures2 12 13
+    #[builder(default)]
+    pub extra_features: DeviceFeatures,
     #[builder(default = true)]
     pub discrete_gpu: bool,
+}
+
+#[derive(Debug, TypedBuilder)]
+pub struct DeviceRequirements<'a> {
+    /// extension except swapchain ext
     pub required_extension: &'a [&'a str],
+    /// Set to false for headless rendering to omit the swapchain device extensions
+    #[builder(default = true)]
+    pub use_swapchain: bool,
 }
 
 bitflags::bitflags! {
