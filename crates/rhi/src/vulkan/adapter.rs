@@ -1,8 +1,9 @@
 use alloc::ffi::CString;
-use ash::extensions::khr;
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr};
+use std::sync::Arc;
 
+use ash::extensions::khr;
 use ash::vk;
 
 use crate::vulkan::debug::DebugUtils;
@@ -14,6 +15,10 @@ use crate::{
 use super::{device::Device, instance::Instance, surface::Surface, utils};
 
 pub struct Adapter {
+    pub shared: Arc<AdapterShared>,
+}
+
+pub struct AdapterShared {
     raw: vk::PhysicalDevice,
     max_msaa_samples: vk::SampleCountFlags,
     properties: vk::PhysicalDeviceProperties,
@@ -23,7 +28,7 @@ pub struct Adapter {
     queue_family_indices: QueueFamilyIndices,
 }
 
-impl Adapter {
+impl AdapterShared {
     pub fn raw(&self) -> vk::PhysicalDevice {
         self.raw
     }
@@ -35,7 +40,23 @@ impl Adapter {
     pub fn queue_family_indices(&self) -> QueueFamilyIndices {
         self.queue_family_indices
     }
+}
 
+impl Adapter {
+    pub fn raw(&self) -> vk::PhysicalDevice {
+        self.shared.raw
+    }
+
+    pub fn max_msaa_samples(&self) -> vk::SampleCountFlags {
+        self.shared.max_msaa_samples
+    }
+
+    pub fn queue_family_indices(&self) -> QueueFamilyIndices {
+        self.shared.queue_family_indices
+    }
+}
+
+impl Adapter {
     pub fn new(
         raw: vk::PhysicalDevice,
         instance: &ash::Instance,
@@ -75,13 +96,15 @@ impl Adapter {
             Self::get_queue_family_indices(raw, &queue_family_properties, surface)?;
 
         Ok(Self {
-            raw,
-            max_msaa_samples,
-            properties,
-            features,
-            extra_features,
-            queue_family_properties,
-            queue_family_indices,
+            shared: Arc::new(AdapterShared {
+                raw,
+                max_msaa_samples,
+                properties,
+                features,
+                extra_features,
+                queue_family_properties,
+                queue_family_indices,
+            }),
         })
     }
 
@@ -90,27 +113,32 @@ impl Adapter {
         requirements: &AdapterRequirements,
     ) -> Result<(), DeviceError> {
         if requirements.discrete_gpu
-            && self.properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU
+            && self.shared.properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU
         {
             log::error!("This Physical Device is not a discrete GPU, and one is required!");
             return Err(DeviceError::NotMeetRequirement);
         }
 
-        if requirements.sampler_anisotropy && self.features.sampler_anisotropy != vk::TRUE {
+        if requirements.sampler_anisotropy && self.shared.features.sampler_anisotropy != vk::TRUE {
             log::error!("This Physical Device is not support sampler anisotropy!");
             return Err(DeviceError::NotMeetRequirement);
         }
 
-        if !self.queue_family_indices.has_meet_requirement(requirements) {
-            log::error!("This Physical Device is not meet queue family indices' requirement! \nindices is {:#?},\nbut requirement is {:#?}", self.queue_family_indices, requirements);
+        if !self
+            .shared
+            .queue_family_indices
+            .has_meet_requirement(requirements)
+        {
+            log::error!("This Physical Device is not meet queue family indices' requirement! \nindices is {:#?},\nbut requirement is {:#?}", self.shared.queue_family_indices, requirements);
             return Err(DeviceError::NotMeetRequirement);
         }
 
         if !self
+            .shared
             .extra_features
             .is_compatible_with(&requirements.extra_features)
         {
-            log::error!("This Physical Device is not support extra features! \nsupport {:#?},\nbut requirement is {:#?}", self.extra_features, requirements.extra_features);
+            log::error!("This Physical Device is not support extra features! \nsupport {:#?},\nbut requirement is {:#?}", self.shared.extra_features, requirements.extra_features);
             return Err(DeviceError::NotMeetRequirement);
         }
 
@@ -204,7 +232,7 @@ impl Adapter {
 
         let support_extensions = Self::check_device_extension_support(
             instance,
-            self.raw,
+            self.shared.raw,
             device_req.required_extension,
             device_req.use_swapchain,
         );
@@ -221,11 +249,11 @@ impl Adapter {
             .push_next(&mut physical_device_features2);
 
         let ash_device: ash::Device =
-            unsafe { instance_raw.create_device(self.raw, &device_create_info, None)? };
+            unsafe { instance_raw.create_device(self.shared.raw, &device_create_info, None)? };
 
         log::debug!("Vulkan logical device created.");
 
-        let device = Device::new(ash_device, debug_utils, indices);
+        let device = Device::new(ash_device, debug_utils, self.shared.clone());
         Ok(device)
     }
 
@@ -293,7 +321,7 @@ impl Adapter {
     }
 
     pub fn log_adapter_information(&self, instance: &ash::Instance) {
-        let adapter = self.raw;
+        let adapter = self.shared.raw;
         let device_properties = unsafe { instance.get_physical_device_properties(adapter) };
         let device_features = unsafe { instance.get_physical_device_features(adapter) };
         let device_queue_families =

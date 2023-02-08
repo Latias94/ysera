@@ -1,0 +1,16 @@
+[package]
+name = "ysera-renderer"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rhi.workspace = true
+math.workspace = true
+log.workspace = true
+winit.workspace = true
+profiling.workspace = true
+typed-builder.workspace = true
+parking_lot.workspace = true
+anyhow.workspace = true
+

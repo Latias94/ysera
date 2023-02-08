@@ -2501,6 +2501,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ysera-renderer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "parking_lot",
+ "profiling",
+ "typed-builder",
+ "winit",
+ "ysera-math",
+ "ysera-rhi",
+]
+
+[[package]]
 name = "ysera-rhi"
 version = "0.1.0"
 dependencies = [

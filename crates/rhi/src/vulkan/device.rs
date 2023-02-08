@@ -1,16 +1,17 @@
 use std::ffi::CStr;
+use std::sync::Arc;
 
 use ash::vk;
 
-use crate::vulkan::buffer::{Buffer, BufferDescriptor};
+use crate::vulkan::adapter::{Adapter, AdapterShared};
 use crate::vulkan::debug::DebugUtils;
-use crate::{DeviceError, QueueFamilyIndices};
+use crate::DeviceError;
 
 pub struct Device {
     /// Loads device local functions.
     raw: ash::Device,
     debug_utils: Option<DebugUtils>,
-    indices: QueueFamilyIndices,
+    adapter: Arc<AdapterShared>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -42,23 +43,18 @@ impl Device {
     pub(crate) fn new(
         raw: ash::Device,
         debug_utils: Option<DebugUtils>,
-        indices: QueueFamilyIndices,
+        adapter: Arc<AdapterShared>,
     ) -> Self {
         Self {
             raw,
             debug_utils,
-            indices,
+            adapter,
         }
     }
 
     pub unsafe fn wait_idle(&self) -> Result<(), DeviceError> {
         unsafe { self.raw.device_wait_idle().unwrap() }
         Ok(())
-    }
-
-    pub unsafe fn create_buffer(&self, desc: BufferDescriptor) -> Result<Buffer, DeviceError> {
-        let buffer = unsafe { Buffer::new(desc)? };
-        Ok(buffer)
     }
 
     pub fn get_image_memory_requirements(&self, image: vk::Image) -> vk::MemoryRequirements {
