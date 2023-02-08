@@ -13,6 +13,7 @@ use crate::vulkan::device::Device;
 use crate::vulkan::image::{Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
+use crate::vulkan::sync::Semaphore;
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
 
@@ -43,6 +44,11 @@ struct SwapchainProperties {
     pub surface_format: vk::SurfaceFormatKHR,
     pub present_mode: vk::PresentModeKHR,
     pub extent: vk::Extent2D,
+}
+
+pub struct AcquiredImage {
+    pub image_index: u32,
+    pub is_suboptimal: bool,
 }
 
 struct SwapChainSupportDetail {
@@ -312,7 +318,7 @@ impl Swapchain {
             dimensions: [width, height],
             old_swapchain: None,
             max_frame_in_flight: self.max_frame_in_flight,
-            queue_family: context.indices,
+            queue_family: context.device.queue_family_indices(),
         };
         let (swapchain_loader, swapchain, properties, support, _) =
             unsafe { Self::create_swapchain(&desc)? };
@@ -644,29 +650,32 @@ impl Swapchain {
     pub unsafe fn acquire_next_image(
         &self,
         timeout: u64,
-        semaphore: vk::Semaphore,
-    ) -> Result<(u32, bool), SurfaceError> {
+        semaphore: &Semaphore,
+    ) -> Result<AcquiredImage, DeviceError> {
         match unsafe {
             self.loader
-                .acquire_next_image(self.raw, timeout, semaphore, vk::Fence::null())
+                .acquire_next_image(self.raw, timeout, semaphore.raw, vk::Fence::null())
         } {
-            Ok(pair) => Ok(pair),
+            Ok(pair) => Ok(AcquiredImage {
+                image_index: pair.0,
+                is_suboptimal: pair.1,
+            }),
             Err(error) => match error {
                 vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
-                    Err(SurfaceError::OutOfDate)
+                    Err(DeviceError::Other("Out of Date"))
                 }
-                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
-                other => Err(DeviceError::from(other).into()),
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(DeviceError::Other("Lost")),
+                other => Err(DeviceError::from(other)),
             },
         }
     }
 
-    pub fn queue_present(
+    pub unsafe fn queue_present(
         &self,
         present_queue: vk::Queue,
         image_index: u32,
         wait_semaphores: &[vk::Semaphore],
-    ) -> Result<bool, SurfaceError> {
+    ) -> Result<bool, DeviceError> {
         let swapchains = &[self.raw];
         let indices = &[image_index];
         let present_info = vk::PresentInfoKHR::builder()
@@ -677,9 +686,9 @@ impl Swapchain {
             Ok(suboptimal) => Ok(suboptimal),
             Err(error) => match error {
                 vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
-                    Err(SurfaceError::OutOfDate)
+                    Err(DeviceError::Other("Out Of Date"))
                 }
-                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(DeviceError::Other("Lost")),
                 other => Err(DeviceError::from(other).into()),
             },
         }
@@ -777,7 +786,6 @@ impl Swapchain {
             adapter: &desc.context.adapter,
             instance: &desc.context.instance,
             device: &desc.context.device,
-            command_buffer_allocator: &desc.context.command_buffer_allocator,
             image: color_image,
             image_view: color_image_view,
             generate_mipmaps: false,

@@ -11,7 +11,6 @@ use typed_builder::TypedBuilder;
 use math::{vec2, vec3, Vertex3D};
 
 use crate::vulkan::adapter::Adapter;
-use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureFromPathDescriptor};
@@ -27,7 +26,6 @@ pub struct ModelDescriptor<'a> {
     pub file_name: &'a str,
     pub device: &'a Arc<Device>,
     pub allocator: Arc<Mutex<Allocator>>,
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
     pub adapter: Arc<Adapter>, // check mipmap format support
     pub instance: Arc<Instance>,
 }
@@ -56,7 +54,6 @@ impl Model {
             instance: &desc.instance,
             device: desc.device,
             allocator: desc.allocator.clone(),
-            command_buffer_allocator: desc.command_buffer_allocator,
             path: &texture_path,
             format,
             enable_mip_levels: true,

@@ -106,76 +106,77 @@ impl DescriptorSetAllocator {
         })
     }
 
-    pub unsafe fn allocate_per_frame_descriptor_sets(
-        &self,
-        desc: &PerFrameDescriptorSetsCreateInfo,
-    ) -> Result<Vec<vk::DescriptorSet>, DeviceError> {
-        log::debug!("Allocating per frame descriptor sets!");
-
-        let count = desc.uniform_buffers.len();
-        let layouts = vec![self.per_frame_layout.raw(); count];
-        let info = vk::DescriptorSetAllocateInfo::builder()
-            .descriptor_pool(self.per_frame_pool.raw())
-            .set_layouts(&layouts);
-        let descriptor_sets = unsafe { self.device.raw().allocate_descriptor_sets(&info)? };
-
-        for i in 0..count {
-            // 将实际图像和采样器资源绑定到描述符集中的描述符
-            let buffer_info = vk::DescriptorBufferInfo::builder()
-                .buffer(desc.uniform_buffers[i].raw())
-                .offset(0)
-                .range(size_of::<UniformBufferObject>() as u64)
-                .build();
-            let buffer_infos = [buffer_info];
-            let ubo_write = vk::WriteDescriptorSet::builder()
-                .dst_set(descriptor_sets[i])
-                .dst_binding(0)
-                // 描述符可以是数组，因此我们还需要指定要更新的数组中的第一个索引。我们没有使用数组，因此索引只是 0。
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                // buffer_info 字段用于引用缓冲区数据的描述符
-                .buffer_info(&buffer_infos)
-                // image_info 用于引用图像数据的描述符，texel_buffer_view 用于引用缓冲区视图的描述符。
-                .build();
-
-            // here use image+sampler cause naga not support sampler2D, or we can use only SAMPLED_IMAGE
-            let image_info = vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .image_view(desc.texture_image_view)
-                .build();
-
-            let image_infos = &[image_info];
-            let image_write = vk::WriteDescriptorSet::builder()
-                .dst_set(descriptor_sets[i])
-                .dst_binding(1)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .image_info(image_infos)
-                .build();
-
-            let sampler_info = vk::DescriptorImageInfo::builder()
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                .sampler(desc.texture_sampler)
-                .build();
-
-            let sampler_infos = &[sampler_info];
-            let sampler_write = vk::WriteDescriptorSet::builder()
-                .dst_set(descriptor_sets[i])
-                .dst_binding(2)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::SAMPLER)
-                .image_info(sampler_infos)
-                .build();
-            unsafe {
-                self.device
-                    .raw()
-                    .update_descriptor_sets(&[ubo_write, image_write, sampler_write], &[]);
-            }
-        }
-        log::debug!("Per frame descriptor sets Allocated.");
-
-        Ok(descriptor_sets)
-    }
+    // move to shader.rs
+    // pub unsafe fn allocate_per_frame_descriptor_sets(
+    //     &self,
+    //     desc: &PerFrameDescriptorSetsCreateInfo,
+    // ) -> Result<Vec<vk::DescriptorSet>, DeviceError> {
+    //     log::debug!("Allocating per frame descriptor sets!");
+    //
+    //     let count = desc.uniform_buffers.len();
+    //     let layouts = vec![self.per_frame_layout.raw(); count];
+    //     let info = vk::DescriptorSetAllocateInfo::builder()
+    //         .descriptor_pool(self.per_frame_pool.raw())
+    //         .set_layouts(&layouts);
+    //     let descriptor_sets = unsafe { self.device.raw().allocate_descriptor_sets(&info)? };
+    //
+    //     for i in 0..count {
+    //         // 将实际图像和采样器资源绑定到描述符集中的描述符
+    //         let buffer_info = vk::DescriptorBufferInfo::builder()
+    //             .buffer(desc.uniform_buffers[i].raw())
+    //             .offset(0)
+    //             .range(size_of::<UniformBufferObject>() as u64)
+    //             .build();
+    //         let buffer_infos = [buffer_info];
+    //         let ubo_write = vk::WriteDescriptorSet::builder()
+    //             .dst_set(descriptor_sets[i])
+    //             .dst_binding(0)
+    //             // 描述符可以是数组，因此我们还需要指定要更新的数组中的第一个索引。我们没有使用数组，因此索引只是 0。
+    //             .dst_array_element(0)
+    //             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+    //             // buffer_info 字段用于引用缓冲区数据的描述符
+    //             .buffer_info(&buffer_infos)
+    //             // image_info 用于引用图像数据的描述符，texel_buffer_view 用于引用缓冲区视图的描述符。
+    //             .build();
+    //
+    //         // here use image+sampler cause naga not support sampler2D, or we can use only SAMPLED_IMAGE
+    //         let image_info = vk::DescriptorImageInfo::builder()
+    //             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+    //             .image_view(desc.texture_image_view)
+    //             .build();
+    //
+    //         let image_infos = &[image_info];
+    //         let image_write = vk::WriteDescriptorSet::builder()
+    //             .dst_set(descriptor_sets[i])
+    //             .dst_binding(1)
+    //             .dst_array_element(0)
+    //             .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+    //             .image_info(image_infos)
+    //             .build();
+    //
+    //         let sampler_info = vk::DescriptorImageInfo::builder()
+    //             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+    //             .sampler(desc.texture_sampler)
+    //             .build();
+    //
+    //         let sampler_infos = &[sampler_info];
+    //         let sampler_write = vk::WriteDescriptorSet::builder()
+    //             .dst_set(descriptor_sets[i])
+    //             .dst_binding(2)
+    //             .dst_array_element(0)
+    //             .descriptor_type(vk::DescriptorType::SAMPLER)
+    //             .image_info(sampler_infos)
+    //             .build();
+    //         unsafe {
+    //             self.device
+    //                 .raw()
+    //                 .update_descriptor_sets(&[ubo_write, image_write, sampler_write], &[]);
+    //         }
+    //     }
+    //     log::debug!("Per frame descriptor sets Allocated.");
+    //
+    //     Ok(descriptor_sets)
+    // }
 
     pub unsafe fn allocate_texture_descriptor_set(
         &self,

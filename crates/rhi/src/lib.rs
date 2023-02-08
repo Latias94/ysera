@@ -14,6 +14,7 @@ pub use error::*;
 
 mod error;
 mod gui;
+pub mod image;
 pub mod vulkan;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;

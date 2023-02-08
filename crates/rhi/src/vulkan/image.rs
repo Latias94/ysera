@@ -7,7 +7,6 @@ use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
 use crate::vulkan::adapter::Adapter;
-use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::DeviceError;
@@ -58,7 +57,6 @@ pub struct DepthImageDescriptor<'a> {
     pub allocator: Arc<Mutex<Allocator>>,
     pub width: u32,
     pub height: u32,
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
 }
 
 impl Image {
@@ -197,7 +195,6 @@ impl Image {
                 depth_format,
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                desc.command_buffer_allocator,
                 1,
             )?;
         }
@@ -253,11 +250,10 @@ impl Image {
         format: vk::Format,
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
-        command_buffer_allocator: &CommandBufferAllocator,
         mip_levels: u32,
     ) -> Result<(), DeviceError> {
         unsafe {
-            command_buffer_allocator.create_single_use(|device, command_buffer| {
+            self.device.create_single_use(|device, command_buffer| {
                 let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
                 {
                     match format {
@@ -342,10 +338,9 @@ impl Image {
         buffer: vk::Buffer,
         width: u32,
         height: u32,
-        command_buffer_allocator: &CommandBufferAllocator,
     ) -> Result<(), DeviceError> {
         unsafe {
-            command_buffer_allocator.create_single_use(|device, command_buffer| {
+            self.device.create_single_use(|device, command_buffer| {
                 let subresource = vk::ImageSubresourceLayers::builder()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
                     .mip_level(0)

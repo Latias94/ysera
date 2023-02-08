@@ -7,9 +7,11 @@ use parking_lot::Mutex;
 
 use math::Mat4;
 use ysera_rhi::vulkan::base_renderer::{BaseRenderer, RendererBase};
-use ysera_rhi::vulkan::buffer::Buffer;
+use ysera_rhi::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor};
+use ysera_rhi::vulkan::context::Context;
 use ysera_rhi::vulkan::pipeline::Pipeline;
 use ysera_rhi::vulkan::pipeline_layout::PipelineLayout;
+use ysera_rhi::DeviceError;
 
 // math::Vertex3D
 struct VertexBuffer {
@@ -62,29 +64,23 @@ impl RendererBase for Triangle {
     type Gui = ();
 
     fn new(base: &mut BaseRenderer<Self>) -> anyhow::Result<Self> {
+        let context = &mut base.context;
+        let vertex_buffer = create_vertex_buffer(context)?;
+
         todo!()
     }
 
     fn update(
         &mut self,
         base: &BaseRenderer<Self>,
-        gui: &mut Self::Gui,
         image_index: usize,
         delta_time: Duration,
     ) -> anyhow::Result<()> {
-        Ok(())
+        todo!()
     }
 
     fn on_recreate_swapchain(&mut self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn record_commands(&self, base: &BaseRenderer<Self>, image_index: usize) -> anyhow::Result<()> {
-        let device = &base.context.device;
-
-        // unsafe { device.begin_command_buffer()? }
-
-        Ok(())
+        todo!()
     }
 }
 
@@ -155,4 +151,64 @@ fn init_logger() {
     let mut builder = env_logger::Builder::from_default_env();
     builder.target(env_logger::Target::Stdout);
     builder.init();
+}
+
+struct Vertex {
+    position: [f32; 2],
+    color: [f32; 3],
+}
+
+impl Vertex {
+    fn bindings() -> Vec<vk::VertexInputBindingDescription> {
+        vec![vk::VertexInputBindingDescription {
+            binding: 0,
+            stride: 20,
+            input_rate: vk::VertexInputRate::VERTEX,
+        }]
+    }
+
+    fn attributes() -> Vec<vk::VertexInputAttributeDescription> {
+        vec![
+            vk::VertexInputAttributeDescription {
+                binding: 0,
+                location: 0,
+                format: vk::Format::R32G32_SFLOAT,
+                offset: 0,
+            },
+            vk::VertexInputAttributeDescription {
+                binding: 0,
+                location: 1,
+                format: vk::Format::R32G32B32_SFLOAT,
+                offset: 8,
+            },
+        ]
+    }
+}
+
+fn create_vertex_buffer(context: &Context) -> Result<Buffer, DeviceError> {
+    let vertices: [Vertex; 3] = [
+        Vertex {
+            position: [-1.0, 1.0],
+            color: [1.0, 0.0, 0.0],
+        },
+        Vertex {
+            position: [1.0, 1.0],
+            color: [0.0, 1.0, 0.0],
+        },
+        Vertex {
+            position: [0.0, -1.0],
+            color: [0.0, 0.0, 1.0],
+        },
+    ];
+    let desc = StagingBufferDescriptor {
+        label: Some("Staging Buffer"),
+        device: &context.device,
+        allocator: context.allocator.clone(),
+        elements: &vertices,
+    };
+
+    let vertex_buffer =
+        unsafe { Buffer::new_buffer_copy_from_staging_buffer(&desc, BufferType::Vertex)? };
+
+    Ok(vertex_buffer)
 }

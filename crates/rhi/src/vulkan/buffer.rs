@@ -7,7 +7,6 @@ use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
-use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::Device;
 use crate::DeviceError;
 
@@ -55,7 +54,6 @@ pub struct StagingBufferDescriptor<'a, T> {
     pub device: &'a Arc<Device>,
     pub allocator: Arc<Mutex<Allocator>>,
     pub elements: &'a [T],
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
 }
 
 #[derive(Clone, TypedBuilder)]
@@ -65,7 +63,6 @@ pub struct UniformBufferDescriptor<'a, T> {
     pub allocator: Arc<Mutex<Allocator>>,
     pub elements: &'a [T],
     pub buffer_type: BufferType,
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
 }
 
 impl Buffer {
@@ -152,7 +149,7 @@ impl Buffer {
         };
         let buffer = Self::new(buffer_desc)?;
         unsafe {
-            staging_buffer.copy_buffer(&buffer, desc.command_buffer_allocator)?;
+            staging_buffer.copy_buffer(&buffer)?;
         }
         Ok(buffer)
     }
@@ -183,13 +180,9 @@ impl Buffer {
         }
     }
 
-    pub unsafe fn copy_buffer(
-        &self,
-        destination: &Buffer,
-        command_buffer_allocator: &CommandBufferAllocator,
-    ) -> Result<(), DeviceError> {
+    pub unsafe fn copy_buffer(&self, destination: &Buffer) -> Result<(), DeviceError> {
         unsafe {
-            command_buffer_allocator.create_single_use(|device, command_buffer| {
+            self.device.create_single_use(|device, command_buffer| {
                 let regions = [vk::BufferCopy::builder().size(self.buffer_size).build()];
                 device.raw().cmd_copy_buffer(
                     command_buffer.raw(),

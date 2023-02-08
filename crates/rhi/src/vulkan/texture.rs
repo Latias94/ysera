@@ -10,7 +10,6 @@ use typed_builder::TypedBuilder;
 
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::buffer::{Buffer, StagingBufferDescriptor};
-use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::Device;
 use crate::vulkan::image::{ColorImageDescriptor, Image};
 use crate::vulkan::image_view::ImageView;
@@ -24,7 +23,6 @@ pub struct VulkanTextureDescriptor<'a> {
     // check mipmap format support
     pub instance: &'a Instance,
     pub device: &'a Arc<Device>,
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
     pub image: Image,
     pub image_view: ImageView,
     pub generate_mipmaps: bool,
@@ -37,7 +35,6 @@ pub struct VulkanTextureFromPixelsDescriptor<'a> {
     pub instance: &'a Instance,
     pub device: &'a Arc<Device>,
     pub allocator: Arc<Mutex<Allocator>>,
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
     pub format: vk::Format,
     pub extent: [u32; 2],
     pub bytes: &'a [u8],
@@ -51,7 +48,6 @@ pub struct VulkanTextureFromPathDescriptor<'a> {
     pub instance: &'a Instance,
     pub device: &'a Arc<Device>,
     pub allocator: Arc<Mutex<Allocator>>,
-    pub command_buffer_allocator: &'a CommandBufferAllocator,
     pub path: &'a Path,
     pub format: vk::Format,
     pub enable_mip_levels: bool,
@@ -116,7 +112,6 @@ impl VulkanTexture {
             instance: desc.instance,
             device: desc.device,
             allocator: desc.allocator.clone(),
-            command_buffer_allocator: desc.command_buffer_allocator,
             format: desc.format,
             extent: [width, height],
             bytes: pixels,
@@ -145,7 +140,6 @@ impl VulkanTexture {
             device: desc.device,
             allocator: desc.allocator.clone(),
             elements: pixels,
-            command_buffer_allocator: desc.command_buffer_allocator,
         };
         let staging_buffer = unsafe { Buffer::new_staging_buffer(&staging_buffer_desc)? };
 
@@ -167,16 +161,10 @@ impl VulkanTexture {
                 desc.format,
                 vk::ImageLayout::UNDEFINED,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                staging_buffer_desc.command_buffer_allocator,
                 mip_levels,
             )?;
 
-            image.copy_from(
-                staging_buffer.raw(),
-                width,
-                height,
-                staging_buffer_desc.command_buffer_allocator,
-            )?;
+            image.copy_from(staging_buffer.raw(), width, height)?;
         }
 
         let image_view = unsafe {
@@ -193,7 +181,6 @@ impl VulkanTexture {
             adapter: desc.adapter,
             instance: desc.instance,
             device: desc.device,
-            command_buffer_allocator: desc.command_buffer_allocator,
             image,
             image_view,
             generate_mipmaps: true,
@@ -207,11 +194,11 @@ impl VulkanTexture {
         if desc.generate_mipmaps {
             unsafe {
                 Self::generate_mipmaps(
+                    desc.device,
                     desc.image.raw(),
                     desc.image.width(),
                     desc.image.height(),
                     desc.image.mip_levels(),
-                    desc.command_buffer_allocator,
                     desc.instance,
                     desc.adapter,
                     desc.image.format(),
@@ -227,11 +214,11 @@ impl VulkanTexture {
     }
 
     unsafe fn generate_mipmaps(
+        device: &Device,
         image: vk::Image,
         width: u32,
         height: u32,
         mip_levels: u32,
-        command_buffer_allocator: &CommandBufferAllocator,
         instance: &Instance,
         adapter: &Adapter,
         format: vk::Format,
@@ -258,7 +245,7 @@ impl VulkanTexture {
         }
 
         unsafe {
-            command_buffer_allocator.create_single_use(|device, command_buffer| {
+            device.create_single_use(|device, command_buffer| {
                 let subresource = vk::ImageSubresourceRange::builder()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
                     .base_array_layer(0)

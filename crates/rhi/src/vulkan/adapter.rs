@@ -253,7 +253,7 @@ impl Adapter {
 
         log::debug!("Vulkan logical device created.");
 
-        let device = Device::new(ash_device, debug_utils, self.shared.clone());
+        let device = Device::new(ash_device, debug_utils, self.shared.clone(), indices)?;
         Ok(device)
     }
 
