@@ -42,16 +42,19 @@ impl DescriptorSetAllocator {
         self.texture_layout.raw()
     }
 
-    pub fn new(device: &Rc<Device>, swapchain_image_count: u32) -> Result<Self, DeviceError> {
+    pub unsafe fn new(
+        device: &Rc<Device>,
+        swapchain_image_count: u32,
+    ) -> Result<Self, DeviceError> {
         let per_frame_pool_create_info = DescriptorPoolCreateInfo {
             ty: vk::DescriptorType::UNIFORM_BUFFER,
             descriptor_count: swapchain_image_count,
             device,
             max_sets: swapchain_image_count,
         };
-        let per_frame_pool = DescriptorPool::new(per_frame_pool_create_info)?;
+        let per_frame_pool = unsafe { DescriptorPool::new(per_frame_pool_create_info)? };
 
-        let texture_pool = DescriptorPool::create_texture_descriptor_pool(device)?;
+        let texture_pool = unsafe { DescriptorPool::create_texture_descriptor_pool(device)? };
 
         let ubo_binding = DescriptorSetLayoutBinding {
             binding: 0,
@@ -79,7 +82,7 @@ impl DescriptorSetAllocator {
             bindings: &[ubo_binding, image_binding, sampler_binding],
         };
 
-        let per_frame_layout = DescriptorSetLayout::new(per_frame_layout_desc)?;
+        let per_frame_layout = unsafe { DescriptorSetLayout::new(per_frame_layout_desc)? };
 
         let texture_pool_ubo_binding = DescriptorSetLayoutBinding {
             binding: 0,
@@ -91,7 +94,7 @@ impl DescriptorSetAllocator {
             device,
             bindings: &[texture_pool_ubo_binding],
         };
-        let texture_layout = DescriptorSetLayout::new(texture_layout_desc)?;
+        let texture_layout = unsafe { DescriptorSetLayout::new(texture_layout_desc)? };
 
         log::debug!("Descriptor Set Allocator created.");
         Ok(Self {
@@ -103,7 +106,7 @@ impl DescriptorSetAllocator {
         })
     }
 
-    pub fn allocate_per_frame_descriptor_sets(
+    pub unsafe fn allocate_per_frame_descriptor_sets(
         &self,
         desc: &PerFrameDescriptorSetsCreateInfo,
     ) -> Result<Vec<vk::DescriptorSet>, DeviceError> {
@@ -114,7 +117,7 @@ impl DescriptorSetAllocator {
         let info = vk::DescriptorSetAllocateInfo::builder()
             .descriptor_pool(self.per_frame_pool.raw())
             .set_layouts(&layouts);
-        let descriptor_sets = self.device.allocate_descriptor_sets(&info)?;
+        let descriptor_sets = unsafe { self.device.raw().allocate_descriptor_sets(&info)? };
 
         for i in 0..count {
             // 将实际图像和采样器资源绑定到描述符集中的描述符
@@ -163,15 +166,18 @@ impl DescriptorSetAllocator {
                 .descriptor_type(vk::DescriptorType::SAMPLER)
                 .image_info(sampler_infos)
                 .build();
-            self.device
-                .update_descriptor_sets(&[ubo_write, image_write, sampler_write], &[]);
+            unsafe {
+                self.device
+                    .raw()
+                    .update_descriptor_sets(&[ubo_write, image_write, sampler_write], &[]);
+            }
         }
         log::debug!("Per frame descriptor sets Allocated.");
 
         Ok(descriptor_sets)
     }
 
-    pub fn allocate_texture_descriptor_set(
+    pub unsafe fn allocate_texture_descriptor_set(
         &self,
         texture: &VulkanTexture,
         image_layout: vk::ImageLayout,
@@ -182,7 +188,7 @@ impl DescriptorSetAllocator {
                 .descriptor_pool(self.texture_pool.raw())
                 .set_layouts(&layouts);
 
-            self.device.allocate_descriptor_sets(&allocate_info)?[0]
+            unsafe { self.device.raw().allocate_descriptor_sets(&allocate_info)?[0] }
         };
 
         let image_info = vk::DescriptorImageInfo::builder()
@@ -200,16 +206,24 @@ impl DescriptorSetAllocator {
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(image_infos)
             .build();
-        self.device.update_descriptor_sets(&[image_write], &[]);
+        unsafe {
+            self.device
+                .raw()
+                .update_descriptor_sets(&[image_write], &[]);
+        }
         Ok(descriptor_set)
     }
 
-    pub fn free_texture_descriptor_set(
+    pub unsafe fn free_texture_descriptor_set(
         &self,
         descriptor_set: vk::DescriptorSet,
     ) -> Result<(), DeviceError> {
-        self.device
-            .free_descriptor_sets(self.texture_pool.raw(), &[descriptor_set])
+        unsafe {
+            self.device
+                .raw()
+                .free_descriptor_sets(self.texture_pool.raw(), &[descriptor_set])?
+        }
+        Ok(())
     }
 }
 

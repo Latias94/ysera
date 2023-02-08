@@ -29,7 +29,7 @@ impl DescriptorSetLayout {
         self.raw
     }
 
-    pub fn new(desc: DescriptorSetLayoutCreateInfo) -> Result<Self, DeviceError> {
+    pub unsafe fn new(desc: DescriptorSetLayoutCreateInfo) -> Result<Self, DeviceError> {
         let device = desc.device;
 
         let bindings = desc
@@ -45,7 +45,11 @@ impl DescriptorSetLayout {
             })
             .collect::<Vec<vk::DescriptorSetLayoutBinding>>();
         let create_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings);
-        let raw = device.create_descriptor_set_layout(&create_info)?;
+        let raw = unsafe {
+            device
+                .raw()
+                .create_descriptor_set_layout(&create_info, None)?
+        };
         log::debug!("Descriptor Set Layout created.");
 
         Ok(Self {
@@ -57,7 +61,11 @@ impl DescriptorSetLayout {
 
 impl Drop for DescriptorSetLayout {
     fn drop(&mut self) {
-        self.device.destroy_descriptor_set_layout(self.raw);
+        unsafe {
+            self.device
+                .raw()
+                .destroy_descriptor_set_layout(self.raw, None);
+        }
         log::debug!("Descriptor Set Layout destroyed.");
     }
 }

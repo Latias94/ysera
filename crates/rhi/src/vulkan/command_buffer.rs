@@ -1,5 +1,6 @@
-use ash::vk;
 use std::ops::Deref;
+
+use ash::vk;
 
 pub enum CommandBufferState {
     /// ready to begin

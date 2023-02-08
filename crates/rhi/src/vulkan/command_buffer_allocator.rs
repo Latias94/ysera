@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
+use ash::vk;
+use ash::vk::CommandBufferResetFlags;
+
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::device::Device;
 use crate::DeviceError;
-use ash::vk;
-use ash::vk::CommandBufferResetFlags;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct CommandBufferAllocator {
@@ -159,11 +161,16 @@ impl CommandBufferAllocator {
         let submit_info = vk::SubmitInfo::builder()
             .command_buffers(&command_buffers)
             .build();
-        self.device
-            .queue_submit(self.queue, &[submit_info], vk::Fence::default())?;
+        unsafe {
+            self.device
+                .raw()
+                .queue_submit(self.queue, &[submit_info], vk::Fence::default())?;
+        }
 
         // since we dont use fence here, we wait for it to finish
-        self.device.queue_wait_idle(self.queue)?;
+        unsafe {
+            self.device.raw().queue_wait_idle(self.queue)?;
+        }
         unsafe {
             self.free_command_buffer(command_buffer);
         }

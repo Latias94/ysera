@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use ash::vk;
 
@@ -8,7 +8,7 @@ use crate::DeviceError;
 
 pub struct PipelineLayout {
     raw: vk::PipelineLayout,
-    device: Rc<Device>,
+    device: Arc<Device>,
 }
 
 impl PipelineLayout {
@@ -16,8 +16,8 @@ impl PipelineLayout {
         self.raw
     }
 
-    pub fn new(
-        device: &Rc<Device>,
+    pub unsafe fn new(
+        device: &Arc<Device>,
         shaders: &[Shader],
         layouts: &[vk::DescriptorSetLayout],
     ) -> Result<Self, DeviceError> {
@@ -31,7 +31,7 @@ impl PipelineLayout {
             .set_layouts(layouts)
             .push_constant_ranges(&push_constant_ranges);
 
-        let raw = device.create_pipeline_layout(&create_info)?;
+        let raw = unsafe { device.raw().create_pipeline_layout(&create_info, None)? };
         Ok(Self {
             raw,
             device: device.clone(),
@@ -41,7 +41,9 @@ impl PipelineLayout {
 
 impl Drop for PipelineLayout {
     fn drop(&mut self) {
-        self.device.destroy_pipeline_layout(self.raw);
+        unsafe {
+            self.device.raw().destroy_pipeline_layout(self.raw, None);
+        }
         log::debug!("Pipeline Layout destroyed.");
     }
 }

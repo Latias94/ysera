@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
+use ash::vk;
+
 use crate::vulkan::device::Device;
 use crate::DeviceError;
-use ash::vk;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Sampler {
@@ -14,7 +16,7 @@ impl Sampler {
         self.sampler
     }
 
-    pub fn new(device: &Arc<Device>, mip_levels: u32) -> Result<Self, DeviceError> {
+    pub unsafe fn new(device: &Arc<Device>, mip_levels: u32) -> Result<Self, DeviceError> {
         let create_info = vk::SamplerCreateInfo::builder()
             .mag_filter(vk::Filter::LINEAR)
             .min_filter(vk::Filter::LINEAR)
@@ -33,7 +35,7 @@ impl Sampler {
             .min_lod(0.0)
             // .min_lod(mip_levels as f32 / 2.0) // test mip_levels
             .max_lod(mip_levels as f32);
-        let sampler = device.create_sampler(&create_info)?;
+        let sampler = unsafe { device.raw().create_sampler(&create_info, None)? };
         Ok(Self {
             device: device.clone(),
             sampler,
@@ -43,6 +45,8 @@ impl Sampler {
 
 impl Drop for Sampler {
     fn drop(&mut self) {
-        self.device.destroy_sampler(self.sampler);
+        unsafe {
+            self.device.raw().destroy_sampler(self.sampler, None);
+        }
     }
 }

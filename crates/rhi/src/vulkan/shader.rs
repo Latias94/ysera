@@ -1,15 +1,18 @@
-use crate::vulkan::device::Device;
-use crate::{Label, ShaderError};
-use ash::vk;
-use math::{Vec3, Vertex3D};
-use spirq::ty::Type;
-use spirq::{EntryPoint, ReflectConfig, Variable};
 use std::borrow::Cow;
 use std::ffi::CString;
 use std::mem::size_of;
 use std::path::Path;
 use std::sync::Arc;
+
+use ash::vk;
+use spirq::ty::Type;
+use spirq::{EntryPoint, ReflectConfig, Variable};
 use typed_builder::TypedBuilder;
+
+use math::{Vec3, Vertex3D};
+
+use crate::vulkan::device::Device;
+use crate::{Label, ShaderError};
 
 pub struct Shader {
     device: Arc<Device>,
@@ -49,8 +52,12 @@ impl Shader {
         self.stage
     }
 
-    pub fn new(desc: &ShaderDescriptor, stage: vk::ShaderStageFlags) -> Result<Self, ShaderError> {
-        let shader = Self::create_shader_module(desc.label, desc.device, desc.spv_bytes)?;
+    pub unsafe fn new(
+        desc: &ShaderDescriptor,
+        stage: vk::ShaderStageFlags,
+    ) -> Result<Self, ShaderError> {
+        let shader =
+            unsafe { Self::create_shader_module(desc.label, desc.device, desc.spv_bytes)? };
 
         let entry_point = Self::reflect_entry_point(desc.entry_name, desc.spv_bytes);
         log::debug!("shader module created.");
@@ -63,12 +70,12 @@ impl Shader {
         })
     }
 
-    pub fn new_vert(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
-        Self::new(desc, vk::ShaderStageFlags::VERTEX)
+    pub unsafe fn new_vert(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
+        unsafe { Self::new(desc, vk::ShaderStageFlags::VERTEX) }
     }
 
-    pub fn new_frag(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
-        Self::new(desc, vk::ShaderStageFlags::FRAGMENT)
+    pub unsafe fn new_frag(desc: &ShaderDescriptor) -> Result<Self, ShaderError> {
+        unsafe { Self::new(desc, vk::ShaderStageFlags::FRAGMENT) }
     }
 
     fn reflect_entry_point(entry_name: &str, spv: &[u32]) -> EntryPoint {
@@ -95,7 +102,7 @@ impl Shader {
         entry_point
     }
 
-    pub fn create_shader_module(
+    pub unsafe fn create_shader_module(
         label: Label,
         device: &Device,
         bytes: &[u32],
@@ -104,20 +111,20 @@ impl Shader {
         let vk_info = vk::ShaderModuleCreateInfo::builder()
             .flags(vk::ShaderModuleCreateFlags::empty())
             .code(&spv);
-        let raw = device.create_shader_module(&vk_info)?;
+        let raw = unsafe { device.raw().create_shader_module(&vk_info, None)? };
         if let Some(label) = label {
             unsafe { device.set_object_name(vk::ObjectType::SHADER_MODULE, raw, label) };
         }
         Ok(raw)
     }
 
-    pub fn load_pre_compiled_spv_bytes_from_name(shader_file_name: &str) -> Vec<u32> {
+    pub unsafe fn load_pre_compiled_spv_bytes_from_name(shader_file_name: &str) -> Vec<u32> {
         let path = format!("{}/{}.spv", env!("OUT_DIR"), shader_file_name);
         log::debug!("load shader spv file from: {}", path);
-        Self::load_pre_compiled_spv_bytes_from_path(Path::new(&path))
+        unsafe { Self::load_pre_compiled_spv_bytes_from_path(Path::new(&path)) }
     }
 
-    pub fn load_pre_compiled_spv_bytes_from_path<P: AsRef<Path>>(path: P) -> Vec<u32> {
+    pub unsafe fn load_pre_compiled_spv_bytes_from_path<P: AsRef<Path>>(path: P) -> Vec<u32> {
         use std::fs::File;
         use std::io::Read;
         let spv_file = File::open(path).unwrap();
@@ -152,7 +159,9 @@ impl Shader {
 
 impl Drop for Shader {
     fn drop(&mut self) {
-        self.device.destroy_shader_module(self.shader);
+        unsafe {
+            self.device.raw().destroy_shader_module(self.shader, None);
+        }
         log::debug!("shader module destroyed.");
     }
 }

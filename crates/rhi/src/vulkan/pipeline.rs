@@ -1,8 +1,9 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use ash::vk;
-use math::Vertex3D;
 use typed_builder::TypedBuilder;
+
+use math::Vertex3D;
 
 use crate::vulkan::shader::{Shader, ShaderPropertyInfo};
 use crate::{DeviceError, Label};
@@ -11,7 +12,7 @@ use super::{device::Device, pipeline_layout::PipelineLayout};
 
 pub struct Pipeline {
     raw: vk::Pipeline,
-    device: Rc<Device>,
+    device: Arc<Device>,
     pipeline_layout: PipelineLayout,
 }
 
@@ -29,14 +30,15 @@ impl Pipeline {
         self.pipeline_layout.raw()
     }
 
-    pub fn new(
-        device: &Rc<Device>,
+    pub unsafe fn new(
+        device: &Arc<Device>,
         render_pass: vk::RenderPass,
         msaa_samples: vk::SampleCountFlags,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
         shaders: &[Shader],
     ) -> Result<Self, DeviceError> {
-        let pipeline_layout = PipelineLayout::new(device, shaders, descriptor_set_layouts)?;
+        let pipeline_layout =
+            unsafe { PipelineLayout::new(device, shaders, descriptor_set_layouts)? };
         let raw = Self::create_graphics_pipeline(
             device,
             render_pass,
@@ -53,7 +55,7 @@ impl Pipeline {
     }
 
     pub fn create_graphics_pipeline(
-        device: &Rc<Device>,
+        device: &Arc<Device>,
         render_pass: vk::RenderPass,
         pipeline_layout: vk::PipelineLayout,
         msaa_samples: vk::SampleCountFlags,
@@ -194,7 +196,16 @@ impl Pipeline {
             .build();
 
         let graphic_pipeline_create_infos = [graphic_pipeline_create_info];
-        let pipelines = device.create_graphics_pipelines(&graphic_pipeline_create_infos)?;
+        let pipelines = unsafe {
+            device
+                .raw()
+                .create_graphics_pipelines(
+                    vk::PipelineCache::default(),
+                    &graphic_pipeline_create_infos,
+                    None,
+                )
+                .map_err(|e| e.1)?
+        };
         log::debug!("Vulkan pipelines created.");
         Ok(pipelines)
     }
@@ -202,7 +213,9 @@ impl Pipeline {
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
-        self.device.destroy_pipeline(self.raw);
+        unsafe {
+            self.device.raw().destroy_pipeline(self.raw, None);
+        }
         log::debug!("Pipeline destroyed.");
     }
 }

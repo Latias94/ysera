@@ -1,3 +1,12 @@
+use std::sync::Arc;
+
+use ash::extensions::khr;
+use ash::vk;
+use parking_lot::Mutex;
+use typed_builder::TypedBuilder;
+
+use math::prelude::*;
+
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::context::Context;
 use crate::vulkan::device::Device;
@@ -6,12 +15,6 @@ use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
 use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
-use ash::extensions::khr;
-use ash::vk;
-use math::prelude::*;
-use parking_lot::Mutex;
-use std::sync::Arc;
-use typed_builder::TypedBuilder;
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
@@ -84,7 +87,7 @@ impl Swapchain {
     pub unsafe fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
         let device = &desc.context.device;
         let (swapchain_loader, swapchain, properties, support, image_count) =
-            Self::create_swapchain(&desc)?;
+            unsafe { Self::create_swapchain(&desc)? };
         let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
         let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
@@ -311,7 +314,8 @@ impl Swapchain {
             max_frame_in_flight: self.max_frame_in_flight,
             queue_family: context.indices,
         };
-        let (swapchain_loader, swapchain, properties, support, _) = Self::create_swapchain(&desc)?;
+        let (swapchain_loader, swapchain, properties, support, _) =
+            unsafe { Self::create_swapchain(&desc)? };
 
         let extent = properties.extent;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
@@ -518,7 +522,7 @@ impl Swapchain {
     //     command_buffer.set_state(CommandBufferState::Submitted);
     // }
 
-    fn create_swapchain(
+    unsafe fn create_swapchain(
         desc: &SwapchainDescriptor,
     ) -> Result<
         (
@@ -613,7 +617,7 @@ impl Swapchain {
         ))
     }
 
-    pub fn create_framebuffer(
+    pub unsafe fn create_framebuffer(
         device: &Device,
         map: &Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
         desc: FramebufferDescriptor,
@@ -630,14 +634,14 @@ impl Swapchain {
                     .height(desc.swapchain_extent.height)
                     .layers(1)
                     .build();
-                let framebuffer = device.create_framebuffer(&create_info)?;
+                let framebuffer = unsafe { device.raw().create_framebuffer(&create_info, None)? };
                 e.insert(framebuffer);
                 framebuffer
             }
         })
     }
 
-    pub fn acquire_next_image(
+    pub unsafe fn acquire_next_image(
         &self,
         timeout: u64,
         semaphore: vk::Semaphore,

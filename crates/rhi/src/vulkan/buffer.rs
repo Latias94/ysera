@@ -96,7 +96,11 @@ impl Buffer {
             })
             .unwrap();
 
-        unsafe { device.bind_buffer_memory(raw, allocation.memory(), allocation.offset())? }
+        unsafe {
+            device
+                .raw()
+                .bind_buffer_memory(raw, allocation.memory(), allocation.offset())?
+        }
 
         Ok(Self {
             raw,
@@ -187,7 +191,12 @@ impl Buffer {
         unsafe {
             command_buffer_allocator.create_single_use(|device, command_buffer| {
                 let regions = [vk::BufferCopy::builder().size(self.buffer_size).build()];
-                device.cmd_copy_buffer(command_buffer.raw(), self.raw, destination.raw, &regions);
+                device.raw().cmd_copy_buffer(
+                    command_buffer.raw(),
+                    self.raw,
+                    destination.raw,
+                    &regions,
+                );
             })?;
         }
         Ok(())
@@ -200,6 +209,8 @@ impl Drop for Buffer {
         if let Some(allocation) = allocation {
             self.allocator.lock().free(allocation).unwrap();
         }
-        self.device.destroy_buffer(self.raw);
+        unsafe {
+            self.device.raw().destroy_buffer(self.raw, None);
+        }
     }
 }

@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
+use ash::vk;
+use typed_builder::TypedBuilder;
+
 use crate::vulkan::device::Device;
 use crate::Label;
-use ash::vk;
-use std::sync::Arc;
-use typed_builder::TypedBuilder;
 
 #[derive(Clone, Debug, TypedBuilder)]
 pub struct ImageViewDescriptor<'a> {
@@ -25,7 +27,7 @@ impl ImageView {
         self.raw
     }
 
-    pub fn new_color_image_view(
+    pub unsafe fn new_color_image_view(
         label: Label,
         device: &Arc<Device>,
         image: vk::Image,
@@ -39,10 +41,10 @@ impl ImageView {
             aspect_mask: vk::ImageAspectFlags::COLOR,
             mip_levels,
         };
-        Self::new(device, image, &desc)
+        unsafe { Self::new(device, image, &desc) }
     }
 
-    pub fn new_depth_image_view(
+    pub unsafe fn new_depth_image_view(
         label: Label,
         device: &Arc<Device>,
         image: vk::Image,
@@ -55,10 +57,10 @@ impl ImageView {
             aspect_mask: vk::ImageAspectFlags::DEPTH,
             mip_levels: 1,
         };
-        Self::new(device, image, &desc)
+        unsafe { Self::new(device, image, &desc) }
     }
 
-    fn new(
+    unsafe fn new(
         device: &Arc<Device>,
         image: vk::Image,
         desc: &ImageViewDescriptor,
@@ -89,7 +91,7 @@ impl ImageView {
                 a: vk::ComponentSwizzle::IDENTITY,
             })
             .build();
-        let raw = device.create_image_view(&info)?;
+        let raw = unsafe { device.raw().create_image_view(&info, None)? };
         if let Some(label) = desc.label {
             unsafe { device.set_object_name(vk::ObjectType::IMAGE_VIEW, raw, label) };
         }
@@ -102,7 +104,9 @@ impl ImageView {
 
 impl Drop for ImageView {
     fn drop(&mut self) {
-        self.device.destroy_image_view(self.raw);
+        unsafe {
+            self.device.raw().destroy_image_view(self.raw, None);
+        }
         log::debug!("ImageView destroyed.");
     }
 }

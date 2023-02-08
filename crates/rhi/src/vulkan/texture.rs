@@ -1,10 +1,11 @@
+use std::path::Path;
+use std::sync::Arc;
+
 use ash::vk;
 use gpu_allocator::vulkan::Allocator;
 use image::io::Reader as ImageReader;
 use image::EncodableLayout;
 use parking_lot::Mutex;
-use std::path::Path;
-use std::sync::Arc;
 use typed_builder::TypedBuilder;
 
 use crate::vulkan::adapter::Adapter;
@@ -146,7 +147,7 @@ impl VulkanTexture {
             elements: pixels,
             command_buffer_allocator: desc.command_buffer_allocator,
         };
-        let staging_buffer = Buffer::new_staging_buffer(&staging_buffer_desc)?;
+        let staging_buffer = unsafe { Buffer::new_staging_buffer(&staging_buffer_desc)? };
 
         let color_image_desc = ColorImageDescriptor {
             device: desc.device,
@@ -158,31 +159,35 @@ impl VulkanTexture {
             samples: vk::SampleCountFlags::TYPE_1,
             extra_image_usage_flags: vk::ImageUsageFlags::TRANSFER_SRC, // cmd_blit_image
         };
-        let mut image = Image::new_color_image(&color_image_desc)?;
+        let mut image = unsafe { Image::new_color_image(&color_image_desc)? };
 
         // TODO: 组合在一个命令缓冲区中并异步执行它们以获得更高的吞吐量
-        image.transit_layout(
-            desc.format,
-            vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            staging_buffer_desc.command_buffer_allocator,
-            mip_levels,
-        )?;
+        unsafe {
+            image.transit_layout(
+                desc.format,
+                vk::ImageLayout::UNDEFINED,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                staging_buffer_desc.command_buffer_allocator,
+                mip_levels,
+            )?;
 
-        image.copy_from(
-            staging_buffer.raw(),
-            width,
-            height,
-            staging_buffer_desc.command_buffer_allocator,
-        )?;
+            image.copy_from(
+                staging_buffer.raw(),
+                width,
+                height,
+                staging_buffer_desc.command_buffer_allocator,
+            )?;
+        }
 
-        let image_view = ImageView::new_color_image_view(
-            Some("VulkanTexture color image view"),
-            desc.device,
-            image.raw(),
-            image.format(),
-            mip_levels,
-        )?;
+        let image_view = unsafe {
+            ImageView::new_color_image_view(
+                Some("VulkanTexture color image view"),
+                desc.device,
+                image.raw(),
+                image.format(),
+                mip_levels,
+            )?
+        };
 
         let texture_desc = VulkanTextureDescriptor {
             adapter: desc.adapter,
@@ -197,7 +202,7 @@ impl VulkanTexture {
     }
 
     pub unsafe fn new(desc: VulkanTextureDescriptor) -> Result<VulkanTexture, DeviceError> {
-        let sampler = Sampler::new(desc.device, desc.image.mip_levels())?;
+        let sampler = unsafe { Sampler::new(desc.device, desc.image.mip_levels())? };
 
         if desc.generate_mipmaps {
             unsafe {
@@ -278,15 +283,17 @@ impl VulkanTexture {
                     barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
                     barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
 
-                    device.cmd_pipeline_barrier(
-                        command_buffer.raw(),
-                        vk::PipelineStageFlags::TRANSFER,
-                        vk::PipelineStageFlags::TRANSFER,
-                        vk::DependencyFlags::empty(),
-                        &[] as &[vk::MemoryBarrier],
-                        &[] as &[vk::BufferMemoryBarrier],
-                        &[barrier],
-                    );
+                    unsafe {
+                        device.raw().cmd_pipeline_barrier(
+                            command_buffer.raw(),
+                            vk::PipelineStageFlags::TRANSFER,
+                            vk::PipelineStageFlags::TRANSFER,
+                            vk::DependencyFlags::empty(),
+                            &[] as &[vk::MemoryBarrier],
+                            &[] as &[vk::BufferMemoryBarrier],
+                            &[barrier],
+                        );
+                    }
 
                     let src_subresource = vk::ImageSubresourceLayers::builder()
                         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -322,30 +329,33 @@ impl VulkanTexture {
                         ])
                         .dst_subresource(dst_subresource)
                         .build();
-                    device.cmd_blit_image(
-                        command_buffer.raw(),
-                        image,
-                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                        image,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        &[blit],
-                        vk::Filter::LINEAR,
-                    );
-
+                    unsafe {
+                        device.raw().cmd_blit_image(
+                            command_buffer.raw(),
+                            image,
+                            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                            image,
+                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                            &[blit],
+                            vk::Filter::LINEAR,
+                        );
+                    }
                     barrier.old_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
                     barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                     barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
                     barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
 
-                    device.cmd_pipeline_barrier(
-                        command_buffer.raw(),
-                        vk::PipelineStageFlags::TRANSFER,
-                        vk::PipelineStageFlags::FRAGMENT_SHADER,
-                        vk::DependencyFlags::empty(),
-                        &[] as &[vk::MemoryBarrier],
-                        &[] as &[vk::BufferMemoryBarrier],
-                        &[barrier],
-                    );
+                    unsafe {
+                        device.raw().cmd_pipeline_barrier(
+                            command_buffer.raw(),
+                            vk::PipelineStageFlags::TRANSFER,
+                            vk::PipelineStageFlags::FRAGMENT_SHADER,
+                            vk::DependencyFlags::empty(),
+                            &[] as &[vk::MemoryBarrier],
+                            &[] as &[vk::BufferMemoryBarrier],
+                            &[barrier],
+                        );
+                    }
 
                     if mip_width > 1 {
                         mip_width /= 2;
@@ -363,15 +373,17 @@ impl VulkanTexture {
                 barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
                 barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
 
-                device.cmd_pipeline_barrier(
-                    command_buffer.raw(),
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::DependencyFlags::empty(),
-                    &[] as &[vk::MemoryBarrier],
-                    &[] as &[vk::BufferMemoryBarrier],
-                    &[barrier],
-                );
+                unsafe {
+                    device.raw().cmd_pipeline_barrier(
+                        command_buffer.raw(),
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::PipelineStageFlags::FRAGMENT_SHADER,
+                        vk::DependencyFlags::empty(),
+                        &[] as &[vk::MemoryBarrier],
+                        &[] as &[vk::BufferMemoryBarrier],
+                        &[barrier],
+                    );
+                }
             })
         }
     }

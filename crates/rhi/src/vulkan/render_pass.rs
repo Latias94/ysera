@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
+use ash::vk;
+use typed_builder::TypedBuilder;
+
 use crate::vulkan::command_buffer::CommandBuffer;
 use crate::vulkan::conv;
 use crate::vulkan::device::Device;
 use crate::vulkan::render_pass::RenderPassState::{InRenderPass, Recording};
 use crate::{Color, DeviceError};
-use ash::vk;
-use std::sync::Arc;
-use typed_builder::TypedBuilder;
 
 pub struct RenderPass {
     raw: vk::RenderPass,
@@ -53,7 +55,7 @@ impl RenderPass {
         self.raw
     }
 
-    pub fn new(desc: &RenderPassDescriptor) -> Result<Self, DeviceError> {
+    pub unsafe fn new(desc: &RenderPassDescriptor) -> Result<Self, DeviceError> {
         profiling::scope!("create_render_pass");
 
         // todo configurable
@@ -156,7 +158,7 @@ impl RenderPass {
             .subpasses(&subpasses)
             .attachments(attachments)
             .dependencies(&dependencies);
-        let raw = desc.device.create_render_pass(&create_info)?;
+        let raw = unsafe { desc.device.raw().create_render_pass(&create_info, None)? };
         let clear_values = vec![
             conv::convert_clear_color(desc.clear_color),
             conv::convert_clear_depth_stencil(desc.depth, desc.stencil),
@@ -170,7 +172,9 @@ impl RenderPass {
         })
     }
 
-    pub fn new_imgui_render_pass(desc: &ImguiRenderPassDescriptor) -> Result<Self, DeviceError> {
+    pub unsafe fn new_imgui_render_pass(
+        desc: &ImguiRenderPassDescriptor,
+    ) -> Result<Self, DeviceError> {
         profiling::scope!("create_render_pass imgui");
 
         log::debug!("Creating imgui render pass!");
@@ -209,7 +213,11 @@ impl RenderPass {
             .subpasses(&subpass_descs)
             .dependencies(&subpass_deps);
 
-        let raw = desc.device.create_render_pass(&render_pass_info)?;
+        let raw = unsafe {
+            desc.device
+                .raw()
+                .create_render_pass(&render_pass_info, None)?
+        };
         Ok(Self {
             raw,
             device: desc.device.clone(),
@@ -223,30 +231,36 @@ impl RenderPass {
         })
     }
 
-    pub fn begin(&mut self, command_buffer: &CommandBuffer, framebuffer: vk::Framebuffer) {
+    pub unsafe fn begin(&mut self, command_buffer: &CommandBuffer, framebuffer: vk::Framebuffer) {
         let begin_info = vk::RenderPassBeginInfo::builder()
             .render_pass(self.raw)
             .framebuffer(framebuffer)
             .render_area(conv::convert_rect2d(self.render_area))
             .clear_values(&self.clear_values)
             .build();
-        self.device.cmd_begin_render_pass(
-            command_buffer.raw(),
-            &begin_info,
-            vk::SubpassContents::INLINE,
-        );
+        unsafe {
+            self.device.raw().cmd_begin_render_pass(
+                command_buffer.raw(),
+                &begin_info,
+                vk::SubpassContents::INLINE,
+            );
+        }
         self.state = InRenderPass;
     }
 
-    pub fn end(&mut self, command_buffer: &CommandBuffer) {
-        self.device.cmd_end_render_pass(command_buffer.raw());
+    pub unsafe fn end(&mut self, command_buffer: &CommandBuffer) {
+        unsafe {
+            self.device.raw().cmd_end_render_pass(command_buffer.raw());
+        }
         self.state = Recording;
     }
 }
 
 impl Drop for RenderPass {
     fn drop(&mut self) {
-        self.device.destroy_render_pass(self.raw);
+        unsafe {
+            self.device.raw().destroy_render_pass(self.raw, None);
+        }
         log::debug!("Render Pass destroyed.");
     }
 }

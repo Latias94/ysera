@@ -26,7 +26,7 @@ impl DescriptorPool {
         self.raw
     }
 
-    pub fn new(desc: DescriptorPoolCreateInfo) -> Result<Self, DeviceError> {
+    pub unsafe fn new(desc: DescriptorPoolCreateInfo) -> Result<Self, DeviceError> {
         let device = desc.device;
         let ubo_size = vk::DescriptorPoolSize::builder()
             .ty(desc.ty)
@@ -40,7 +40,7 @@ impl DescriptorPool {
         let info = vk::DescriptorPoolCreateInfo::builder()
             .pool_sizes(pool_sizes)
             .max_sets(desc.max_sets);
-        let raw = device.create_descriptor_pool(&info)?;
+        let raw = unsafe { device.raw().create_descriptor_pool(&info, None)? };
         log::debug!("Descriptor Pool created.");
         Ok(Self {
             raw,
@@ -48,7 +48,7 @@ impl DescriptorPool {
         })
     }
 
-    pub fn create_texture_descriptor_pool(device: &Rc<Device>) -> Result<Self, DeviceError> {
+    pub unsafe fn create_texture_descriptor_pool(device: &Rc<Device>) -> Result<Self, DeviceError> {
         let sampler_pool_size = vk::DescriptorPoolSize::builder()
             .descriptor_count(1)
             .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -61,7 +61,7 @@ impl DescriptorPool {
             .max_sets(MAX_DESCRIPTOR_SET_COUNT)
             .build();
 
-        let raw = device.create_descriptor_pool(&create_info)?;
+        let raw = unsafe { device.raw().create_descriptor_pool(&create_info, None)? };
         Ok(Self {
             raw,
             device: device.clone(),
@@ -71,7 +71,9 @@ impl DescriptorPool {
 
 impl Drop for DescriptorPool {
     fn drop(&mut self) {
-        self.device.destroy_descriptor_pool(self.raw);
+        unsafe {
+            self.device.raw().destroy_descriptor_pool(self.raw, None);
+        }
         log::debug!("Descriptor Pool destroyed.");
     }
 }

@@ -1,15 +1,17 @@
+use std::sync::Arc;
+
+use anyhow::Result;
+use ash::vk;
+use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+use parking_lot::Mutex;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer_allocator::CommandBufferAllocator;
 use crate::vulkan::device::{Device, DeviceFeatures};
 use crate::vulkan::instance::Instance;
 use crate::vulkan::surface::Surface;
 use crate::{AdapterRequirements, DeviceRequirements, InstanceDescriptor, QueueFamilyIndices};
-use anyhow::Result;
-use ash::vk;
-use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
-use parking_lot::Mutex;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use std::sync::Arc;
 
 pub struct ContextDescriptor<'a> {
     pub app_name: &'a str,
@@ -101,13 +103,25 @@ impl Context {
         let allocator = Arc::new(Mutex::new(allocator));
 
         // this queue should support graphics and present
-        let graphics_queue = device.get_device_queue(indices.graphics_family.unwrap(), 0);
-        let present_queue = device.get_device_queue(indices.present_family.unwrap(), 0);
+        let graphics_queue = unsafe {
+            device
+                .raw()
+                .get_device_queue(indices.graphics_family.unwrap(), 0)
+        };
+        let present_queue = unsafe {
+            device
+                .raw()
+                .get_device_queue(indices.present_family.unwrap(), 0)
+        };
         let command_pool_create_info = vk::CommandPoolCreateInfo::builder()
             .queue_family_index(indices.graphics_family.unwrap())
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
             .build();
-        let command_pool = device.create_command_pool(&command_pool_create_info)?;
+        let command_pool = unsafe {
+            device
+                .raw()
+                .create_command_pool(&command_pool_create_info, None)?
+        };
 
         let device = Arc::new(device);
         let command_buffer_allocator =

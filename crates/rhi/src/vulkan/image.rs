@@ -90,7 +90,7 @@ impl Image {
         (width.max(height) as f32).log2().floor() as u32 + 1
     }
 
-    pub fn new(desc: &ImageDescriptor) -> Result<Self, DeviceError> {
+    pub unsafe fn new(desc: &ImageDescriptor) -> Result<Self, DeviceError> {
         let create_info = vk::ImageCreateInfo::builder()
             .image_type(desc.image_type)
             .extent(vk::Extent3D {
@@ -117,11 +117,11 @@ impl Image {
             .samples(desc.samples)
             .sharing_mode(desc.sharing_mode);
         let device = desc.device;
-        let raw = device.create_image(&create_info)?;
+        let raw = unsafe { device.raw().create_image(&create_info, None)? };
 
         // 为图像分配内存的方式与为缓冲区分配内存的方式完全相同。只不过这里使用 get_image_memory_requirements 而不是
         // get_buffer_memory_requirements，使用 bind_image_memory 而不是 bind_buffer_memory。
-        let requirements = device.get_image_memory_requirements(raw);
+        let requirements = unsafe { device.raw().get_image_memory_requirements(raw) };
 
         let allocator = desc.allocator.clone();
         let allocation = allocator
@@ -137,8 +137,8 @@ impl Image {
 
         unsafe {
             device
-                .bind_image_memory(raw, allocation.memory(), allocation.offset())
-                .unwrap()
+                .raw()
+                .bind_image_memory(raw, allocation.memory(), allocation.offset())?;
         }
 
         Ok(Self {
@@ -153,7 +153,7 @@ impl Image {
         })
     }
 
-    pub fn new_color_image(desc: &ColorImageDescriptor) -> Result<Self, DeviceError> {
+    pub unsafe fn new_color_image(desc: &ColorImageDescriptor) -> Result<Self, DeviceError> {
         let usage = vk::ImageUsageFlags::SAMPLED
             | vk::ImageUsageFlags::TRANSFER_DST
             | desc.extra_image_usage_flags;
@@ -171,7 +171,7 @@ impl Image {
             sharing_mode: vk::SharingMode::EXCLUSIVE,
             allocator: desc.allocator.clone(),
         };
-        Self::new(&image_desc)
+        unsafe { Self::new(&image_desc) }
     }
 
     pub unsafe fn new_depth_image(desc: &DepthImageDescriptor) -> Result<Self, DeviceError> {
@@ -191,7 +191,7 @@ impl Image {
             allocator: desc.allocator.clone(),
         };
 
-        let mut depth_image = Self::new(&depth_image_desc)?;
+        let mut depth_image = unsafe { Self::new(&depth_image_desc)? };
         unsafe {
             depth_image.transit_layout(
                 depth_format,
@@ -320,15 +320,17 @@ impl Image {
                     .dst_access_mask(dst_access_mask)
                     .build();
                 // https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#synchronization-access-types-supported
-                device.cmd_pipeline_barrier(
-                    command_buffer.raw(),
-                    src_stage_mask,
-                    dst_stage_mask,
-                    vk::DependencyFlags::empty(),
-                    &[] as &[vk::MemoryBarrier],
-                    &[] as &[vk::BufferMemoryBarrier],
-                    &[barrier],
-                );
+                unsafe {
+                    device.raw().cmd_pipeline_barrier(
+                        command_buffer.raw(),
+                        src_stage_mask,
+                        dst_stage_mask,
+                        vk::DependencyFlags::empty(),
+                        &[] as &[vk::MemoryBarrier],
+                        &[] as &[vk::BufferMemoryBarrier],
+                        &[barrier],
+                    );
+                }
             })?;
         }
 
@@ -364,13 +366,15 @@ impl Image {
                     })
                     .build();
 
-                device.cmd_copy_buffer_to_image(
-                    command_buffer.raw(),
-                    buffer,
-                    self.raw,
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[region],
-                );
+                unsafe {
+                    device.raw().cmd_copy_buffer_to_image(
+                        command_buffer.raw(),
+                        buffer,
+                        self.raw,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &[region],
+                    );
+                }
             })?;
         }
 
@@ -384,6 +388,8 @@ impl Drop for Image {
         if let Some(allocation) = allocation {
             self.allocator.lock().free(allocation).unwrap();
         }
-        self.device.destroy_image(self.raw);
+        unsafe {
+            self.device.raw().destroy_image(self.raw, None);
+        }
     }
 }
