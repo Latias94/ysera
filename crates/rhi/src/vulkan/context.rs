@@ -1,16 +1,14 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use parking_lot::Mutex;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::device::{Device, DeviceFeatures};
-use crate::vulkan::instance::Instance;
-use crate::vulkan::surface::Surface;
-use crate::{AdapterRequirements, DeviceRequirements, InstanceDescriptor, QueueFamilyIndices};
+use crate::vulkan::instance::{Instance, Surface};
+use crate::{AdapterRequirements, DeviceRequirements, InstanceDescriptor};
 
 pub struct ContextDescriptor<'a> {
     pub app_name: &'a str,

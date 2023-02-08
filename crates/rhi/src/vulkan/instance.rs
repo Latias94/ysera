@@ -10,7 +10,7 @@ use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::platforms;
 use crate::{DeviceError, InstanceDescriptor, InstanceError, InstanceFlags};
 
-use super::{adapter::Adapter, surface::Surface};
+use super::adapter::Adapter;
 
 pub struct Instance {
     /// Loads instance level functions. Needs to outlive the Devices it has created.
@@ -207,5 +207,24 @@ impl Instance {
 
         let surface_loader = khr::Surface::new(&self.entry, &self.raw);
         Ok(Surface::new(surface, surface_loader))
+    }
+}
+
+pub struct Surface {
+    raw: vk::SurfaceKHR,
+    loader: khr::Surface,
+}
+
+impl Surface {
+    pub fn raw(&self) -> vk::SurfaceKHR {
+        self.raw
+    }
+
+    pub fn loader(&self) -> &khr::Surface {
+        &self.loader
+    }
+
+    pub fn new(raw: vk::SurfaceKHR, loader: khr::Surface) -> Self {
+        Self { raw, loader }
     }
 }

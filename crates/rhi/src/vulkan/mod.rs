@@ -21,7 +21,6 @@ pub mod render_pass;
 // pub mod renderer;
 pub mod sampler;
 pub mod shader;
-pub mod surface;
 pub mod swapchain;
 pub mod sync;
 pub mod texture;

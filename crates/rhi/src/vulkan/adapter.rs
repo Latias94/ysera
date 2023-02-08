@@ -12,7 +12,7 @@ use crate::{
     AdapterRequirements, DeviceError, DeviceRequirements, InstanceFlags, QueueFamilyIndices,
 };
 
-use super::{device::Device, instance::Instance, surface::Surface, utils};
+use super::{device::Device, instance::Instance, instance::Surface, utils};
 
 pub struct Adapter {
     pub shared: Arc<AdapterShared>,

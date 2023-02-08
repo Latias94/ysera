@@ -59,7 +59,7 @@ pub struct BaseRenderer<R: RendererBase> {
     _phantom: PhantomData<R>,
     pub context: Context,
     pub swapchain: Swapchain,
-    command_buffers: Vec<CommandBuffer>,
+    pub command_buffers: Vec<CommandBuffer>,
     in_flight_frames: InFlightFrames,
 }
 

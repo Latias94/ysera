@@ -5,13 +5,14 @@ use ash::vk;
 use gpu_allocator::vulkan::{Allocation, Allocator};
 use parking_lot::Mutex;
 
-use math::Mat4;
+use math::{Mat4, Rect2D};
 use ysera_rhi::vulkan::base_renderer::{BaseRenderer, RendererBase};
 use ysera_rhi::vulkan::buffer::{Buffer, BufferType, StagingBufferDescriptor};
 use ysera_rhi::vulkan::context::Context;
 use ysera_rhi::vulkan::pipeline::Pipeline;
-use ysera_rhi::vulkan::pipeline_layout::PipelineLayout;
-use ysera_rhi::DeviceError;
+use ysera_rhi::vulkan::render_pass::{RenderPass, RenderPassDescriptor};
+use ysera_rhi::vulkan::shader::{Shader, ShaderDescriptor};
+use ysera_rhi::{Color, DeviceError};
 
 // math::Vertex3D
 struct VertexBuffer {
@@ -56,8 +57,8 @@ struct UniformBufferObject {
 
 struct Triangle {
     vertex_buffer: Buffer,
-    pipeline_layout: PipelineLayout,
-    pipline: Pipeline,
+    pipeline: Pipeline,
+    render_pass: RenderPass,
 }
 
 impl RendererBase for Triangle {
@@ -66,8 +67,57 @@ impl RendererBase for Triangle {
     fn new(base: &mut BaseRenderer<Self>) -> anyhow::Result<Self> {
         let context = &mut base.context;
         let vertex_buffer = create_vertex_buffer(context)?;
+        let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
+        let rect2d = Rect2D {
+            x: 0.0,
+            y: 0.0,
+            width: base.swapchain.extent.width as f32,
+            height: base.swapchain.extent.height as f32,
+        };
+        let render_pass_desc = RenderPassDescriptor {
+            device: &context.device,
+            surface_format: base.swapchain.surface_format.format,
+            depth_format: vk::Format::D32_SFLOAT,
+            render_area: rect2d,
+            clear_color,
+            max_msaa_samples: vk::SampleCountFlags::TYPE_1,
+            depth: 0.0,
+            stencil: 0,
+        };
 
-        todo!()
+        let shader_desc = ShaderDescriptor {
+            label: None,
+            device: &context.device,
+            spv_bytes: unsafe { &Shader::load_pre_compiled_spv_bytes_from_name("triangle.vert") },
+            entry_name: "main",
+        };
+        let vert_shader = unsafe { Shader::new_vert(&shader_desc)? };
+        let shader_desc = ShaderDescriptor {
+            label: None,
+            device: &context.device,
+            spv_bytes: unsafe { &Shader::load_pre_compiled_spv_bytes_from_name("triangle.frag") },
+            entry_name: "main",
+        };
+        let frag_shader = unsafe { Shader::new_frag(&shader_desc)? };
+
+        let shaders = &[vert_shader, frag_shader];
+        let render_pass = unsafe { RenderPass::new(&render_pass_desc)? };
+
+        let pipeline = unsafe {
+            Pipeline::new(
+                &context.device,
+                render_pass.raw(),
+                vk::SampleCountFlags::TYPE_1,
+                &[],
+                shaders,
+            )?
+        };
+
+        Ok(Self {
+            vertex_buffer,
+            pipeline,
+            render_pass,
+        })
     }
 
     fn update(
@@ -76,11 +126,24 @@ impl RendererBase for Triangle {
         image_index: usize,
         delta_time: Duration,
     ) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn on_recreate_swapchain(&mut self) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
+    }
+
+    fn record_commands(&self, base: &BaseRenderer<Self>, image_index: usize) -> anyhow::Result<()> {
+        let device = &base.context.device;
+        let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
+        let rect2d = Rect2D {
+            x: 0.0,
+            y: 0.0,
+            width: base.swapchain.extent.width as f32,
+            height: base.swapchain.extent.height as f32,
+        };
+
+        Ok(())
     }
 }
 
