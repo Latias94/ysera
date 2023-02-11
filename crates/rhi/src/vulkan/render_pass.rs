@@ -3,19 +3,32 @@ use std::sync::Arc;
 use ash::vk;
 use typed_builder::TypedBuilder;
 
+use crate::types::{
+    RenderPassClearFlags, RenderPassDescriptor, RenderTargetAttachment, RenderTargetAttachmentType,
+};
 use crate::vulkan::command_buffer::CommandBuffer;
 use crate::vulkan::conv;
 use crate::vulkan::device::Device;
 use crate::vulkan::render_pass::RenderPassState::{InRenderPass, Recording};
-use crate::{Color, DeviceError};
+use crate::DeviceError;
 
 pub struct RenderPass {
     raw: vk::RenderPass,
     device: Arc<Device>,
     state: RenderPassState,
+    depth: f32,
+    stencil: u32,
+
     render_area: math::Rect2D,
     clear_values: Vec<vk::ClearValue>,
+    clear_flags: RenderPassClearFlags,
+    targets: Vec<RenderTargetAttachment>,
 }
+
+// pub struct RenderTarget {
+//     pub attachments: Vec<RenderTargetAttachment>,
+//     // pub framebuffer: Framebuffer,
+// }
 
 pub enum RenderPassState {
     /// ready to begin
@@ -32,18 +45,6 @@ pub enum RenderPassState {
 }
 
 #[derive(Clone, TypedBuilder)]
-pub struct RenderPassDescriptor<'a> {
-    pub device: &'a Arc<Device>,
-    pub surface_format: vk::Format,
-    pub depth_format: vk::Format,
-    pub render_area: math::Rect2D,
-    pub clear_color: Color,
-    pub max_msaa_samples: vk::SampleCountFlags,
-    pub depth: f32,
-    pub stencil: u32,
-}
-
-#[derive(Clone, TypedBuilder)]
 pub struct ImguiRenderPassDescriptor<'a> {
     pub device: &'a Arc<Device>,
     pub render_area: math::Rect2D,
@@ -55,181 +56,208 @@ impl RenderPass {
         self.raw
     }
 
-    pub unsafe fn new(desc: &RenderPassDescriptor) -> Result<Self, DeviceError> {
+    pub unsafe fn new(
+        device: &Arc<Device>,
+        desc: &RenderPassDescriptor,
+    ) -> Result<Self, DeviceError> {
         profiling::scope!("create_render_pass");
 
-        // todo configurable
-        let color_attachment = vk::AttachmentDescription::builder()
-            .format(desc.surface_format)
-            .samples(desc.max_msaa_samples)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            // initial_layout 指定在渲染通道开始之前图像将具有的布局。 final_layout 指定渲染过程完成时自动转换到的布局。
-            // 对 initial_layout 使用 vk::ImageLayout::UNDEFINED 意味着我们不关心图像之前的布局。
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            // 多采样图像不能直接显示。我们首先需要将它们解析为常规图像。此要求不适用于深度缓冲区，因为它不会在任何时候显示。
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL) // msaa
-            .build();
-        let color_attachment_ref = vk::AttachmentReference::builder()
-            .attachment(0)
-            // 布局指定我们希望附件在使用此引用的子通道中具有的布局。当子通道启动时，Vulkan 会自动将附件过渡到这个布局
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build();
+        let mut attachment_descriptions = vec![];
+        let mut color_attachment_refs = vec![];
+        let mut depth_attachment_ref = None;
+        let mut clear_values = Vec::with_capacity(desc.attachments.len());
 
-        // 我们把 finalLayout 从 vk::ImageLayout::PRESENT_SRC_KHR 改为 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL。
-        // 这是因为多采样图像不能直接呈现。我们首先需要将它们解析为普通图像。这个要求并不适用于深度缓冲区，
-        // 因为它不会在任何时候被呈现。因此，我们只需要为颜色添加一个新的附件，这是一个 resolve attachment。
-        let depth_stencil_attachment = vk::AttachmentDescription::builder()
-            .format(desc.depth_format)
-            .samples(desc.max_msaa_samples)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .build();
-        let depth_stencil_attachment_ref = vk::AttachmentReference::builder()
-            .attachment(1)
-            .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .build();
+        for (i, attachment) in desc.attachments.iter().enumerate() {
+            let mut attachment_description = vk::AttachmentDescription::builder()
+                .format(attachment.format.to_vk())
+                // .samples(desc.max_msaa_samples)
+                .load_op(attachment.load_op.to_vk())
+                .store_op(attachment.store_op.to_vk())
+                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE);
 
-        // multisampling
-        let color_resolve_attachment = vk::AttachmentDescription::builder()
-            .format(desc.surface_format)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build();
+            let mut attachment_ref = vk::AttachmentReference::builder().attachment(i as u32);
+            if attachment.ty == RenderTargetAttachmentType::Depth {
+                attachment_description =
+                    // initial_layout 指定在渲染通道开始之前图像将具有的布局。 final_layout 指定渲染过程完成时自动转换到的布局。
+                    // 对 initial_layout 使用 vk::ImageLayout::UNDEFINED 意味着我们不关心图像之前的布局。
+                    attachment_description
+                        .initial_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                        // 多采样图像不能直接显示。我们首先需要将它们解析为常规图像。此要求不适用于深度缓冲区，因为它不会在任何时候显示。
+                        .final_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+                attachment_ref =
+                    attachment_ref.layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                clear_values.insert(
+                    i,
+                    conv::convert_clear_depth_stencil(desc.depth, desc.stencil),
+                );
+                depth_attachment_ref = Some(attachment_ref.build());
+            } else {
+                // RenderTargetAttachmentType::Color
+                // todo Stencil not support yet
+                attachment_description = attachment_description
+                    .initial_layout(vk::ImageLayout::UNDEFINED)
+                    .final_layout(vk::ImageLayout::READ_ONLY_OPTIMAL);
+                attachment_ref = attachment_ref.layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+                clear_values.insert(i, conv::convert_clear_color(desc.clear_color));
+                color_attachment_refs.push(attachment_ref.build());
+            };
+            attachment_descriptions.push(attachment_description.build());
+        }
 
-        // 现在必须指示渲染通道将多采样的彩色图像解析为普通附件。创建一个新的附件引用，它将指向颜色缓冲区，作为解析目标。
-        let color_resolve_attachment_ref = vk::AttachmentReference::builder()
-            .attachment(2)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build();
+        // .depth_stencil_attachment(&depth_attachment_ref)
+        // multi-sampling
+        // .resolve_attachments(&color_resolve_attachments)
+        // Input from shader
+        // .input_attachments()
+        // .build();
 
-        let color_attachments = [color_attachment_ref];
-        let color_resolve_attachments = [color_resolve_attachment_ref];
-        let subpass = vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachments)
-            .depth_stencil_attachment(&depth_stencil_attachment_ref)
-            // multi-sampling
-            .resolve_attachments(&color_resolve_attachments)
-            // Input from shader
-            // .input_attachments()
-            .build();
+        let subpasses = [{
+            let mut subpass = vk::SubpassDescription::builder()
+                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+                .color_attachments(&color_attachment_refs);
 
-        let dependency = vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
-                    | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
-            )
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_stage_mask(
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
-                    | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
-            )
-            .dst_access_mask(
-                vk::AccessFlags::COLOR_ATTACHMENT_WRITE
-                    | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
-            )
-            .build();
+            if let Some(ref reference) = depth_attachment_ref {
+                subpass = subpass.depth_stencil_attachment(reference);
+            }
+            subpass.build()
+        }];
 
-        let attachments = &[
-            color_attachment,
-            depth_stencil_attachment,
-            color_resolve_attachment,
-        ];
+        let has_color_attachment = !color_attachment_refs.is_empty();
+        let has_depth_attachment = depth_attachment_ref.is_some();
+        let dependencies = Self::get_dependency(has_color_attachment, has_depth_attachment);
 
         // don't do the `.subpasses(&[subpass])` + `build()` will cause the temporary array pointer
-        // live shorter before the vulkan call  https://github.com/ash-rs/ash/issues/158
-        let subpasses = [subpass];
-        let dependencies = [dependency];
         let create_info = vk::RenderPassCreateInfo::builder()
             .subpasses(&subpasses)
-            .attachments(attachments)
+            .attachments(&attachment_descriptions)
             .dependencies(&dependencies);
-        let raw = unsafe { desc.device.raw().create_render_pass(&create_info, None)? };
-        let clear_values = vec![
-            conv::convert_clear_color(desc.clear_color),
-            conv::convert_clear_depth_stencil(desc.depth, desc.stencil),
-        ];
+        let raw = unsafe { device.raw().create_render_pass(&create_info, None)? };
+
+        if let Some(label) = desc.label {
+            unsafe { device.set_object_name(vk::ObjectType::RENDER_PASS, raw, label) };
+        }
+
         Ok(Self {
             raw,
-            device: desc.device.clone(),
+            device: device.clone(),
             state: InRenderPass,
+            depth: desc.depth,
+            stencil: desc.stencil,
             render_area: desc.render_area,
             clear_values,
+            clear_flags: desc.clear_flags,
+            targets: desc.attachments.to_vec(),
         })
     }
 
-    pub unsafe fn new_imgui_render_pass(
-        desc: &ImguiRenderPassDescriptor,
-    ) -> Result<Self, DeviceError> {
-        profiling::scope!("create_render_pass imgui");
+    unsafe fn get_dependency(
+        has_color_attachment: bool,
+        has_depth_attachment: bool,
+    ) -> Vec<vk::SubpassDependency> {
+        let mut dependencies = vec![];
+        if has_color_attachment {
+            let dep1 = vk::SubpassDependency::builder()
+                .src_subpass(vk::SUBPASS_EXTERNAL)
+                .dst_subpass(0)
+                .src_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
+                .src_access_mask(vk::AccessFlags::SHADER_READ)
+                .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .build();
+            dependencies.push(dep1);
+            let dep2 = vk::SubpassDependency::builder()
+                .src_subpass(0)
+                .dst_subpass(vk::SUBPASS_EXTERNAL)
+                .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .build();
+            dependencies.push(dep2);
+        }
 
-        log::debug!("Creating imgui render pass!");
-        let attachment_descs = [vk::AttachmentDescription::builder()
-            .format(desc.surface_format)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::LOAD)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-            .build()];
+        if has_depth_attachment {
+            let dep1 = vk::SubpassDependency::builder()
+                .src_subpass(vk::SUBPASS_EXTERNAL)
+                .dst_subpass(0)
+                .src_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
+                .src_access_mask(vk::AccessFlags::SHADER_READ)
+                .dst_stage_mask(vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS)
+                .dst_access_mask(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                .build();
+            dependencies.push(dep1);
+            let dep2 = vk::SubpassDependency::builder()
+                .src_subpass(0)
+                .dst_subpass(vk::SUBPASS_EXTERNAL)
+                .src_stage_mask(vk::PipelineStageFlags::LATE_FRAGMENT_TESTS)
+                .src_access_mask(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .build();
+            dependencies.push(dep2);
+        }
 
-        let color_attachment_refs = [vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .build()];
-
-        let subpass_descs = [vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&color_attachment_refs)
-            .build()];
-
-        let subpass_deps = [vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(
-                vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            )
-            .build()];
-
-        let render_pass_info = vk::RenderPassCreateInfo::builder()
-            .attachments(&attachment_descs)
-            .subpasses(&subpass_descs)
-            .dependencies(&subpass_deps);
-
-        let raw = unsafe {
-            desc.device
-                .raw()
-                .create_render_pass(&render_pass_info, None)?
-        };
-        Ok(Self {
-            raw,
-            device: desc.device.clone(),
-            state: InRenderPass,
-            render_area: desc.render_area,
-            clear_values: vec![vk::ClearValue {
-                color: vk::ClearColorValue {
-                    float32: [1.0, 1.0, 1.0, 1.0],
-                },
-            }],
-        })
+        dependencies
     }
+
+    // pub unsafe fn new_imgui_render_pass(
+    //     desc: &ImguiRenderPassDescriptor,
+    // ) -> Result<Self, DeviceError> {
+    //     profiling::scope!("create_render_pass imgui");
+    //
+    //     log::debug!("Creating imgui render pass!");
+    //     let attachment_descs = [vk::AttachmentDescription::builder()
+    //         .format(desc.surface_format)
+    //         .samples(vk::SampleCountFlags::TYPE_1)
+    //         .load_op(vk::AttachmentLoadOp::LOAD)
+    //         .store_op(vk::AttachmentStoreOp::STORE)
+    //         .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+    //         .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+    //         .build()];
+    //
+    //     let color_attachment_refs = [vk::AttachmentReference::builder()
+    //         .attachment(0)
+    //         .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+    //         .build()];
+    //
+    //     let subpass_descs = [vk::SubpassDescription::builder()
+    //         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+    //         .color_attachments(&color_attachment_refs)
+    //         .build()];
+    //
+    //     let subpass_deps = [vk::SubpassDependency::builder()
+    //         .src_subpass(vk::SUBPASS_EXTERNAL)
+    //         .dst_subpass(0)
+    //         .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+    //         .src_access_mask(vk::AccessFlags::empty())
+    //         .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+    //         .dst_access_mask(
+    //             vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+    //         )
+    //         .build()];
+    //
+    //     let render_pass_info = vk::RenderPassCreateInfo::builder()
+    //         .attachments(&attachment_descs)
+    //         .subpasses(&subpass_descs)
+    //         .dependencies(&subpass_deps);
+    //
+    //     let raw = unsafe {
+    //         desc.device
+    //             .raw()
+    //             .create_render_pass(&render_pass_info, None)?
+    //     };
+    //     Ok(Self {
+    //         raw,
+    //         device: desc.device.clone(),
+    //         state: InRenderPass,
+    //         clear_values: vec![vk::ClearValue {
+    //             color: vk::ClearColorValue {
+    //                 float32: [1.0, 1.0, 1.0, 1.0],
+    //             },
+    //         }],
+    //     })
+    // }
 
     pub unsafe fn begin(&mut self, command_buffer: &CommandBuffer, framebuffer: vk::Framebuffer) {
         let begin_info = vk::RenderPassBeginInfo::builder()

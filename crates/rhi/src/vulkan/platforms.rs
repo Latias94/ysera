@@ -8,7 +8,6 @@ use ash::extensions::khr::Win32Surface;
 use ash::extensions::khr::XlibSurface;
 #[cfg(target_os = "macos")]
 use ash::extensions::mvk::MacOSSurface;
-use ash::vk;
 
 #[cfg(target_os = "macos")]
 use cocoa::appkit::{NSView, NSWindow};

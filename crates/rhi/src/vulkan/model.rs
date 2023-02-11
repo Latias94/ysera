@@ -50,7 +50,6 @@ impl Model {
         texture_path.push(format!("../../resources/textures/{}.png", desc.file_name));
 
         let texture_desc = VulkanTextureFromPathDescriptor {
-            adapter: &desc.adapter,
             instance: &desc.instance,
             device: desc.device,
             allocator: desc.allocator.clone(),

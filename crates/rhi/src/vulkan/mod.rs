@@ -19,6 +19,7 @@ pub mod pipeline_layout;
 pub mod platforms;
 pub mod render_pass;
 // pub mod renderer;
+pub mod framebuffer;
 pub mod sampler;
 pub mod shader;
 pub mod swapchain;

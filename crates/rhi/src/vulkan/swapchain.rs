@@ -7,6 +7,7 @@ use typed_builder::TypedBuilder;
 
 use math::prelude::*;
 
+use crate::types::{Color, QueueFamilyIndices};
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::context::Context;
 use crate::vulkan::device::Device;
@@ -15,12 +16,11 @@ use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
 use crate::vulkan::sync::Semaphore;
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
-use crate::{Color, DeviceError, QueueFamilyIndices, SurfaceError};
+use crate::DeviceError;
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
     loader: khr::Swapchain,
-    adapter: Arc<Adapter>,
     instance: Arc<Instance>,
     device: Arc<Device>,
     pub swapchain_images: Vec<vk::Image>,
@@ -292,7 +292,6 @@ impl Swapchain {
         let swapchain = Self {
             raw: swapchain,
             loader: swapchain_loader,
-            adapter: desc.context.adapter.clone(),
             instance: desc.context.instance.clone(),
             device: device.clone(),
             swapchain_images,
@@ -544,7 +543,7 @@ impl Swapchain {
 
         let swapchain_support = unsafe {
             SwapChainSupportDetail::new(
-                desc.context.adapter.raw(),
+                desc.context.device.adapter().raw(),
                 desc.context.surface.loader(),
                 desc.context.surface.raw(),
             )
@@ -609,8 +608,10 @@ impl Swapchain {
             .image_array_layers(1)
             .old_swapchain(old_swapchain);
 
-        let swapchain_loader =
-            khr::Swapchain::new(desc.context.instance.raw(), desc.context.device.raw());
+        let swapchain_loader = khr::Swapchain::new(
+            desc.context.instance.shared_instance().raw(),
+            desc.context.device.raw(),
+        );
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
         log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 
@@ -764,7 +765,7 @@ impl Swapchain {
             dimension: [extent.width, extent.height],
             mip_levels: 1,
             array_layers: 1,
-            samples: desc.context.adapter.max_msaa_samples(),
+            samples: desc.context.device.adapter().max_msaa_samples(),
             tiling: vk::ImageTiling::OPTIMAL,
             usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
                 | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
@@ -783,7 +784,6 @@ impl Swapchain {
         )?;
 
         let texture_desc = VulkanTextureDescriptor {
-            adapter: &desc.context.adapter,
             instance: &desc.context.instance,
             device: &desc.context.device,
             image: color_image,
@@ -798,16 +798,15 @@ impl Swapchain {
 
 impl SwapChainSupportDetail {
     pub unsafe fn new(
-        physical_device: vk::PhysicalDevice,
+        adapter: vk::PhysicalDevice,
         surface: &khr::Surface,
         surface_khr: vk::SurfaceKHR,
     ) -> Result<SwapChainSupportDetail, DeviceError> {
         let capabilities =
-            surface.get_physical_device_surface_capabilities(physical_device, surface_khr)?;
-        let surface_formats =
-            surface.get_physical_device_surface_formats(physical_device, surface_khr)?;
+            surface.get_physical_device_surface_capabilities(adapter, surface_khr)?;
+        let surface_formats = surface.get_physical_device_surface_formats(adapter, surface_khr)?;
         let present_modes =
-            surface.get_physical_device_surface_present_modes(physical_device, surface_khr)?;
+            surface.get_physical_device_surface_present_modes(adapter, surface_khr)?;
 
         Ok(SwapChainSupportDetail {
             capabilities,

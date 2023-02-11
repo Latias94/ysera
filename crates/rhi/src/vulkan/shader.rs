@@ -11,8 +11,9 @@ use typed_builder::TypedBuilder;
 
 use math::{Vec3, Vertex3D};
 
+use crate::types::Label;
 use crate::vulkan::device::Device;
-use crate::{Label, ShaderError};
+use crate::ShaderError;
 
 pub struct Shader {
     device: Arc<Device>,

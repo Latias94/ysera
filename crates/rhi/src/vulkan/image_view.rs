@@ -3,8 +3,8 @@ use std::sync::Arc;
 use ash::vk;
 use typed_builder::TypedBuilder;
 
+use crate::types::Label;
 use crate::vulkan::device::Device;
-use crate::Label;
 
 #[derive(Clone, Debug, TypedBuilder)]
 pub struct ImageViewDescriptor<'a> {

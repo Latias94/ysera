@@ -7,6 +7,7 @@ use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
+use crate::types::Label;
 use crate::vulkan::device::Device;
 use crate::DeviceError;
 
@@ -39,7 +40,7 @@ pub struct Buffer {
 
 #[derive(Clone, TypedBuilder)]
 pub struct BufferDescriptor<'a> {
-    pub label: crate::Label<'a>,
+    pub label: Label<'a>,
     pub device: &'a Arc<Device>,
     pub allocator: Arc<Mutex<Allocator>>,
     pub element_size: usize,
@@ -50,7 +51,7 @@ pub struct BufferDescriptor<'a> {
 
 #[derive(Clone, TypedBuilder)]
 pub struct StagingBufferDescriptor<'a, T> {
-    pub label: crate::Label<'a>,
+    pub label: Label<'a>,
     pub device: &'a Arc<Device>,
     pub allocator: Arc<Mutex<Allocator>>,
     pub elements: &'a [T],
@@ -58,7 +59,7 @@ pub struct StagingBufferDescriptor<'a, T> {
 
 #[derive(Clone, TypedBuilder)]
 pub struct UniformBufferDescriptor<'a, T> {
-    pub label: crate::Label<'a>,
+    pub label: Label<'a>,
     pub device: &'a Arc<Device>,
     pub allocator: Arc<Mutex<Allocator>>,
     pub elements: &'a [T],

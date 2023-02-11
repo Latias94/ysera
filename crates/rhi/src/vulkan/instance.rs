@@ -1,18 +1,25 @@
 use alloc::ffi::CString;
 use std::ffi::{c_void, CStr};
+use std::sync::Arc;
 
 use ash::{extensions::*, vk};
 use log::LevelFilter;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
+use crate::types::{InstanceDescriptor, InstanceFlags};
 use crate::vulkan::debug;
 use crate::vulkan::debug::DebugUtils;
 use crate::vulkan::platforms;
-use crate::{DeviceError, InstanceDescriptor, InstanceError, InstanceFlags};
+use crate::{DeviceError, InstanceError};
 
 use super::adapter::Adapter;
 
 pub struct Instance {
+    pub(crate) shared: Arc<InstanceShared>,
+}
+
+#[derive(Clone)]
+pub struct InstanceShared {
     /// Loads instance level functions. Needs to outlive the Devices it has created.
     raw: ash::Instance,
     /// Loads the Vulkan library. Needs to outlive Instance and Device.
@@ -22,23 +29,7 @@ pub struct Instance {
     flags: InstanceFlags,
 }
 
-impl Instance {
-    pub fn new(
-        raw: ash::Instance,
-        entry: ash::Entry,
-        debug_utils: Option<DebugUtils>,
-        extensions: Vec<&'static CStr>,
-        flags: InstanceFlags,
-    ) -> Self {
-        Self {
-            raw,
-            entry,
-            debug_utils,
-            extensions,
-            flags,
-        }
-    }
-
+impl InstanceShared {
     pub fn raw(&self) -> &ash::Instance {
         &self.raw
     }
@@ -49,6 +40,12 @@ impl Instance {
 
     pub fn debug_utils(&self) -> &Option<DebugUtils> {
         &self.debug_utils
+    }
+}
+
+impl Instance {
+    pub fn shared_instance(&self) -> &InstanceShared {
+        &self.shared
     }
 
     pub unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, InstanceError> {
@@ -141,16 +138,18 @@ impl Instance {
         let flags = desc.flags;
 
         Ok(Self {
-            raw: instance,
-            entry,
-            debug_utils,
-            extensions: extension_cstr_names,
-            flags,
+            shared: Arc::new(InstanceShared {
+                raw: instance,
+                entry,
+                debug_utils,
+                extensions: extension_cstr_names,
+                flags,
+            }),
         })
     }
 
     pub fn enumerate_adapters(&self, surface: &Surface) -> Result<Vec<Adapter>, DeviceError> {
-        let instance = &self.raw;
+        let instance = &self.shared.raw;
         let adapters = unsafe { instance.enumerate_physical_devices()? };
         log::info!(
             "{} devices (GPU) found with vulkan support.",
@@ -160,8 +159,8 @@ impl Instance {
         let mut result = vec![];
 
         for &each_adapter in adapters.iter() {
-            let adapter = Adapter::new(each_adapter, self.raw(), surface)?;
-            adapter.log_adapter_information(&self.raw);
+            let adapter = Adapter::new(each_adapter, &self, surface)?;
+            adapter.log_adapter_information(&self.shared.raw);
             result.push(adapter);
         }
         Ok(result)
@@ -173,13 +172,13 @@ impl Instance {
         display_handle: &dyn HasRawDisplayHandle,
     ) -> Result<Surface, InstanceError> {
         let surface = ash_window::create_surface(
-            &self.entry,
-            &self.raw,
+            &self.shared.entry,
+            &self.shared.raw,
             display_handle.raw_display_handle(),
             window_handle.raw_window_handle(),
             None,
         )?;
-        let surface_loader = khr::Surface::new(&self.entry, &self.raw);
+        let surface_loader = khr::Surface::new(&self.shared.entry, &self.shared.raw);
         Ok(Surface::new(surface, surface_loader))
     }
 }
@@ -192,7 +191,7 @@ impl Instance {
         hinstance: *mut c_void,
         hwnd: *mut c_void,
     ) -> Result<Surface, InstanceError> {
-        if !self.extensions.contains(&khr::Win32Surface::name()) {
+        if !self.shared.extensions.contains(&khr::Win32Surface::name()) {
             panic!("Vulkan driver does not support `VK_KHR_WIN32_SURFACE`");
         }
 
@@ -201,11 +200,11 @@ impl Instance {
                 .flags(vk::Win32SurfaceCreateFlagsKHR::empty())
                 .hinstance(hinstance)
                 .hwnd(hwnd);
-            let win32_loader = khr::Win32Surface::new(&self.entry, &self.raw);
+            let win32_loader = khr::Win32Surface::new(&self.shared.entry, &self.shared.raw);
             unsafe { win32_loader.create_win32_surface(&info, None)? }
         };
 
-        let surface_loader = khr::Surface::new(&self.entry, &self.raw);
+        let surface_loader = khr::Surface::new(&self.shared.entry, &self.shared.raw);
         Ok(Surface::new(surface, surface_loader))
     }
 }

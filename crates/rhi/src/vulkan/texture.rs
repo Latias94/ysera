@@ -8,7 +8,6 @@ use image::EncodableLayout;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
-use crate::vulkan::adapter::Adapter;
 use crate::vulkan::buffer::{Buffer, StagingBufferDescriptor};
 use crate::vulkan::device::Device;
 use crate::vulkan::image::{ColorImageDescriptor, Image};
@@ -19,7 +18,6 @@ use crate::DeviceError;
 
 #[derive(TypedBuilder)]
 pub struct VulkanTextureDescriptor<'a> {
-    pub adapter: &'a Adapter,
     // check mipmap format support
     pub instance: &'a Instance,
     pub device: &'a Arc<Device>,
@@ -30,7 +28,6 @@ pub struct VulkanTextureDescriptor<'a> {
 
 #[derive(TypedBuilder)]
 pub struct VulkanTextureFromPixelsDescriptor<'a> {
-    pub adapter: &'a Adapter,
     // check mipmap format support
     pub instance: &'a Instance,
     pub device: &'a Arc<Device>,
@@ -43,7 +40,6 @@ pub struct VulkanTextureFromPixelsDescriptor<'a> {
 
 #[derive(TypedBuilder)]
 pub struct VulkanTextureFromPathDescriptor<'a> {
-    pub adapter: &'a Adapter,
     // check mipmap format support
     pub instance: &'a Instance,
     pub device: &'a Arc<Device>,
@@ -108,7 +104,6 @@ impl VulkanTexture {
         let pixels = img.as_bytes();
 
         let desc = VulkanTextureFromPixelsDescriptor {
-            adapter: desc.adapter,
             instance: desc.instance,
             device: desc.device,
             allocator: desc.allocator.clone(),
@@ -178,7 +173,6 @@ impl VulkanTexture {
         };
 
         let texture_desc = VulkanTextureDescriptor {
-            adapter: desc.adapter,
             instance: desc.instance,
             device: desc.device,
             image,
@@ -200,7 +194,6 @@ impl VulkanTexture {
                     desc.image.height(),
                     desc.image.mip_levels(),
                     desc.instance,
-                    desc.adapter,
                     desc.image.format(),
                 )?;
             }
@@ -220,15 +213,15 @@ impl VulkanTexture {
         height: u32,
         mip_levels: u32,
         instance: &Instance,
-        adapter: &Adapter,
         format: vk::Format,
     ) -> Result<(), DeviceError> {
         log::info!("generate_mipmaps {}", mip_levels);
         let support_mip_levels = if mip_levels > 1 {
             unsafe {
                 instance
+                    .shared
                     .raw()
-                    .get_physical_device_format_properties(adapter.raw(), format)
+                    .get_physical_device_format_properties(device.adapter().raw(), format)
                     .optimal_tiling_features
                     .contains(vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR)
             }
@@ -270,17 +263,15 @@ impl VulkanTexture {
                     barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
                     barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
 
-                    unsafe {
-                        device.raw().cmd_pipeline_barrier(
-                            command_buffer.raw(),
-                            vk::PipelineStageFlags::TRANSFER,
-                            vk::PipelineStageFlags::TRANSFER,
-                            vk::DependencyFlags::empty(),
-                            &[] as &[vk::MemoryBarrier],
-                            &[] as &[vk::BufferMemoryBarrier],
-                            &[barrier],
-                        );
-                    }
+                    device.raw().cmd_pipeline_barrier(
+                        command_buffer.raw(),
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::DependencyFlags::empty(),
+                        &[] as &[vk::MemoryBarrier],
+                        &[] as &[vk::BufferMemoryBarrier],
+                        &[barrier],
+                    );
 
                     let src_subresource = vk::ImageSubresourceLayers::builder()
                         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -316,33 +307,30 @@ impl VulkanTexture {
                         ])
                         .dst_subresource(dst_subresource)
                         .build();
-                    unsafe {
-                        device.raw().cmd_blit_image(
-                            command_buffer.raw(),
-                            image,
-                            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                            image,
-                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                            &[blit],
-                            vk::Filter::LINEAR,
-                        );
-                    }
+                    device.raw().cmd_blit_image(
+                        command_buffer.raw(),
+                        image,
+                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                        image,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &[blit],
+                        vk::Filter::LINEAR,
+                    );
+
                     barrier.old_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
                     barrier.new_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                     barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
                     barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
 
-                    unsafe {
-                        device.raw().cmd_pipeline_barrier(
-                            command_buffer.raw(),
-                            vk::PipelineStageFlags::TRANSFER,
-                            vk::PipelineStageFlags::FRAGMENT_SHADER,
-                            vk::DependencyFlags::empty(),
-                            &[] as &[vk::MemoryBarrier],
-                            &[] as &[vk::BufferMemoryBarrier],
-                            &[barrier],
-                        );
-                    }
+                    device.raw().cmd_pipeline_barrier(
+                        command_buffer.raw(),
+                        vk::PipelineStageFlags::TRANSFER,
+                        vk::PipelineStageFlags::FRAGMENT_SHADER,
+                        vk::DependencyFlags::empty(),
+                        &[] as &[vk::MemoryBarrier],
+                        &[] as &[vk::BufferMemoryBarrier],
+                        &[barrier],
+                    );
 
                     if mip_width > 1 {
                         mip_width /= 2;
@@ -360,17 +348,15 @@ impl VulkanTexture {
                 barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
                 barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
 
-                unsafe {
-                    device.raw().cmd_pipeline_barrier(
-                        command_buffer.raw(),
-                        vk::PipelineStageFlags::TRANSFER,
-                        vk::PipelineStageFlags::FRAGMENT_SHADER,
-                        vk::DependencyFlags::empty(),
-                        &[] as &[vk::MemoryBarrier],
-                        &[] as &[vk::BufferMemoryBarrier],
-                        &[barrier],
-                    );
-                }
+                device.raw().cmd_pipeline_barrier(
+                    command_buffer.raw(),
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::DependencyFlags::empty(),
+                    &[] as &[vk::MemoryBarrier],
+                    &[] as &[vk::BufferMemoryBarrier],
+                    &[barrier],
+                );
             })
         }
     }

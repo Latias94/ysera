@@ -1,6 +1,6 @@
+use crate::types::DeviceFeatures;
 use crate::vulkan::command_buffer::CommandBuffer;
 use crate::vulkan::context::{Context, ContextDescriptor};
-use crate::vulkan::device::DeviceFeatures;
 use crate::vulkan::swapchain::{AcquiredImage, Swapchain, SwapchainDescriptor};
 use crate::vulkan::sync::{Fence, Semaphore};
 use crate::DeviceError;
@@ -11,7 +11,6 @@ use std::marker::PhantomData;
 use std::time::Duration;
 use typed_builder::TypedBuilder;
 use winit::window::Window;
-use ysera_imgui::gui::GuiContext;
 
 pub trait RendererBase: Sized {
     type Gui: Gui;

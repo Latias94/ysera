@@ -6,6 +6,7 @@ use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
+use crate::types::ImageFormat;
 use crate::vulkan::adapter::Adapter;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
@@ -173,7 +174,7 @@ impl Image {
     }
 
     pub unsafe fn new_depth_image(desc: &DepthImageDescriptor) -> Result<Self, DeviceError> {
-        let depth_format = Image::get_depth_format(desc.instance.raw(), desc.adapter.raw())?;
+        let depth_format = Image::get_depth_format(desc.instance.shared.raw(), desc.adapter.raw())?;
 
         let depth_image_desc = ImageDescriptor {
             device: desc.device,
@@ -316,17 +317,15 @@ impl Image {
                     .dst_access_mask(dst_access_mask)
                     .build();
                 // https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#synchronization-access-types-supported
-                unsafe {
-                    device.raw().cmd_pipeline_barrier(
-                        command_buffer.raw(),
-                        src_stage_mask,
-                        dst_stage_mask,
-                        vk::DependencyFlags::empty(),
-                        &[] as &[vk::MemoryBarrier],
-                        &[] as &[vk::BufferMemoryBarrier],
-                        &[barrier],
-                    );
-                }
+                device.raw().cmd_pipeline_barrier(
+                    command_buffer.raw(),
+                    src_stage_mask,
+                    dst_stage_mask,
+                    vk::DependencyFlags::empty(),
+                    &[] as &[vk::MemoryBarrier],
+                    &[] as &[vk::BufferMemoryBarrier],
+                    &[barrier],
+                );
             })?;
         }
 
@@ -361,15 +360,13 @@ impl Image {
                     })
                     .build();
 
-                unsafe {
-                    device.raw().cmd_copy_buffer_to_image(
-                        command_buffer.raw(),
-                        buffer,
-                        self.raw,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        &[region],
-                    );
-                }
+                device.raw().cmd_copy_buffer_to_image(
+                    command_buffer.raw(),
+                    buffer,
+                    self.raw,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[region],
+                );
             })?;
         }
 

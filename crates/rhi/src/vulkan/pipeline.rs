@@ -5,8 +5,9 @@ use typed_builder::TypedBuilder;
 
 use math::Vertex3D;
 
+use crate::types::Label;
 use crate::vulkan::shader::{Shader, ShaderPropertyInfo};
-use crate::{DeviceError, Label};
+use crate::DeviceError;
 
 use super::{device::Device, pipeline_layout::PipelineLayout};
 

@@ -1,44 +1,22 @@
-use std::ffi::CStr;
-use std::sync::Arc;
+use ash::extensions::khr;
+use std::collections::HashSet;
+use std::ffi::{c_char, CStr, CString};
 
 use ash::vk;
 
-use crate::vulkan::adapter::AdapterShared;
+use crate::types::{AdapterRequirements, DeviceRequirements, InstanceFlags, QueueFamilyIndices};
+use crate::vulkan::adapter::Adapter;
 use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
-use crate::vulkan::debug::DebugUtils;
-use crate::{DeviceError, QueueFamilyIndices};
+use crate::vulkan::instance::Instance;
+use crate::DeviceError;
 
 pub struct Device {
     /// Loads device local functions.
     raw: ash::Device,
-    debug_utils: Option<DebugUtils>,
-    adapter: Arc<AdapterShared>,
-
+    adapter: Adapter,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
     command_pool: vk::CommandPool,
-    indices: QueueFamilyIndices,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DeviceFeatures {
-    pub ray_tracing_pipeline: bool,
-    pub acceleration_structure: bool,
-    pub runtime_descriptor_array: bool,
-    pub buffer_device_address: bool,
-    pub dynamic_rendering: bool,
-    pub synchronization2: bool,
-}
-
-impl DeviceFeatures {
-    pub fn is_compatible_with(&self, requirements: &Self) -> bool {
-        (!requirements.ray_tracing_pipeline || self.ray_tracing_pipeline)
-            && (!requirements.acceleration_structure || self.acceleration_structure)
-            && (!requirements.runtime_descriptor_array || self.runtime_descriptor_array)
-            && (!requirements.buffer_device_address || self.buffer_device_address)
-            && (!requirements.dynamic_rendering || self.dynamic_rendering)
-            && (!requirements.synchronization2 || self.synchronization2)
-    }
 }
 
 impl Device {
@@ -58,16 +36,157 @@ impl Device {
         self.command_pool
     }
 
-    pub fn queue_family_indices(&self) -> QueueFamilyIndices {
-        self.indices
+    pub fn adapter(&self) -> &Adapter {
+        &self.adapter
     }
 
-    pub(crate) fn new(
-        raw: ash::Device,
-        debug_utils: Option<DebugUtils>,
-        adapter: Arc<AdapterShared>,
-        indices: QueueFamilyIndices,
-    ) -> Result<Self, DeviceError> {
+    pub fn queue_family_indices(&self) -> QueueFamilyIndices {
+        self.adapter.queue_family_indices()
+    }
+
+    pub unsafe fn create(
+        instance: &Instance,
+        adapter: Adapter,
+        adapter_req: &AdapterRequirements,
+        device_req: &DeviceRequirements,
+    ) -> Result<Device, DeviceError> {
+        let instance_raw = instance.shared_instance().raw();
+
+        let indices = &adapter.queue_family_indices();
+        indices.log_debug();
+
+        let queue_priorities = &[1_f32];
+
+        let mut unique_indices = HashSet::new();
+        unique_indices.insert(indices.graphics_family.unwrap());
+        unique_indices.insert(indices.present_family.unwrap());
+
+        let queue_create_infos = unique_indices
+            .iter()
+            .map(|i| {
+                vk::DeviceQueueCreateInfo::builder()
+                    .queue_family_index(*i)
+                    .queue_priorities(queue_priorities)
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let enable_validation = instance
+            .shared_instance()
+            .flags()
+            .contains(InstanceFlags::VALIDATION);
+        let mut required_layers = vec![];
+        if enable_validation {
+            required_layers.push("VK_LAYER_KHRONOS_validation");
+        }
+        let required_validation_layer_raw_names: Vec<CString> = required_layers
+            .iter()
+            .map(|layer_name| CString::new(*layer_name).unwrap())
+            .collect();
+        let enable_layer_names: Vec<*const c_char> = required_validation_layer_raw_names
+            .iter()
+            .map(|layer_name| layer_name.as_ptr())
+            .collect();
+
+        let mut device_extensions_ptrs = device_req
+            .required_extension
+            .iter()
+            .map(|e| CString::new(*e))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        if device_req.use_swapchain {
+            device_extensions_ptrs.push(khr::Swapchain::name().into());
+        }
+
+        let physical_device_features = vk::PhysicalDeviceFeatures::builder()
+            .sampler_anisotropy(adapter_req.sampler_anisotropy)
+            .sample_rate_shading(adapter_req.sample_rate_shading);
+
+        let mut ray_tracing_feature = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::builder()
+            .ray_tracing_pipeline(adapter_req.extra_features.ray_tracing_pipeline);
+        let mut acceleration_struct_feature =
+            vk::PhysicalDeviceAccelerationStructureFeaturesKHR::builder()
+                .acceleration_structure(adapter_req.extra_features.acceleration_structure);
+        let mut vulkan_12_features = vk::PhysicalDeviceVulkan12Features::builder()
+            .runtime_descriptor_array(adapter_req.extra_features.runtime_descriptor_array)
+            .buffer_device_address(adapter_req.extra_features.buffer_device_address);
+        let mut vulkan_13_features = vk::PhysicalDeviceVulkan13Features::builder()
+            .dynamic_rendering(adapter_req.extra_features.dynamic_rendering)
+            .synchronization2(adapter_req.extra_features.synchronization2);
+
+        let mut physical_device_features2 = vk::PhysicalDeviceFeatures2::builder()
+            .push_next(&mut ray_tracing_feature)
+            .push_next(&mut acceleration_struct_feature)
+            .push_next(&mut vulkan_12_features)
+            .push_next(&mut vulkan_13_features);
+
+        let device_extensions_ptrs = device_extensions_ptrs
+            .iter()
+            // Safe because `enabled_extensions` entries have static lifetime.
+            .map(|e| e.as_ptr())
+            .collect::<Vec<_>>();
+
+        let adapter_raw = adapter.raw();
+        let support_extensions = Self::check_device_extension_support(
+            instance,
+            adapter_raw,
+            device_req.required_extension,
+            device_req.use_swapchain,
+        );
+
+        if !support_extensions {
+            log::error!("device extensions not support");
+        }
+
+        let device_create_info = vk::DeviceCreateInfo::builder()
+            .queue_create_infos(&queue_create_infos)
+            .enabled_layer_names(&enable_layer_names)
+            .enabled_extension_names(&device_extensions_ptrs)
+            .enabled_features(&physical_device_features)
+            .push_next(&mut physical_device_features2);
+
+        let ash_device: ash::Device =
+            unsafe { instance_raw.create_device(adapter_raw, &device_create_info, None)? };
+
+        log::debug!("Vulkan logical device created.");
+
+        let device = Device::new(ash_device, adapter)?;
+        Ok(device)
+    }
+
+    fn check_device_extension_support(
+        instance: &Instance,
+        adapter: vk::PhysicalDevice,
+        extensions: &[&str],
+        use_swapchain: bool,
+    ) -> bool {
+        let extension_props = unsafe {
+            instance
+                .shared_instance()
+                .raw()
+                .enumerate_device_extension_properties(adapter)
+                .expect("Failed to enumerate device extension properties")
+        };
+
+        for required in extensions.iter() {
+            let found = extension_props.iter().any(|ext| {
+                let name = unsafe { CStr::from_ptr(ext.extension_name.as_ptr()) };
+                *required == name.to_str().unwrap().to_owned()
+            });
+
+            if !found {
+                return false;
+            }
+        }
+
+        let swapchain_check =
+            use_swapchain && extensions.contains(&khr::Swapchain::name().to_str().unwrap());
+        swapchain_check
+    }
+
+    pub(crate) fn new(raw: ash::Device, adapter: Adapter) -> Result<Self, DeviceError> {
+        let indices = adapter.queue_family_indices();
         // this queue should support graphics and present
         let graphics_queue = unsafe { raw.get_device_queue(indices.graphics_family.unwrap(), 0) };
         let present_queue = unsafe { raw.get_device_queue(indices.present_family.unwrap(), 0) };
@@ -78,12 +197,10 @@ impl Device {
         let command_pool = unsafe { raw.create_command_pool(&command_pool_create_info, None)? };
         Ok(Self {
             raw,
-            debug_utils,
             adapter,
             graphics_queue,
             present_queue,
             command_pool,
-            indices,
         })
     }
 
@@ -98,7 +215,7 @@ impl Device {
         object: impl vk::Handle,
         name: &str,
     ) {
-        let debug_utils = match &self.debug_utils {
+        let debug_utils = match &self.adapter.shared_instance().debug_utils() {
             Some(utils) => utils,
             None => return,
         };
