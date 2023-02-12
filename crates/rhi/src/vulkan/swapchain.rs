@@ -16,7 +16,6 @@ use crate::vulkan::device::Device;
 use crate::vulkan::framebuffer::{Framebuffer, FramebufferDescriptor};
 use crate::vulkan::image::{DepthImageDescriptor, Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
-use crate::vulkan::instance::Instance;
 use crate::vulkan::render_pass::RenderPass;
 use crate::vulkan::sync::{Fence, Semaphore};
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
@@ -25,8 +24,7 @@ use crate::{DeviceError, SurfaceError};
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
     loader: khr::Swapchain,
-    instance: Arc<Instance>,
-    device: Arc<Device>,
+    context: Context,
     command_buffers: Vec<CommandBuffer>,
     render_pass: RenderPass,
     framebuffers: Vec<Framebuffer>,
@@ -54,19 +52,6 @@ pub struct RenderSystemState {
 pub struct AcquiredImage {
     pub image_index: u32,
     pub is_suboptimal: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SwapchainProperties {
-    pub surface_format: vk::SurfaceFormatKHR,
-    pub present_mode: vk::PresentModeKHR,
-    pub extent: vk::Extent2D,
-}
-
-struct SwapChainSupportDetail {
-    pub capabilities: vk::SurfaceCapabilitiesKHR,
-    pub surface_formats: Vec<vk::SurfaceFormatKHR>,
-    pub present_modes: Vec<vk::PresentModeKHR>,
 }
 
 #[derive(TypedBuilder)]
@@ -99,39 +84,51 @@ impl Swapchain {
         &self.loader
     }
 
-    pub fn surface_format(&self) -> vk::SurfaceFormatKHR {
-        self.surface_format
+    pub fn surface_format(&self) -> vk::Format {
+        self.surface_format.format
     }
 
     pub fn extent(&self) -> vk::Extent2D {
         self.extent
     }
 
+    pub fn render_pass(&self) -> &RenderPass {
+        &self.render_pass
+    }
+
+    pub fn current_image_index(&self) -> u32 {
+        self.image_index
+    }
+
+    pub fn get_draw_command_buffer(&self, index: u32) -> &CommandBuffer {
+        &self.command_buffers[index as usize]
+    }
+
+    pub fn get_framebuffer(&self, index: u32) -> &Framebuffer {
+        &self.framebuffers[index as usize]
+    }
+
     pub unsafe fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
+        let swapchain_objects = unsafe { Self::create_swapchain(desc)? };
+
+        let SwapchainRelatedObjects {
+            extent,
+            capabilities,
+            render_pass,
+            framebuffers,
+            depth_texture,
+            swapchain_images,
+            image_views,
+        } = unsafe { Self::create_swapchain_related_objects(desc, &swapchain_objects)? };
+
+        let SwapchainObjects {
+            swapchain_loader,
+            swapchain,
+            properties,
+            ..
+        } = swapchain_objects;
+
         let device = &desc.context.device;
-        let (swapchain_loader, swapchain, properties, support, image_count) =
-            unsafe { Self::create_swapchain(desc)? };
-        let extent = properties.extent;
-        let surface_format = properties.surface_format.format;
-        // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
-        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
-
-        let mut capabilities = support.capabilities;
-
-        capabilities.current_extent.width = capabilities.current_extent.width.max(1);
-        capabilities.current_extent.height = capabilities.current_extent.height.max(1);
-        let swapchain_image_views = swapchain_images
-            .iter()
-            .map(|i| {
-                ImageView::new_color_image_view(
-                    Some("swapchain image view"),
-                    device,
-                    *i,
-                    surface_format,
-                    1,
-                )
-            })
-            .collect::<Result<Vec<ImageView>, DeviceError>>()?;
 
         let command_buffers =
             unsafe { Self::create_draw_command_buffers(device, desc.max_frames_in_flight)? };
@@ -139,58 +136,15 @@ impl Swapchain {
         let (semaphores, fences) =
             unsafe { Self::create_semaphores_and_fences(device, desc.max_frames_in_flight)? };
 
-        let depth_texture = unsafe { Self::create_depth_objects(desc, extent)? };
-
-        let render_pass_desc = RenderPassDescriptor {
-            label: Some("Swapchain Render Pass"),
-            depth: 1.0,
-            stencil: 0,
-            render_area: Rect2D {
-                x: 0.0,
-                y: 0.0,
-                width: extent.width as f32,
-                height: extent.height as f32,
-            },
-            clear_color: Color::new(0.65, 0.8, 0.9, 1.0),
-            clear_flags: RenderPassClearFlags::COLOR_BUFFER | RenderPassClearFlags::DEPTH_BUFFER,
-            attachments: &[
-                RenderTargetAttachment {
-                    format: ImageFormat::from(surface_format),
-                    ty: RenderTargetAttachmentType::Color,
-                    load_op: AttachmentLoadOp::Clear,
-                    store_op: AttachmentStoreOp::Store,
-                },
-                RenderTargetAttachment {
-                    format: ImageFormat::from(depth_texture.image().format()),
-                    ty: RenderTargetAttachmentType::Depth,
-                    load_op: AttachmentLoadOp::Clear,
-                    store_op: AttachmentStoreOp::Store,
-                },
-            ],
-        };
-        let render_pass = unsafe { RenderPass::new(device, &render_pass_desc)? };
-
-        let framebuffers = unsafe {
-            Self::create_framebuffers(
-                device,
-                desc.max_frames_in_flight,
-                render_pass.raw(),
-                &swapchain_image_views,
-                &[depth_texture.raw_image_view()],
-                [extent.width, extent.height],
-            )?
-        };
-
         let swapchain = Self {
             raw: swapchain,
             loader: swapchain_loader,
-            instance: desc.context.instance.clone(),
-            device: device.clone(),
+            context: desc.context.clone(),
             render_pass,
             framebuffers,
             command_buffers,
             swapchain_images,
-            image_views: swapchain_image_views,
+            image_views,
             surface_format: properties.surface_format,
             extent,
             capabilities,
@@ -210,250 +164,174 @@ impl Swapchain {
         width: u32,
         height: u32,
     ) -> Result<(), DeviceError> {
-        self.destroy();
-        let desc = SwapchainDescriptor {
-            context: &context,
+        let desc = &SwapchainDescriptor {
+            context,
             dimensions: [width, height],
-            old_swapchain: None,
+            old_swapchain: Some(self.raw),
             max_frames_in_flight: self.max_frames_in_flight,
             queue_family: context.device.queue_family_indices(),
         };
-        let (swapchain_loader, swapchain, properties, support, _) =
-            unsafe { Self::create_swapchain(&desc)? };
+        let swapchain_objects = unsafe { Self::create_swapchain(desc)? };
 
-        let extent = properties.extent;
-        // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
-        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
+        unsafe {
+            self.destroy_all();
+        }
 
-        let mut capabilities = support.capabilities;
+        let SwapchainRelatedObjects {
+            extent,
+            capabilities,
+            render_pass,
+            framebuffers,
+            depth_texture,
+            swapchain_images,
+            image_views,
+        } = unsafe { Self::create_swapchain_related_objects(desc, &swapchain_objects)? };
 
-        capabilities.current_extent.width = capabilities.current_extent.width.max(1);
-        capabilities.current_extent.height = capabilities.current_extent.height.max(1);
-        let swapchain_image_views = swapchain_images
-            .iter()
-            .map(|i| {
-                ImageView::new_color_image_view(
-                    Some("swapchain image view"),
-                    &context.device,
-                    *i,
-                    properties.surface_format.format,
-                    1,
-                )
-            })
-            .collect::<Result<Vec<ImageView>, DeviceError>>()?;
+        let SwapchainObjects {
+            swapchain_loader,
+            swapchain,
+            properties,
+            ..
+        } = swapchain_objects;
+
+        self.raw = swapchain;
+        self.loader = swapchain_loader;
+        self.framebuffers = framebuffers;
+        self.render_pass = render_pass;
         self.capabilities = capabilities;
+        self.depth_texture = depth_texture;
         self.swapchain_images = swapchain_images;
-        self.image_views = swapchain_image_views;
+        self.surface_format = properties.surface_format;
+        self.image_views = image_views;
         self.extent = extent;
         Ok(())
     }
 
-    pub fn destroy(&mut self) {
-        unsafe {
-            self.loader.destroy_swapchain(self.raw, None);
-        }
-        log::debug!("Swapchain destroyed.");
+    pub unsafe fn cleanup(&mut self) {
+        unsafe { self.destroy_all() }
     }
 
-    // pub fn render(
-    //     &mut self,
-    //     image_index: usize,
-    //     window: &Window,
-    //     gui_context: &mut GuiContext,
-    //     gui_renderer: &mut GuiRenderer,
-    //     ui_state: &mut GuiState,
-    //     ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
-    // ) -> Result<vk::CommandBuffer, DeviceError> {
-    //     self.update_uniform_buffer(image_index);
-    //
-    //     let command_buffer = self.update_command_buffers(
-    //         image_index,
-    //         window,
-    //         gui_context,
-    //         gui_renderer,
-    //         ui_state,
-    //         ui_func,
-    //     )?;
-    //
-    //     Ok(command_buffer.raw())
-    // }
+    pub unsafe fn begin_frame(&mut self) -> Result<(), DeviceError> {
+        let in_flight_fence = self.fences[self.image_index as usize].raw;
+        let in_flight_fences = [in_flight_fence];
+        unsafe {
+            self.context
+                .device
+                .raw()
+                .wait_for_fences(&in_flight_fences, true, u64::MAX)?;
+        };
 
-    // fn update_command_buffers(
-    //     &mut self,
-    //     image_index: usize,
-    //     window: &Window,
-    //     gui_context: &mut GuiContext,
-    //     gui_renderer: &mut GuiRenderer,
-    //     ui_state: &mut GuiState,
-    //     ui_func: impl FnOnce(&mut GuiState, &mut imgui::Ui),
-    // ) -> Result<&CommandBuffer, DeviceError> {
-    //     let command_buffer = &self.command_buffers[image_index];
-    //
-    //     self.device
-    //         .reset_command_buffer(command_buffer.raw(), vk::CommandBufferResetFlags::empty())?;
-    //     self.device.begin_command_buffer(
-    //         command_buffer.raw(),
-    //         &vk::CommandBufferBeginInfo::builder()
-    //             // since we are now only submitting our command buffers once before resetting them,
-    //             // we can add ONE_TIME_SUBMIT for better optimize by Vulkan driver
-    //             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-    //             .build(),
-    //     )?;
-    //
-    //     let framebuffer = self.framebuffers[image_index];
-    //     self.render_pass.begin(command_buffer, framebuffer);
-    //
-    //     self.device.cmd_bind_pipeline(
-    //         command_buffer.raw(),
-    //         vk::PipelineBindPoint::GRAPHICS,
-    //         self.pipeline.raw(),
-    //     );
-    //
-    //     // 改为左手坐标系 NDC
-    //     let viewport_rect2d = Rect2D {
-    //         x: 0f32,
-    //         y: self.extent.height as f32,
-    //         width: self.extent.width as f32,
-    //         height: -(self.extent.height as f32),
-    //     };
-    //     self.device
-    //         .cmd_set_viewport(command_buffer.raw(), viewport_rect2d);
-    //
-    //     let scissor_rect2d = Rect2D {
-    //         x: 0.0,
-    //         y: 0.0,
-    //         width: self.extent.width as f32,
-    //         height: self.extent.height as f32,
-    //     };
-    //     self.device.cmd_set_scissor(
-    //         command_buffer.raw(),
-    //         0,
-    //         &[conv::convert_rect2d(scissor_rect2d)],
-    //     );
-    //
-    //     self.device.cmd_bind_vertex_buffers(
-    //         command_buffer.raw(),
-    //         0,
-    //         &[self.vertex_buffer.raw()],
-    //         &[0],
-    //     );
-    //
-    //     self.device.cmd_bind_index_buffer(
-    //         command_buffer.raw(),
-    //         self.index_buffer.raw(),
-    //         0,
-    //         vk::IndexType::UINT32, // Model.indices
-    //     );
-    //
-    //     self.device.cmd_bind_descriptor_sets(
-    //         command_buffer.raw(),
-    //         vk::PipelineBindPoint::GRAPHICS,
-    //         self.pipeline.raw_pipeline_layout(),
-    //         0,
-    //         &[self.per_frame_descriptor_sets[image_index]],
-    //         &[],
-    //     );
-    //
-    //     let time = self.instant.elapsed().as_secs_f32();
-    //     let model = math::rotate(
-    //         &math::identity(),
-    //         // time *  math::radians(&math::vec1(90.0))[0],
-    //         math::radians(&math::vec1(90.0f32))[0],
-    //         &vec3(0.0, 0.0, 1.0),
-    //     );
-    //
-    //     let (_, model_bytes, _) = unsafe { model.as_slice().align_to::<u8>() };
-    //
-    //     self.device.cmd_push_constants(
-    //         command_buffer.raw(),
-    //         self.pipeline.raw_pipeline_layout(),
-    //         vk::ShaderStageFlags::VERTEX,
-    //         0,
-    //         model_bytes,
-    //     );
-    //
-    //     // self.device.cmd_push_constants(
-    //     //     command_buffer.raw(),
-    //     //     self.pipeline.raw_pipeline_layout(),
-    //     //     vk::ShaderStageFlags::FRAGMENT,
-    //     //     64,
-    //     //     // &0.75f32.to_ne_bytes()[..],
-    //     //     &1f32.to_ne_bytes()[..],
-    //     // );
-    //
-    //     self.device.cmd_draw_indexed(
-    //         command_buffer.raw(),
-    //         self.model.indices().len() as u32,
-    //         1,
-    //         0,
-    //         0,
-    //         0,
-    //     );
-    //
-    //     self.render_pass.end(command_buffer);
-    //
-    //     self.imgui_render_pass
-    //         .begin(command_buffer, self.imgui_framebuffers[image_index]);
-    //
-    //     let draw_data = gui_context.render(window, ui_state, ui_func);
-    //     gui_renderer
-    //         .cmd_draw(command_buffer.raw(), draw_data)
-    //         .unwrap();
-    //
-    //     self.imgui_render_pass.end(command_buffer);
-    //
-    //     self.device.end_command_buffer(command_buffer.raw())?;
-    //     Ok(command_buffer)
-    // }
-    //
-    // fn update_uniform_buffer(&mut self, image_index: usize) {
-    //     // projection[(1, 1)] *= -1.0; // openGL clip space y 和 vulkan 相反，不过我们在 cmd_set_viewport 处理了
-    //     let ubo = UniformBufferObject {
-    //         view: self.render_system_state.view,
-    //         projection: self.render_system_state.projection,
-    //     };
-    //
-    //     let uniform_buffer = &mut self.uniform_buffers[image_index];
-    //     uniform_buffer.copy_memory(&[ubo]);
-    // }
-    //
-    // pub fn set_render_system_state(&mut self, view: Mat4) {
-    //     self.render_system_state.view = view;
-    // }
-    //
+        let result = unsafe {
+            self.acquire_next_image(
+                u64::MAX,
+                &self.semaphores[self.image_index as usize].present,
+            )?
+        };
 
+        unsafe {
+            self.context.device.raw().reset_fences(&in_flight_fences)?;
+        }
+
+        self.image_index = result.image_index;
+        Ok(())
+    }
+
+    pub unsafe fn present(&mut self) -> Result<(), DeviceError> {
+        let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+
+        let wait_semaphores = &[self.semaphores[self.image_index as usize].present.raw];
+        let signal_semaphores = &[self.semaphores[self.image_index as usize].render.raw];
+
+        let command_buffer = &mut self.command_buffers[self.image_index as usize];
+        let command_buffers = [command_buffer.raw()];
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(wait_semaphores)
+            .wait_dst_stage_mask(wait_stages)
+            .command_buffers(&command_buffers)
+            .signal_semaphores(signal_semaphores)
+            .build();
+        let in_flight_fence = self.fences[self.image_index as usize].raw;
+        let device = &self.context.device;
+        unsafe {
+            device
+                .raw()
+                .queue_submit(device.graphics_queue(), &[submit_info], in_flight_fence)?;
+        }
+
+        command_buffer.set_state(CommandBufferState::Submitted);
+
+        match self.queue_present(device.present_queue(), self.image_index, signal_semaphores) {
+            Ok(suboptimal) => suboptimal,
+            Err(SurfaceError::OutOfDate) => {
+                self.resize(&self.context.clone(), self.extent.width, self.extent.height)?;
+                return Ok(());
+            }
+            Err(e) => panic!("failed to acquire_next_image. Err: {}", e),
+        };
+        self.image_index = (self.image_index + 1) % self.max_frames_in_flight;
+
+        Ok(())
+    }
+}
+
+/// temp objects
+struct SwapchainProperties {
+    pub surface_format: vk::SurfaceFormatKHR,
+    pub present_mode: vk::PresentModeKHR,
+    pub extent: vk::Extent2D,
+}
+
+/// temp objects
+struct SwapChainSupportDetail {
+    pub capabilities: vk::SurfaceCapabilitiesKHR,
+    pub surface_formats: Vec<vk::SurfaceFormatKHR>,
+    pub present_modes: Vec<vk::PresentModeKHR>,
+}
+
+/// temp objects
+pub struct SwapchainObjects {
+    swapchain_loader: khr::Swapchain,
+    swapchain: vk::SwapchainKHR,
+    properties: SwapchainProperties,
+    support: SwapChainSupportDetail,
+    image_count: u32,
+}
+
+/// temp objects
+pub struct SwapchainRelatedObjects {
+    extent: vk::Extent2D,
+    capabilities: vk::SurfaceCapabilitiesKHR,
+    render_pass: RenderPass,
+    framebuffers: Vec<Framebuffer>,
+    depth_texture: VulkanTexture,
+    swapchain_images: Vec<vk::Image>,
+    image_views: Vec<ImageView>,
+}
+
+impl Swapchain {
     unsafe fn create_swapchain(
         desc: &SwapchainDescriptor,
-    ) -> Result<
-        (
-            khr::Swapchain,
-            vk::SwapchainKHR,
-            SwapchainProperties,
-            SwapChainSupportDetail,
-            u32,
-        ),
-        DeviceError,
-    > {
+    ) -> Result<SwapchainObjects, DeviceError> {
         profiling::scope!("create_swapchain");
 
-        let swapchain_support = unsafe {
+        let support = unsafe {
             SwapChainSupportDetail::new(
                 desc.context.device.adapter().raw(),
                 desc.context.surface.loader(),
                 desc.context.surface.raw(),
             )
         }?;
-        let properties = swapchain_support.get_ideal_swapchain_properties(desc.dimensions);
+        let properties = support.get_ideal_swapchain_properties(desc.dimensions);
         let SwapchainProperties {
             surface_format,
             present_mode,
             extent,
         } = properties;
 
-        let mut image_count = swapchain_support.capabilities.min_image_count + 1;
+        let mut image_count = support.capabilities.min_image_count + 1;
         image_count = image_count.max(desc.max_frames_in_flight);
-        image_count = if swapchain_support.capabilities.max_image_count > 0 {
-            image_count.min(swapchain_support.capabilities.max_image_count)
+        image_count = if support.capabilities.max_image_count > 0 {
+            image_count.min(support.capabilities.max_image_count)
         } else {
             image_count
         };
@@ -492,7 +370,7 @@ impl Swapchain {
             .image_sharing_mode(image_sharing_mode)
             .queue_family_indices(&queue_family_indices)
             // 指定一个固定的变换操作，比如顺时针旋转 90 度或是水平翻转，这里不进行任何变换
-            .pre_transform(swapchain_support.capabilities.current_transform)
+            .pre_transform(support.capabilities.current_transform)
             // 指定 alpha 通道是否被用来和窗口系统中的其它窗口进行混合操作。
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(present_mode)
@@ -510,40 +388,106 @@ impl Swapchain {
         let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None)? };
         log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 
-        Ok((
+        Ok(SwapchainObjects {
             swapchain_loader,
             swapchain,
             properties,
-            swapchain_support,
+            support,
             image_count,
-        ))
+        })
     }
 
-    unsafe fn queue_present(
-        &self,
-        present_queue: vk::Queue,
-        image_index: u32,
-        wait_semaphores: &[vk::Semaphore],
-    ) -> Result<bool, SurfaceError> {
-        let swapchains = &[self.raw];
-        let indices = &[image_index];
-        let present_info = vk::PresentInfoKHR::builder()
-            .wait_semaphores(wait_semaphores)
-            .swapchains(swapchains)
-            .image_indices(indices);
-        match unsafe { self.loader.queue_present(present_queue, &present_info) } {
-            Ok(suboptimal) => Ok(suboptimal),
-            Err(error) => match error {
-                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
-                    Err(SurfaceError::OutOfDate)
-                }
-                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
-                other => Err(SurfaceError::from(other).into()),
+    unsafe fn create_swapchain_related_objects(
+        desc: &SwapchainDescriptor,
+        swapchain_objects: &SwapchainObjects,
+    ) -> Result<SwapchainRelatedObjects, DeviceError> {
+        let SwapchainObjects {
+            swapchain_loader,
+            swapchain,
+            properties,
+            support,
+            ..
+        } = swapchain_objects;
+        let device = &desc.context.device;
+        let extent = properties.extent;
+        let surface_format = properties.surface_format.format;
+        // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
+        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain.clone())? };
+
+        let mut capabilities = support.capabilities;
+
+        capabilities.current_extent.width = capabilities.current_extent.width.max(1);
+        capabilities.current_extent.height = capabilities.current_extent.height.max(1);
+        let image_views = swapchain_images
+            .iter()
+            .map(|i| {
+                ImageView::new_color_image_view(
+                    Some("swapchain image view"),
+                    device,
+                    *i,
+                    surface_format,
+                    1,
+                )
+            })
+            .collect::<Result<Vec<ImageView>, DeviceError>>()?;
+
+        let depth_texture = unsafe { Self::create_depth_objects(desc, extent)? };
+
+        // Note that we recreate the renderpass here. In theory it can be possible for the swap chain
+        // image format to change during an applications' lifetime, e.g. when moving a window from
+        // an standard range to an high dynamic range monitor. This may require the application to
+        // recreate the renderpass to make sure the change between dynamic ranges is properly reflected.
+        let render_pass_desc = RenderPassDescriptor {
+            label: Some("Swapchain Render Pass"),
+            depth: 1.0,
+            stencil: 0,
+            render_area: Rect2D {
+                x: 0.0,
+                y: 0.0,
+                width: extent.width as f32,
+                height: extent.height as f32,
             },
-        }
+            clear_color: Color::new(0.65, 0.8, 0.9, 1.0),
+            clear_flags: RenderPassClearFlags::COLOR_BUFFER | RenderPassClearFlags::DEPTH_BUFFER,
+            attachments: &[
+                RenderTargetAttachment {
+                    format: ImageFormat::from(surface_format),
+                    ty: RenderTargetAttachmentType::Color,
+                    load_op: AttachmentLoadOp::Clear,
+                    store_op: AttachmentStoreOp::Store,
+                },
+                RenderTargetAttachment {
+                    format: ImageFormat::from(depth_texture.image().format()),
+                    ty: RenderTargetAttachmentType::Depth,
+                    load_op: AttachmentLoadOp::Clear,
+                    store_op: AttachmentStoreOp::Store,
+                },
+            ],
+        };
+        let render_pass = unsafe { RenderPass::new(device, &render_pass_desc)? };
+
+        let framebuffers = unsafe {
+            Self::create_framebuffers(
+                device,
+                desc.max_frames_in_flight,
+                render_pass.raw(),
+                &image_views,
+                &[depth_texture.raw_image_view()],
+                [extent.width, extent.height],
+            )?
+        };
+        Ok(SwapchainRelatedObjects {
+            extent,
+            capabilities,
+            render_pass,
+            framebuffers,
+            depth_texture,
+            swapchain_images,
+            image_views,
+        })
     }
 
-    pub fn get_memory_type_index(
+    fn get_memory_type_index(
         memory_properties: vk::PhysicalDeviceMemoryProperties,
         properties: vk::MemoryPropertyFlags,
         requirements: vk::MemoryRequirements,
@@ -642,74 +586,29 @@ impl Swapchain {
         Ok(texture)
     }
 
-    pub unsafe fn begin_frame(&mut self) -> Result<(), DeviceError> {
-        let in_flight_fence = self.fences[self.image_index as usize].raw;
-        let in_flight_fences = [in_flight_fence];
-        unsafe {
-            self.device
-                .raw()
-                .wait_for_fences(&in_flight_fences, true, u64::MAX)?;
-        };
-
-        let result = unsafe {
-            self.acquire_next_image(
-                u64::MAX,
-                &self.semaphores[self.image_index as usize].present,
-            )?
-        };
-
-        unsafe {
-            self.device.raw().reset_fences(&in_flight_fences)?;
-        }
-
-        self.image_index = result.image_index;
-        Ok(())
-    }
-
-    pub unsafe fn present(&mut self) -> Result<(), DeviceError> {
-        let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-
-        let wait_semaphores = &[self.semaphores[self.image_index as usize].present.raw];
-        let signal_semaphores = &[self.semaphores[self.image_index as usize].render.raw];
-
-        let command_buffer = &mut self.command_buffers[self.image_index as usize];
-        let command_buffers = [command_buffer.raw()];
-        let submit_info = vk::SubmitInfo::builder()
+    unsafe fn queue_present(
+        &self,
+        present_queue: vk::Queue,
+        image_index: u32,
+        wait_semaphores: &[vk::Semaphore],
+    ) -> Result<bool, SurfaceError> {
+        let swapchains = &[self.raw];
+        let indices = &[image_index];
+        let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(wait_semaphores)
-            .wait_dst_stage_mask(wait_stages)
-            .command_buffers(&command_buffers)
-            .signal_semaphores(signal_semaphores)
-            .build();
-        let in_flight_fence = self.fences[self.image_index as usize].raw;
-        unsafe {
-            self.device.raw().queue_submit(
-                self.device.graphics_queue(),
-                &[submit_info],
-                in_flight_fence,
-            )?;
+            .swapchains(swapchains)
+            .image_indices(indices);
+        match unsafe { self.loader.queue_present(present_queue, &present_info) } {
+            Ok(suboptimal) => Ok(suboptimal),
+            Err(error) => match error {
+                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
+                    Err(SurfaceError::OutOfDate)
+                }
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
+                other => Err(SurfaceError::from(other).into()),
+            },
         }
-
-        command_buffer.set_state(CommandBufferState::Submitted);
-
-        match self.queue_present(
-            self.device.present_queue(),
-            self.image_index,
-            signal_semaphores,
-        ) {
-            Ok(suboptimal) => suboptimal,
-            Err(SurfaceError::OutOfDate) => {
-                // self.resize()?;
-                return Ok(());
-            }
-            Err(e) => panic!("failed to acquire_next_image. Err: {}", e),
-        };
-        self.image_index = (self.image_index + 1) % self.max_frames_in_flight;
-
-        todo!()
     }
-}
-
-impl Swapchain {
     // unsafe fn create_framebuffer(
     //     device: &Device,
     //     map: &Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
@@ -818,6 +717,39 @@ impl Swapchain {
     ) -> Result<Vec<CommandBuffer>, DeviceError> {
         unsafe { device.allocate_command_buffers(true, frames_in_flight) }
     }
+
+    unsafe fn destroy_swapchain_recreate_objects(&mut self) {
+        unsafe {
+            // for framebuffer in &self.framebuffers {
+            //     self.context
+            //         .device
+            //         .raw()
+            //         .destroy_framebuffer(framebuffer.raw(), None);
+            // }
+            for image_view in &self.image_views {
+                self.context
+                    .device
+                    .raw()
+                    .destroy_image_view(image_view.raw(), None);
+            }
+
+            self.loader.destroy_swapchain(self.raw, None);
+        }
+    }
+
+    unsafe fn destroy_swapchain_raw(&mut self) {
+        unsafe {
+            self.loader.destroy_swapchain(self.raw, None);
+            log::debug!("Swapchain destroyed.");
+        }
+    }
+
+    unsafe fn destroy_all(&mut self) {
+        unsafe {
+            self.destroy_swapchain_recreate_objects();
+            self.destroy_swapchain_raw();
+        }
+    }
 }
 
 impl SwapChainSupportDetail {
@@ -921,12 +853,11 @@ impl SwapChainSupportDetail {
     }
 }
 
-impl Drop for Swapchain {
-    fn drop(&mut self) {
-        // self.framebuffers
-        //     .iter()
-        //     .for_each(|e| self.device.destroy_framebuffer(*e));
-
-        self.destroy();
-    }
-}
+// cleanup manually
+// impl Drop for Swapchain {
+//     fn drop(&mut self) {
+//         unsafe {
+//             self.cleanup();
+//         }
+//     }
+// }
