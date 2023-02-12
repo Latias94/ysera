@@ -141,8 +141,7 @@ impl VulkanTexture {
         let color_image_desc = ColorImageDescriptor {
             device: desc.device,
             allocator: staging_buffer_desc.allocator.clone(),
-            width,
-            height,
+            dimension: [width, height],
             mip_levels,
             format: desc.format,
             samples: vk::SampleCountFlags::TYPE_1,

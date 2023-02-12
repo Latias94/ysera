@@ -11,17 +11,20 @@ pub struct Semaphore {
 }
 
 impl Semaphore {
-    pub(crate) unsafe fn new(device: Arc<Device>) -> Result<Self> {
+    pub(crate) unsafe fn new(device: &Arc<Device>) -> Result<Self> {
         let semaphore_info = vk::SemaphoreCreateInfo::builder();
         let raw = unsafe { device.raw().create_semaphore(&semaphore_info, None)? };
 
-        Ok(Self { device, raw })
+        Ok(Self {
+            device: device.clone(),
+            raw,
+        })
     }
 }
 
 impl Context {
     pub unsafe fn create_semaphore(&self) -> Result<Semaphore> {
-        unsafe { Semaphore::new(self.device.clone()) }
+        unsafe { Semaphore::new(&self.device.clone()) }
     }
 }
 
@@ -40,7 +43,7 @@ pub struct Fence {
 
 impl Fence {
     pub(crate) unsafe fn new(
-        device: Arc<Device>,
+        device: &Arc<Device>,
         flags: Option<vk::FenceCreateFlags>,
     ) -> Result<Self> {
         let flags = flags.unwrap_or_else(vk::FenceCreateFlags::empty);
@@ -48,7 +51,10 @@ impl Fence {
         let fence_info = vk::FenceCreateInfo::builder().flags(flags);
         let raw = unsafe { device.raw().create_fence(&fence_info, None)? };
 
-        Ok(Self { device, raw })
+        Ok(Self {
+            device: device.clone(),
+            raw,
+        })
     }
 
     pub unsafe fn wait(&self, timeout: Option<u64>) -> Result<()> {
@@ -72,7 +78,7 @@ impl Fence {
 
 impl Context {
     pub unsafe fn create_fence(&self, flags: Option<vk::FenceCreateFlags>) -> Result<Fence> {
-        unsafe { Fence::new(self.device.clone(), flags) }
+        unsafe { Fence::new(&self.device.clone(), flags) }
     }
 }
 

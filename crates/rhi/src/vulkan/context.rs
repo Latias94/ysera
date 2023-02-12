@@ -19,6 +19,7 @@ pub struct ContextDescriptor<'a> {
     pub device_feature: DeviceFeatures,
 }
 
+#[derive(Clone)]
 pub struct Context {
     pub surface: Arc<Surface>,
     pub instance: Arc<Instance>,

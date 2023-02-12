@@ -70,8 +70,8 @@ pub struct DeviceRequirements<'a> {
 #[derive(Clone, TypedBuilder)]
 pub struct RenderPassDescriptor<'a> {
     pub label: Label<'a>,
-    pub depth: f32,
-    pub stencil: u32,
+    pub depth: f32,   // 1.0
+    pub stencil: u32, // 0.0
     pub render_area: math::Rect2D,
     pub clear_color: Color,
     pub clear_flags: RenderPassClearFlags,

@@ -2,34 +2,45 @@ use std::sync::Arc;
 
 use ash::extensions::khr;
 use ash::vk;
-use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
 use math::prelude::*;
 
-use crate::types::{Color, QueueFamilyIndices};
-use crate::vulkan::adapter::Adapter;
+use crate::types::{
+    AttachmentLoadOp, AttachmentStoreOp, Color, ImageFormat, QueueFamilyIndices,
+    RenderPassClearFlags, RenderPassDescriptor, RenderTargetAttachment, RenderTargetAttachmentType,
+};
+use crate::vulkan::command_buffer::{CommandBuffer, CommandBufferState};
 use crate::vulkan::context::Context;
 use crate::vulkan::device::Device;
-use crate::vulkan::image::{Image, ImageDescriptor};
+use crate::vulkan::framebuffer::{Framebuffer, FramebufferDescriptor};
+use crate::vulkan::image::{DepthImageDescriptor, Image, ImageDescriptor};
 use crate::vulkan::image_view::ImageView;
 use crate::vulkan::instance::Instance;
-use crate::vulkan::sync::Semaphore;
+use crate::vulkan::render_pass::RenderPass;
+use crate::vulkan::sync::{Fence, Semaphore};
 use crate::vulkan::texture::{VulkanTexture, VulkanTextureDescriptor};
-use crate::DeviceError;
+use crate::{DeviceError, SurfaceError};
 
 pub struct Swapchain {
     raw: vk::SwapchainKHR,
     loader: khr::Swapchain,
     instance: Arc<Instance>,
     device: Arc<Device>,
+    command_buffers: Vec<CommandBuffer>,
+    render_pass: RenderPass,
+    framebuffers: Vec<Framebuffer>,
     pub swapchain_images: Vec<vk::Image>,
     pub image_views: Vec<ImageView>,
     pub surface_format: vk::SurfaceFormatKHR,
     // depth_format: vk::Format,
+    pub depth_texture: VulkanTexture,
     pub extent: vk::Extent2D,
     pub capabilities: vk::SurfaceCapabilitiesKHR,
-    pub max_frame_in_flight: u32,
+    pub max_frames_in_flight: u32,
+    pub semaphores: Vec<SwapchainSemaphore>,
+    pub fences: Vec<Fence>,
+    pub image_index: u32,
 }
 
 pub struct RenderSystemState {
@@ -40,15 +51,16 @@ pub struct RenderSystemState {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct AcquiredImage {
+    pub image_index: u32,
+    pub is_suboptimal: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct SwapchainProperties {
     pub surface_format: vk::SurfaceFormatKHR,
     pub present_mode: vk::PresentModeKHR,
     pub extent: vk::Extent2D,
-}
-
-pub struct AcquiredImage {
-    pub image_index: u32,
-    pub is_suboptimal: bool,
 }
 
 struct SwapChainSupportDetail {
@@ -62,15 +74,20 @@ pub struct SwapchainDescriptor<'a> {
     pub context: &'a Context,
     pub dimensions: [u32; 2],
     pub old_swapchain: Option<vk::SwapchainKHR>,
-    pub max_frame_in_flight: u32,
+    pub max_frames_in_flight: u32,
     pub queue_family: QueueFamilyIndices,
 }
 
-#[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
-pub struct FramebufferDescriptor {
-    render_pass: vk::RenderPass,
-    texture_views: Vec<vk::ImageView>,
-    swapchain_extent: vk::Extent2D,
+// #[derive(Clone, TypedBuilder, Hash, PartialEq, Eq)]
+// pub struct FramebufferDescriptor {
+//     pub render_pass: vk::RenderPass,
+//     pub image_views: Vec<vk::ImageView>,
+//     pub dimensions: [u32; 2],
+// }
+
+pub struct SwapchainSemaphore {
+    present: Semaphore,
+    render: Semaphore,
 }
 
 impl Swapchain {
@@ -93,8 +110,9 @@ impl Swapchain {
     pub unsafe fn new(desc: &SwapchainDescriptor) -> anyhow::Result<Self> {
         let device = &desc.context.device;
         let (swapchain_loader, swapchain, properties, support, image_count) =
-            unsafe { Self::create_swapchain(&desc)? };
+            unsafe { Self::create_swapchain(desc)? };
         let extent = properties.extent;
+        let surface_format = properties.surface_format.format;
         // 交换链图像由交换链自己负责创建，并在交换链清除时自动被清除，不需要我们自己进行创建和清除操作。
         let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
 
@@ -109,197 +127,78 @@ impl Swapchain {
                     Some("swapchain image view"),
                     device,
                     *i,
-                    properties.surface_format.format,
+                    surface_format,
                     1,
                 )
             })
             .collect::<Result<Vec<ImageView>, DeviceError>>()?;
 
-        // let memory_properties = unsafe {
-        //     desc.instance
-        //         .raw()
-        //         .get_physical_device_memory_properties(desc.adapter.raw())
-        // };
+        let command_buffers =
+            unsafe { Self::create_draw_command_buffers(device, desc.max_frames_in_flight)? };
 
-        // let color_format = properties.surface_format.format;
-        // let color_texture = Self::create_color_objects(desc, color_format, extent)?;
+        let (semaphores, fences) =
+            unsafe { Self::create_semaphores_and_fences(device, desc.max_frames_in_flight)? };
 
-        // let depth_texture = Self::create_depth_objects(desc, extent)?;
-        // let depth_format = depth_texture.image().format();
+        let depth_texture = unsafe { Self::create_depth_objects(desc, extent)? };
 
-        let clear_color = Color::new(0.65, 0.8, 0.9, 1.0);
-        let rect2d = Rect2D {
-            x: 0.0,
-            y: 0.0,
-            width: extent.width as f32,
-            height: extent.height as f32,
+        let render_pass_desc = RenderPassDescriptor {
+            label: Some("Swapchain Render Pass"),
+            depth: 1.0,
+            stencil: 0,
+            render_area: Rect2D {
+                x: 0.0,
+                y: 0.0,
+                width: extent.width as f32,
+                height: extent.height as f32,
+            },
+            clear_color: Color::new(0.65, 0.8, 0.9, 1.0),
+            clear_flags: RenderPassClearFlags::COLOR_BUFFER | RenderPassClearFlags::DEPTH_BUFFER,
+            attachments: &[
+                RenderTargetAttachment {
+                    format: ImageFormat::from(surface_format),
+                    ty: RenderTargetAttachmentType::Color,
+                    load_op: AttachmentLoadOp::Clear,
+                    store_op: AttachmentStoreOp::Store,
+                },
+                RenderTargetAttachment {
+                    format: ImageFormat::from(depth_texture.image().format()),
+                    ty: RenderTargetAttachmentType::Depth,
+                    load_op: AttachmentLoadOp::Clear,
+                    store_op: AttachmentStoreOp::Store,
+                },
+            ],
         };
+        let render_pass = unsafe { RenderPass::new(device, &render_pass_desc)? };
 
-        // let map = Default::default();
-        //
-        // let render_pass_desc = RenderPassDescriptor {
-        //     device: device,
-        //     surface_format: color_format,
-        //     depth_format,
-        //     render_area: rect2d,
-        //     clear_color,
-        //     max_msaa_samples: desc.context.adapter.max_msaa_samples(),
-        //     depth: 1.0,
-        //     stencil: 0,
-        // };
-        // let render_pass = RenderPass::new(&render_pass_desc)?;
-        //
-        // let framebuffers = swapchain_image_views
-        //     .iter()
-        //     .map(|i| {
-        //         let image_view = i.raw();
-        //         let framebuffer_desc = FramebufferDescriptor::builder()
-        //             .texture_views(vec![
-        //                 color_texture.image_view().raw(),
-        //                 depth_texture.image_view().raw(),
-        //                 image_view,
-        //             ])
-        //             .swapchain_extent(extent)
-        //             .render_pass(render_pass.raw())
-        //             .build();
-        //         Self::create_framebuffer(&device, &map, framebuffer_desc)
-        //     })
-        //     .collect::<Result<Vec<_>, _>>()?;
-        //
-        // let imgui_render_pass_desc = ImguiRenderPassDescriptor {
-        //     device:&device,
-        //     surface_format: properties.surface_format.format,
-        //     render_area: rect2d,
-        // };
-        // let imgui_render_pass = RenderPass::new_imgui_render_pass(&imgui_render_pass_desc)?;
-        //
-        // let imgui_framebuffers = swapchain_image_views
-        //     .iter()
-        //     .map(|i| {
-        //         let image_view = i.raw();
-        //         let framebuffer_desc = FramebufferDescriptor::builder()
-        //             .texture_views(vec![image_view])
-        //             .swapchain_extent(extent)
-        //             .render_pass(imgui_render_pass.raw())
-        //             .build();
-        //         Self::create_framebuffer(&device, &map, framebuffer_desc)
-        //     })
-        //     .collect::<Result<Vec<_>, _>>()?;
-        //
-        // let vert_shader_desc = ShaderDescriptor {
-        //     label: Some("Triangle Vert"),
-        //     device,
-        //     spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name(
-        //         "triangle_push_constant.vert",
-        //     ),
-        //     entry_name: "main",
-        // };
-        // let vert_shader = Shader::new_vert(&vert_shader_desc)?;
-        // let frag_shader_desc = ShaderDescriptor {
-        //     label: Some("Triangle Frag"),
-        //     device,
-        //     spv_bytes: &Shader::load_pre_compiled_spv_bytes_from_name("triangle_uniform.frag"),
-        //     entry_name: "main",
-        // };
-        // let frag_shader = Shader::new_frag(&frag_shader_desc)?;
-        //
-        // let vertex_buffer_desc = StagingBufferDescriptor {
-        //     label: Some("Vertex Buffer"),
-        //     device,
-        //     allocator: desc.context.allocator.clone(),
-        //     elements: desc.model.vertices(),
-        //     command_buffer_allocator: &desc.command_buffer_allocator,
-        // };
-        // let vertex_buffer =
-        //     Buffer::new_buffer_copy_from_staging_buffer(&vertex_buffer_desc, BufferType::Vertex)?;
-        //
-        // let index_buffer_desc = StagingBufferDescriptor {
-        //     label: Some("Index Buffer"),
-        //     device,
-        //     allocator: desc.context.allocator.clone(),
-        //     elements: desc.model.indices(),
-        //     command_buffer_allocator: &desc.command_buffer_allocator,
-        // };
-        // let index_buffer =
-        //     Buffer::new_buffer_copy_from_staging_buffer(&index_buffer_desc, BufferType::Index)?;
-        //
-        // let uniform_buffer_desc = UniformBufferDescriptor {
-        //     label: Some("Uniform Buffer"),
-        //     device,
-        //     allocator: desc.context.allocator.clone(),
-        //     elements: &[Default::default()] as &[UniformBufferObject],
-        //     buffer_type: BufferType::Uniform,
-        //     command_buffer_allocator: &desc.command_buffer_allocator,
-        // };
-        // let uniform_buffers = swapchain_image_views
-        //     .iter()
-        //     .map(|_| Buffer::new_uniform_buffer(&uniform_buffer_desc))
-        //     .collect::<Result<Vec<_>, _>>()?;
-        //
-        // let descriptor_set_allocator = Rc::new(DescriptorSetAllocator::new(device, image_count)?);
-        //
-        // let descriptor_set_layouts = &[
-        //     descriptor_set_allocator.raw_per_frame_layout(),
-        //     descriptor_set_allocator.raw_texture_layout(),
-        // ];
-        //
-        // let shaders = &[vert_shader, frag_shader];
-        // let pipeline = Pipeline::new(
-        //     device,
-        //     render_pass.raw(),
-        //     desc.adapter.max_msaa_samples(),
-        //     descriptor_set_layouts,
-        //     shaders,
-        // )?;
-        //
-        // let command_buffers = desc
-        //     .command_buffer_allocator
-        //     .allocate_command_buffers(true, swapchain_image_views.len() as u32)?;
-        //
-        // let model_texture = desc.model.texture();
-        // let descriptor_sets_create_info = PerFrameDescriptorSetsCreateInfo {
-        //     uniform_buffers: &uniform_buffers,
-        //     texture_image_view: model_texture.raw_image_view(),
-        //     texture_sampler: model_texture.raw_sampler(),
-        // };
-        //
-        // let per_frame_descriptor_sets = descriptor_set_allocator
-        //     .allocate_per_frame_descriptor_sets(&descriptor_sets_create_info)?;
-        //
-        // // init renderer state
-        // let near_clip = 0.1f32;
-        // let far_clip = 1000.0f32;
-        // let view = math::look_at(
-        //     &vec3(2.0, 2.0, 2.0),
-        //     &vec3(0.0, 0.0, 0.0),
-        //     &vec3(0.0, 0.0, 1.0),
-        // );
-        // let projection = math::perspective_rh_zo(
-        //     extent.width as f32 / extent.height as f32,
-        //     math::radians(&math::vec1(90.0))[0],
-        //     // math::radians(&math::vec1(ui_state.fovy))[0],
-        //     near_clip,
-        //     far_clip,
-        // );
-        //
-        // let render_system_state = RenderSystemState {
-        //     projection,
-        //     view,
-        //     near_clip,
-        //     far_clip,
-        // };
+        let framebuffers = unsafe {
+            Self::create_framebuffers(
+                device,
+                desc.max_frames_in_flight,
+                render_pass.raw(),
+                &swapchain_image_views,
+                &[depth_texture.raw_image_view()],
+                [extent.width, extent.height],
+            )?
+        };
 
         let swapchain = Self {
             raw: swapchain,
             loader: swapchain_loader,
             instance: desc.context.instance.clone(),
             device: device.clone(),
+            render_pass,
+            framebuffers,
+            command_buffers,
             swapchain_images,
             image_views: swapchain_image_views,
             surface_format: properties.surface_format,
             extent,
             capabilities,
-            max_frame_in_flight: desc.max_frame_in_flight,
+            depth_texture,
+            max_frames_in_flight: desc.max_frames_in_flight,
+            semaphores,
+            fences,
+            image_index: 0,
         };
 
         Ok(swapchain)
@@ -316,7 +215,7 @@ impl Swapchain {
             context: &context,
             dimensions: [width, height],
             old_swapchain: None,
-            max_frame_in_flight: self.max_frame_in_flight,
+            max_frames_in_flight: self.max_frames_in_flight,
             queue_family: context.device.queue_family_indices(),
         };
         let (swapchain_loader, swapchain, properties, support, _) =
@@ -522,10 +421,6 @@ impl Swapchain {
     //     self.render_system_state.view = view;
     // }
     //
-    // pub fn update_submitted_command_buffer(&mut self, command_buffer_index: usize) {
-    //     let command_buffer = &mut self.command_buffers[command_buffer_index];
-    //     command_buffer.set_state(CommandBufferState::Submitted);
-    // }
 
     unsafe fn create_swapchain(
         desc: &SwapchainDescriptor,
@@ -556,7 +451,7 @@ impl Swapchain {
         } = properties;
 
         let mut image_count = swapchain_support.capabilities.min_image_count + 1;
-        image_count = image_count.max(desc.max_frame_in_flight);
+        image_count = image_count.max(desc.max_frames_in_flight);
         image_count = if swapchain_support.capabilities.max_image_count > 0 {
             image_count.min(swapchain_support.capabilities.max_image_count)
         } else {
@@ -624,59 +519,12 @@ impl Swapchain {
         ))
     }
 
-    pub unsafe fn create_framebuffer(
-        device: &Device,
-        map: &Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
-        desc: FramebufferDescriptor,
-    ) -> Result<vk::Framebuffer, DeviceError> {
-        use std::collections::hash_map::Entry;
-        Ok(match map.lock().entry(desc) {
-            Entry::Occupied(e) => *e.get(),
-            Entry::Vacant(e) => {
-                let desc = e.key();
-                let create_info = vk::FramebufferCreateInfo::builder()
-                    .render_pass(desc.render_pass)
-                    .attachments(&desc.texture_views)
-                    .width(desc.swapchain_extent.width)
-                    .height(desc.swapchain_extent.height)
-                    .layers(1)
-                    .build();
-                let framebuffer = unsafe { device.raw().create_framebuffer(&create_info, None)? };
-                e.insert(framebuffer);
-                framebuffer
-            }
-        })
-    }
-
-    pub unsafe fn acquire_next_image(
-        &self,
-        timeout: u64,
-        semaphore: &Semaphore,
-    ) -> Result<AcquiredImage, DeviceError> {
-        match unsafe {
-            self.loader
-                .acquire_next_image(self.raw, timeout, semaphore.raw, vk::Fence::null())
-        } {
-            Ok(pair) => Ok(AcquiredImage {
-                image_index: pair.0,
-                is_suboptimal: pair.1,
-            }),
-            Err(error) => match error {
-                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
-                    Err(DeviceError::Other("Out of Date"))
-                }
-                vk::Result::ERROR_SURFACE_LOST_KHR => Err(DeviceError::Other("Lost")),
-                other => Err(DeviceError::from(other)),
-            },
-        }
-    }
-
-    pub unsafe fn queue_present(
+    unsafe fn queue_present(
         &self,
         present_queue: vk::Queue,
         image_index: u32,
         wait_semaphores: &[vk::Semaphore],
-    ) -> Result<bool, DeviceError> {
+    ) -> Result<bool, SurfaceError> {
         let swapchains = &[self.raw];
         let indices = &[image_index];
         let present_info = vk::PresentInfoKHR::builder()
@@ -687,10 +535,10 @@ impl Swapchain {
             Ok(suboptimal) => Ok(suboptimal),
             Err(error) => match error {
                 vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
-                    Err(DeviceError::Other("Out Of Date"))
+                    Err(SurfaceError::OutOfDate)
                 }
-                vk::Result::ERROR_SURFACE_LOST_KHR => Err(DeviceError::Other("Lost")),
-                other => Err(DeviceError::from(other).into()),
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(SurfaceError::Lost),
+                other => Err(SurfaceError::from(other).into()),
             },
         }
     }
@@ -717,41 +565,38 @@ impl Swapchain {
             .expect("Failed to find suitable memory type!")
     }
 
-    // fn create_depth_objects(
-    //     desc: &SwapchainDescriptor,
-    //     extent: vk::Extent2D,
-    // ) -> Result<VulkanTexture, DeviceError> {
-    //     let depth_image_desc = DepthImageDescriptor {
-    //         device: desc.device,
-    //         instance: &desc.instance,
-    //         adapter: &desc.adapter,
-    //         allocator: desc.allocator.clone(),
-    //         width: extent.width,
-    //         height: extent.height,
-    //         command_buffer_allocator: &desc.command_buffer_allocator,
-    //     };
-    //     let depth_image = Image::new_depth_image(&depth_image_desc)?;
-    //
-    //     let depth_image_view = ImageView::new_depth_image_view(
-    //         Some("Depth Image View"),
-    //         desc.device,
-    //         depth_image.raw(),
-    //         depth_image.format(),
-    //     )?;
-    //
-    //     let texture_desc = VulkanTextureDescriptor {
-    //         adapter: &desc.adapter,
-    //         instance: &desc.instance,
-    //         device: desc.device,
-    //         command_buffer_allocator: &desc.command_buffer_allocator,
-    //         image: depth_image,
-    //         image_view: depth_image_view,
-    //         generate_mipmaps: false,
-    //     };
-    //     let texture = VulkanTexture::new(texture_desc)?;
-    //
-    //     Ok(texture)
-    // }
+    unsafe fn create_depth_objects(
+        desc: &SwapchainDescriptor,
+        extent: vk::Extent2D,
+    ) -> Result<VulkanTexture, DeviceError> {
+        let depth_image_desc = DepthImageDescriptor {
+            device: &desc.context.device,
+            instance: &desc.context.instance,
+            allocator: desc.context.allocator.clone(),
+            dimension: [extent.width, extent.height],
+        };
+        let depth_image = unsafe { Image::new_depth_image(&depth_image_desc)? };
+
+        let depth_image_view = unsafe {
+            ImageView::new_depth_image_view(
+                Some("Depth Image View"),
+                &desc.context.device,
+                depth_image.raw(),
+                depth_image.format(),
+            )?
+        };
+
+        let texture_desc = VulkanTextureDescriptor {
+            instance: &desc.context.instance,
+            device: &desc.context.device,
+            image: depth_image,
+            image_view: depth_image_view,
+            generate_mipmaps: false,
+        };
+        let texture = unsafe { VulkanTexture::new(texture_desc)? };
+
+        Ok(texture)
+    }
 
     unsafe fn create_color_objects(
         desc: &SwapchainDescriptor,
@@ -773,15 +618,17 @@ impl Swapchain {
             allocator: desc.context.allocator.clone(),
         };
 
-        let color_image = Image::new(&color_image_desc)?;
+        let color_image = unsafe { Image::new(&color_image_desc)? };
 
-        let color_image_view = ImageView::new_color_image_view(
-            Some("Color Image View"),
-            &desc.context.device,
-            color_image.raw(),
-            format,
-            1,
-        )?;
+        let color_image_view = unsafe {
+            ImageView::new_color_image_view(
+                Some("Color Image View"),
+                &desc.context.device,
+                color_image.raw(),
+                format,
+                1,
+            )?
+        };
 
         let texture_desc = VulkanTextureDescriptor {
             instance: &desc.context.instance,
@@ -793,6 +640,183 @@ impl Swapchain {
         let texture = unsafe { VulkanTexture::new(texture_desc)? };
 
         Ok(texture)
+    }
+
+    pub unsafe fn begin_frame(&mut self) -> Result<(), DeviceError> {
+        let in_flight_fence = self.fences[self.image_index as usize].raw;
+        let in_flight_fences = [in_flight_fence];
+        unsafe {
+            self.device
+                .raw()
+                .wait_for_fences(&in_flight_fences, true, u64::MAX)?;
+        };
+
+        let result = unsafe {
+            self.acquire_next_image(
+                u64::MAX,
+                &self.semaphores[self.image_index as usize].present,
+            )?
+        };
+
+        unsafe {
+            self.device.raw().reset_fences(&in_flight_fences)?;
+        }
+
+        self.image_index = result.image_index;
+        Ok(())
+    }
+
+    pub unsafe fn present(&mut self) -> Result<(), DeviceError> {
+        let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+
+        let wait_semaphores = &[self.semaphores[self.image_index as usize].present.raw];
+        let signal_semaphores = &[self.semaphores[self.image_index as usize].render.raw];
+
+        let command_buffer = &mut self.command_buffers[self.image_index as usize];
+        let command_buffers = [command_buffer.raw()];
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(wait_semaphores)
+            .wait_dst_stage_mask(wait_stages)
+            .command_buffers(&command_buffers)
+            .signal_semaphores(signal_semaphores)
+            .build();
+        let in_flight_fence = self.fences[self.image_index as usize].raw;
+        unsafe {
+            self.device.raw().queue_submit(
+                self.device.graphics_queue(),
+                &[submit_info],
+                in_flight_fence,
+            )?;
+        }
+
+        command_buffer.set_state(CommandBufferState::Submitted);
+
+        match self.queue_present(
+            self.device.present_queue(),
+            self.image_index,
+            signal_semaphores,
+        ) {
+            Ok(suboptimal) => suboptimal,
+            Err(SurfaceError::OutOfDate) => {
+                // self.resize()?;
+                return Ok(());
+            }
+            Err(e) => panic!("failed to acquire_next_image. Err: {}", e),
+        };
+        self.image_index = (self.image_index + 1) % self.max_frames_in_flight;
+
+        todo!()
+    }
+}
+
+impl Swapchain {
+    // unsafe fn create_framebuffer(
+    //     device: &Device,
+    //     map: &Mutex<fxhash::FxHashMap<FramebufferDescriptor, vk::Framebuffer>>,
+    //     desc: FramebufferDescriptor,
+    // ) -> Result<vk::Framebuffer, DeviceError> {
+    //     use std::collections::hash_map::Entry;
+    //     Ok(match map.lock().entry(desc) {
+    //         Entry::Occupied(e) => *e.get(),
+    //         Entry::Vacant(e) => {
+    //             let desc = e.key();
+    //             let create_info = vk::FramebufferCreateInfo::builder()
+    //                 .render_pass(desc.render_pass)
+    //                 .attachments(&desc.image_views)
+    //                 .width(desc.dimensions[0])
+    //                 .height(desc.dimensions[1])
+    //                 .layers(1)
+    //                 .build();
+    //             let framebuffer = unsafe { device.raw().create_framebuffer(&create_info, None)? };
+    //             e.insert(framebuffer);
+    //             framebuffer
+    //         }
+    //     })
+    // }
+
+    unsafe fn create_framebuffers(
+        device: &Arc<Device>,
+        frames_in_flight: u32,
+        render_pass: vk::RenderPass,
+        swapchain_image_views: &[ImageView],
+        other_image_views: &[vk::ImageView],
+        dimensions: [u32; 2],
+    ) -> Result<Vec<Framebuffer>, DeviceError> {
+        let mut framebuffers = Vec::with_capacity(frames_in_flight as usize);
+
+        for index in 0..frames_in_flight {
+            let mut image_views = Vec::with_capacity(other_image_views.len() + 1);
+            image_views.push(swapchain_image_views[index as usize].raw());
+            for other_image_view in other_image_views {
+                image_views.push(*other_image_view);
+            }
+
+            let desc = FramebufferDescriptor {
+                label: Some("Swapchain Framebuffer"),
+                render_pass,
+                image_views: &image_views,
+                render_area: Rect2D {
+                    x: 0.0,
+                    y: 0.0,
+                    width: dimensions[0] as f32,
+                    height: dimensions[1] as f32,
+                },
+                layers: 1,
+            };
+            let framebuffer = unsafe { Framebuffer::new(device, &desc)? };
+            framebuffers.push(framebuffer);
+        }
+
+        Ok(framebuffers)
+    }
+
+    unsafe fn create_semaphores_and_fences(
+        device: &Arc<Device>,
+        frames_in_flight: u32,
+    ) -> Result<(Vec<SwapchainSemaphore>, Vec<Fence>), DeviceError> {
+        let mut semaphores = vec![];
+        let mut in_flight_fences = vec![];
+        for _ in 0..frames_in_flight {
+            unsafe {
+                let swapchain_semaphore = SwapchainSemaphore {
+                    present: Semaphore::new(device)?,
+                    render: Semaphore::new(device)?,
+                };
+                semaphores.push(swapchain_semaphore);
+                in_flight_fences.push(Fence::new(device, Some(vk::FenceCreateFlags::SIGNALED))?);
+            }
+        }
+        Ok((semaphores, in_flight_fences))
+    }
+
+    unsafe fn acquire_next_image(
+        &self,
+        timeout: u64,
+        semaphore: &Semaphore,
+    ) -> Result<AcquiredImage, DeviceError> {
+        match unsafe {
+            self.loader
+                .acquire_next_image(self.raw, timeout, semaphore.raw, vk::Fence::null())
+        } {
+            Ok(pair) => Ok(AcquiredImage {
+                image_index: pair.0,
+                is_suboptimal: pair.1,
+            }),
+            Err(error) => match error {
+                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::NOT_READY => {
+                    Err(DeviceError::Other("Out of Date"))
+                }
+                vk::Result::ERROR_SURFACE_LOST_KHR => Err(DeviceError::Other("Lost")),
+                other => Err(DeviceError::from(other)),
+            },
+        }
+    }
+
+    unsafe fn create_draw_command_buffers(
+        device: &Arc<Device>,
+        frames_in_flight: u32,
+    ) -> Result<Vec<CommandBuffer>, DeviceError> {
+        unsafe { device.allocate_command_buffers(true, frames_in_flight) }
     }
 }
 

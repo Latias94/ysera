@@ -28,7 +28,10 @@ impl Framebuffer {
         self.raw
     }
 
-    pub fn new(device: &Arc<Device>, desc: &FramebufferDescriptor) -> Result<Self, DeviceError> {
+    pub unsafe fn new(
+        device: &Arc<Device>,
+        desc: &FramebufferDescriptor,
+    ) -> Result<Self, DeviceError> {
         let create_info = vk::FramebufferCreateInfo::builder()
             .render_pass(desc.render_pass)
             .attachments(&desc.image_views)

@@ -82,7 +82,7 @@ impl<R: RendererBase> BaseRenderer<R> {
             context: &context,
             dimensions: [inner_size.width, inner_size.height],
             old_swapchain: None,
-            max_frame_in_flight: config.max_frame_in_flight,
+            max_frames_in_flight: config.max_frame_in_flight,
             queue_family: context.device.queue_family_indices(),
         };
 
@@ -90,7 +90,7 @@ impl<R: RendererBase> BaseRenderer<R> {
         let command_buffers = unsafe {
             context
                 .device
-                .allocate_command_buffers(true, swapchain_desc.max_frame_in_flight)?
+                .allocate_command_buffers(true, swapchain_desc.max_frames_in_flight)?
         };
         let in_flight_frames =
             unsafe { InFlightFrames::new(&context, config.max_frame_in_flight)? };
@@ -126,10 +126,10 @@ impl<R: RendererBase> BaseRenderer<R> {
             self.in_flight_frames.fence().wait(None)?;
         }
 
-        let AcquiredImage { image_index, .. } = unsafe {
-            self.swapchain
-                .acquire_next_image(u64::MAX, self.in_flight_frames.image_available_semaphore())?
-        };
+        // let AcquiredImage { image_index, .. } = unsafe {
+        //     self.swapchain
+        //         .acquire_next_image(u64::MAX, self.in_flight_frames.image_available_semaphore())?
+        // };
         unsafe {
             self.in_flight_frames.fence().reset()?;
         }
@@ -144,8 +144,8 @@ impl<R: RendererBase> BaseRenderer<R> {
         // gui_context.platform.prepare_render(&ui, window);
         // let draw_data = gui_context.imgui.render();
 
-        base_app.update(self, image_index as usize, frame_stats.frame_time)?;
-        let command_buffer = &self.command_buffers[image_index as usize];
+        // base_app.update(self, image_index as usize, frame_stats.frame_time)?;
+        // let command_buffer = &self.command_buffers[image_index as usize];
 
         // self.context.device.submit(
         //     command_buffer,
@@ -161,13 +161,13 @@ impl<R: RendererBase> BaseRenderer<R> {
         // )?;
 
         let signal_semaphores = [self.in_flight_frames.render_finished_semaphore().raw];
-        let suboptimal = unsafe {
-            self.swapchain.queue_present(
-                self.context.device.present_queue(),
-                image_index as _,
-                &signal_semaphores,
-            )?
-        };
+        // let suboptimal = unsafe {
+        //     self.swapchain.queue_present(
+        //         self.context.device.present_queue(),
+        //         image_index as _,
+        //         &signal_semaphores,
+        //     )?
+        // };
 
         Ok(false)
     }

@@ -6,8 +6,6 @@ use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use typed_builder::TypedBuilder;
 
-use crate::types::ImageFormat;
-use crate::vulkan::adapter::Adapter;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::Instance;
 use crate::DeviceError;
@@ -42,8 +40,7 @@ pub struct ImageDescriptor<'a> {
 pub struct ColorImageDescriptor<'a> {
     pub device: &'a Arc<Device>,
     pub allocator: Arc<Mutex<Allocator>>,
-    pub width: u32,
-    pub height: u32,
+    pub dimension: [u32; 2],
     pub mip_levels: u32,
     pub format: vk::Format,
     pub samples: vk::SampleCountFlags,
@@ -54,10 +51,8 @@ pub struct ColorImageDescriptor<'a> {
 pub struct DepthImageDescriptor<'a> {
     pub device: &'a Arc<Device>,
     pub instance: &'a Instance,
-    pub adapter: &'a Adapter,
     pub allocator: Arc<Mutex<Allocator>>,
-    pub width: u32,
-    pub height: u32,
+    pub dimension: [u32; 2],
 }
 
 impl Image {
@@ -161,7 +156,7 @@ impl Image {
             device: desc.device,
             image_type: vk::ImageType::TYPE_2D,
             format: desc.format,
-            dimension: [desc.width, desc.height],
+            dimension: desc.dimension,
             mip_levels: desc.mip_levels,
             array_layers: 1,
             samples: desc.samples,
@@ -174,18 +169,20 @@ impl Image {
     }
 
     pub unsafe fn new_depth_image(desc: &DepthImageDescriptor) -> Result<Self, DeviceError> {
-        let depth_format = Image::get_depth_format(desc.instance.shared.raw(), desc.adapter.raw())?;
+        let adapter = desc.device.adapter();
+        let depth_format = Image::get_depth_format(desc.instance.shared.raw(), adapter.raw())?;
 
         let depth_image_desc = ImageDescriptor {
             device: desc.device,
             image_type: vk::ImageType::TYPE_2D,
             format: depth_format,
-            dimension: [desc.width, desc.height],
+            dimension: desc.dimension,
             mip_levels: 1,
             array_layers: 1,
-            samples: desc.adapter.max_msaa_samples(),
+            samples: adapter.max_msaa_samples(),
             tiling: vk::ImageTiling::OPTIMAL,
-            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                | vk::ImageUsageFlags::TRANSFER_SRC,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
             allocator: desc.allocator.clone(),
         };

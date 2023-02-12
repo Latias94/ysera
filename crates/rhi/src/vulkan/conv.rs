@@ -1,6 +1,5 @@
 use crate::types::{AttachmentLoadOp, AttachmentStoreOp, Color, ImageFormat};
 use ash::vk;
-use ash::vk::ClearDepthStencilValue;
 
 pub fn convert_rect2d(rect: math::Rect2D) -> vk::Rect2D {
     vk::Rect2D::builder()
@@ -25,7 +24,7 @@ pub fn convert_clear_color(color: Color) -> vk::ClearValue {
 
 pub fn convert_clear_depth_stencil(depth: f32, stencil: u32) -> vk::ClearValue {
     vk::ClearValue {
-        depth_stencil: ClearDepthStencilValue { depth, stencil },
+        depth_stencil: vk::ClearDepthStencilValue { depth, stencil },
     }
 }
 
@@ -35,6 +34,17 @@ impl ImageFormat {
             ImageFormat::Bgra8UnormSrgb => vk::Format::B8G8R8A8_UNORM,
             ImageFormat::Depth32Float => vk::Format::D32_SFLOAT,
             ImageFormat::Depth24Stencil8 => vk::Format::D24_UNORM_S8_UINT,
+        }
+    }
+}
+
+impl From<vk::Format> for ImageFormat {
+    fn from(value: vk::Format) -> Self {
+        match value {
+            vk::Format::B8G8R8A8_UNORM => ImageFormat::Bgra8UnormSrgb,
+            vk::Format::D32_SFLOAT => ImageFormat::Depth32Float,
+            vk::Format::D24_UNORM_S8_UINT => ImageFormat::Depth24Stencil8,
+            _ => ImageFormat::Bgra8UnormSrgb,
         }
     }
 }

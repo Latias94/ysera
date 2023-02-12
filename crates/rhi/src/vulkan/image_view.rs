@@ -50,11 +50,17 @@ impl ImageView {
         image: vk::Image,
         format: vk::Format,
     ) -> Result<ImageView, crate::DeviceError> {
+        let mut aspect_mask = vk::ImageAspectFlags::DEPTH;
+        let stencil_formats = vk::Format::D16_UNORM_S8_UINT..vk::Format::D32_SFLOAT_S8_UINT;
+        if stencil_formats.contains(&format) {
+            aspect_mask = aspect_mask | vk::ImageAspectFlags::STENCIL;
+        }
+
         let desc = ImageViewDescriptor {
             label,
             format,
             dimension: vk::ImageViewType::TYPE_2D,
-            aspect_mask: vk::ImageAspectFlags::DEPTH,
+            aspect_mask,
             mip_levels: 1,
         };
         unsafe { Self::new(device, image, &desc) }

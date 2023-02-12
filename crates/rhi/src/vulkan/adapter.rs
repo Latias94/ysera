@@ -25,7 +25,9 @@ impl Adapter {
     }
 
     pub fn max_msaa_samples(&self) -> vk::SampleCountFlags {
-        self.max_msaa_samples
+        // todo
+        // self.max_msaa_samples
+        vk::SampleCountFlags::TYPE_1
     }
 
     pub fn queue_family_indices(&self) -> QueueFamilyIndices {

@@ -31,7 +31,8 @@ pub enum SurfaceError {
     surface properties and recreate their swapchain if they wish to continue presenting to the surface.")]
     OutOfDate,
     #[error(transparent)]
-    Device(#[from] DeviceError),
+    #[cfg(all(feature = "vulkan"))]
+    Vulkan(#[from] ash::vk::Result),
     #[error("other reason: {0}")]
     Other(&'static str),
 }
