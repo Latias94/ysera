@@ -41,7 +41,7 @@ impl Framebuffer {
             .build();
         let raw = unsafe { device.raw().create_framebuffer(&create_info, None)? };
         if let Some(label) = desc.label {
-            unsafe { device.set_object_name(vk::ObjectType::RENDER_PASS, raw, label) };
+            unsafe { device.set_object_name(vk::ObjectType::FRAMEBUFFER, raw, label) };
         }
         Ok(Self {
             raw,

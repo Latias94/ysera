@@ -37,13 +37,19 @@ pub struct AdapterRequirements {
     pub discrete_gpu: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, TypedBuilder)]
 pub struct DeviceFeatures {
+    #[builder(default = false)]
     pub ray_tracing_pipeline: bool,
+    #[builder(default = false)]
     pub acceleration_structure: bool,
+    #[builder(default = false)]
     pub runtime_descriptor_array: bool,
+    #[builder(default = false)]
     pub buffer_device_address: bool,
+    #[builder(default = false)]
     pub dynamic_rendering: bool,
+    #[builder(default = true)]
     pub synchronization2: bool,
 }
 

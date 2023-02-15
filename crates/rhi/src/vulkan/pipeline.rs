@@ -79,9 +79,9 @@ impl Pipeline {
 
         let binding_descriptions = Vertex3D::get_binding_descriptions();
         let attribute_descriptions = Vertex3D::get_attribute_descriptions();
-        let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder()
-            .vertex_binding_descriptions(&binding_descriptions)
-            .vertex_attribute_descriptions(&attribute_descriptions);
+        let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder();
+        // .vertex_binding_descriptions(&binding_descriptions)
+        // .vertex_attribute_descriptions(&attribute_descriptions);
 
         let vertex_input_assembly_state_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
             // Normally, the vertices are loaded from the vertex buffer by index in sequential order,

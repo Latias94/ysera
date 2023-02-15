@@ -7,6 +7,7 @@ use crate::DeviceError;
 use anyhow::Result;
 use ash::vk;
 use imgui::Ui;
+use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::time::Duration;
 use typed_builder::TypedBuilder;
@@ -19,9 +20,9 @@ pub trait RendererBase: Sized {
 
     fn update(
         &mut self,
-        base: &BaseRenderer<Self>,
+        base: &mut BaseRenderer<Self>,
         // gui: &mut Self::Gui,
-        image_index: usize,
+        // image_index: usize,
         delta_time: Duration,
     ) -> Result<()>;
 
@@ -30,6 +31,8 @@ pub trait RendererBase: Sized {
     }
 
     fn on_recreate_swapchain(&mut self) -> Result<()>;
+
+    fn on_exit(&mut self, base: &mut BaseRenderer<Self>);
 }
 
 pub trait Gui: Sized {
@@ -56,14 +59,14 @@ pub struct RHIConfig<'a> {
 
 pub struct BaseRenderer<R: RendererBase> {
     _phantom: PhantomData<R>,
+    pub swapchain: RefCell<Swapchain>,
     pub context: Context,
-    pub swapchain: Swapchain,
     pub command_buffers: Vec<CommandBuffer>,
     in_flight_frames: InFlightFrames,
 }
 
 impl<R: RendererBase> BaseRenderer<R> {
-    fn new(window: &Window, config: RHIConfig) -> Result<Self> {
+    pub fn new(window: &Window, config: RHIConfig) -> Result<Self> {
         let required_extensions = vec!["VK_KHR_swapchain"];
 
         let context_desc = ContextDescriptor {
@@ -98,7 +101,7 @@ impl<R: RendererBase> BaseRenderer<R> {
         Ok(Self {
             _phantom: Default::default(),
             context,
-            swapchain,
+            swapchain: RefCell::new(swapchain),
             command_buffers,
             in_flight_frames,
         })
@@ -107,7 +110,9 @@ impl<R: RendererBase> BaseRenderer<R> {
     fn recreate_swapchain(&mut self, width: u32, height: u32) -> Result<()> {
         unsafe {
             self.context.device.raw().device_wait_idle()?;
-            self.swapchain.resize(&self.context, width, height)?;
+            self.swapchain
+                .borrow_mut()
+                .resize(&self.context, width, height)?;
         }
 
         Ok(())
@@ -180,8 +185,8 @@ impl<R: RendererBase> BaseRenderer<R> {
         // gui_renderer: &mut Renderer,
         // draw_data: &DrawData,
     ) -> Result<(), DeviceError> {
-        let swapchain_image = &self.swapchain.swapchain_images[image_index];
-        let swapchain_image_view = &self.swapchain.image_views[image_index];
+        // let swapchain_image = &self.swapchain.swapchain_images[image_index];
+        // let swapchain_image_view = &self.swapchain.image_views[image_index];
 
         todo!()
     }

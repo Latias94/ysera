@@ -70,7 +70,7 @@ impl RenderPass {
         for (i, attachment) in desc.attachments.iter().enumerate() {
             let mut attachment_description = vk::AttachmentDescription::builder()
                 .format(attachment.format.to_vk())
-                // .samples(desc.max_msaa_samples)
+                .samples(vk::SampleCountFlags::TYPE_1)
                 .load_op(attachment.load_op.to_vk())
                 .store_op(attachment.store_op.to_vk())
                 .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
@@ -84,7 +84,7 @@ impl RenderPass {
                     attachment_description
                         .initial_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
                         // 多采样图像不能直接显示。我们首先需要将它们解析为常规图像。此要求不适用于深度缓冲区，因为它不会在任何时候显示。
-                        .final_layout(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+                        .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
                 attachment_ref =
                     attachment_ref.layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
                 clear_values.insert(
@@ -97,7 +97,7 @@ impl RenderPass {
                 // todo Stencil not support yet
                 attachment_description = attachment_description
                     .initial_layout(vk::ImageLayout::UNDEFINED)
-                    .final_layout(vk::ImageLayout::READ_ONLY_OPTIMAL);
+                    .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
                 attachment_ref = attachment_ref.layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
                 clear_values.insert(i, conv::convert_clear_color(desc.clear_color));
                 color_attachment_refs.push(attachment_ref.build());
@@ -259,7 +259,11 @@ impl RenderPass {
     //     })
     // }
 
-    pub unsafe fn begin(&mut self, command_buffer: &CommandBuffer, framebuffer: vk::Framebuffer) {
+    pub unsafe fn begin(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        framebuffer: vk::Framebuffer,
+    ) {
         let begin_info = vk::RenderPassBeginInfo::builder()
             .render_pass(self.raw)
             .framebuffer(framebuffer)
@@ -268,7 +272,7 @@ impl RenderPass {
             .build();
         unsafe {
             self.device.raw().cmd_begin_render_pass(
-                command_buffer.raw(),
+                command_buffer,
                 &begin_info,
                 vk::SubpassContents::INLINE,
             );
@@ -276,9 +280,9 @@ impl RenderPass {
         self.state = InRenderPass;
     }
 
-    pub unsafe fn end(&mut self, command_buffer: &CommandBuffer) {
+    pub unsafe fn end(&mut self, command_buffer: vk::CommandBuffer) {
         unsafe {
-            self.device.raw().cmd_end_render_pass(command_buffer.raw());
+            self.device.raw().cmd_end_render_pass(command_buffer);
         }
         self.state = Recording;
     }

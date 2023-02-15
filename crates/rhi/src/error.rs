@@ -20,6 +20,8 @@ pub enum DeviceError {
     Allocator(#[from] gpu_allocator::AllocationError),
     #[error(transparent)]
     AnyOther(#[from] anyhow::Error),
+    #[error(transparent)]
+    SurfaceError(#[from] SurfaceError),
 }
 
 #[derive(Debug, Error)]

@@ -6,7 +6,6 @@ use parking_lot::Mutex;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
 use crate::types::{AdapterRequirements, DeviceFeatures, DeviceRequirements, InstanceDescriptor};
-use crate::vulkan::adapter::Adapter;
 use crate::vulkan::device::Device;
 use crate::vulkan::instance::{Instance, Surface};
 
@@ -40,6 +39,7 @@ impl Context {
         assert!(!adapters.is_empty());
 
         let adapter_requirements = AdapterRequirements::builder()
+            .extra_features(DeviceFeatures::builder().synchronization2(true).build())
             // .compute(true)
             .build();
         let device_requirements = DeviceRequirements::builder()

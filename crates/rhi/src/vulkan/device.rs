@@ -20,7 +20,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub(crate) fn raw(&self) -> &ash::Device {
+    pub fn raw(&self) -> &ash::Device {
         &self.raw
     }
 
@@ -101,7 +101,8 @@ impl Device {
 
         let physical_device_features = vk::PhysicalDeviceFeatures::builder()
             .sampler_anisotropy(adapter_req.sampler_anisotropy)
-            .sample_rate_shading(adapter_req.sample_rate_shading);
+            .sample_rate_shading(adapter_req.sample_rate_shading)
+            .build();
 
         let mut ray_tracing_feature = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::builder()
             .ray_tracing_pipeline(adapter_req.extra_features.ray_tracing_pipeline);
@@ -116,6 +117,7 @@ impl Device {
             .synchronization2(adapter_req.extra_features.synchronization2);
 
         let mut physical_device_features2 = vk::PhysicalDeviceFeatures2::builder()
+            .features(physical_device_features)
             .push_next(&mut ray_tracing_feature)
             .push_next(&mut acceleration_struct_feature)
             .push_next(&mut vulkan_12_features)
@@ -143,7 +145,6 @@ impl Device {
             .queue_create_infos(&queue_create_infos)
             .enabled_layer_names(&enable_layer_names)
             .enabled_extension_names(&device_extensions_ptrs)
-            .enabled_features(&physical_device_features)
             .push_next(&mut physical_device_features2);
 
         let ash_device: ash::Device =
@@ -402,6 +403,7 @@ impl Drop for Device {
             self.raw.destroy_command_pool(self.command_pool, None);
             self.wait_idle().unwrap();
             self.raw.destroy_device(None);
+            log::debug!("Device destroyed.");
         }
     }
 }

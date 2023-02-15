@@ -1,3 +1,4 @@
+use std::cell::{Ref, RefCell, RefMut};
 use std::sync::Arc;
 
 use ash::extensions::khr;
@@ -25,8 +26,8 @@ pub struct Swapchain {
     raw: vk::SwapchainKHR,
     loader: khr::Swapchain,
     context: Context,
-    command_buffers: Vec<CommandBuffer>,
-    render_pass: RenderPass,
+    command_buffers: Vec<RefCell<CommandBuffer>>,
+    render_pass: RefCell<RenderPass>,
     framebuffers: Vec<Framebuffer>,
     pub swapchain_images: Vec<vk::Image>,
     pub image_views: Vec<ImageView>,
@@ -92,7 +93,7 @@ impl Swapchain {
         self.extent
     }
 
-    pub fn render_pass(&self) -> &RenderPass {
+    pub fn render_pass(&self) -> &RefCell<RenderPass> {
         &self.render_pass
     }
 
@@ -100,7 +101,7 @@ impl Swapchain {
         self.image_index
     }
 
-    pub fn get_draw_command_buffer(&self, index: u32) -> &CommandBuffer {
+    pub fn get_draw_command_buffer(&self, index: u32) -> &RefCell<CommandBuffer> {
         &self.command_buffers[index as usize]
     }
 
@@ -140,7 +141,7 @@ impl Swapchain {
             raw: swapchain,
             loader: swapchain_loader,
             context: desc.context.clone(),
-            render_pass,
+            render_pass: RefCell::new(render_pass),
             framebuffers,
             command_buffers,
             swapchain_images,
@@ -197,7 +198,7 @@ impl Swapchain {
         self.raw = swapchain;
         self.loader = swapchain_loader;
         self.framebuffers = framebuffers;
-        self.render_pass = render_pass;
+        self.render_pass = RefCell::new(render_pass);
         self.capabilities = capabilities;
         self.depth_texture = depth_texture;
         self.swapchain_images = swapchain_images;
@@ -231,8 +232,6 @@ impl Swapchain {
         unsafe {
             self.context.device.raw().reset_fences(&in_flight_fences)?;
         }
-
-        self.image_index = result.image_index;
         Ok(())
     }
 
@@ -243,7 +242,7 @@ impl Swapchain {
         let signal_semaphores = &[self.semaphores[self.image_index as usize].render.raw];
 
         let command_buffer = &mut self.command_buffers[self.image_index as usize];
-        let command_buffers = [command_buffer.raw()];
+        let command_buffers = [command_buffer.borrow().raw()];
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
             .wait_dst_stage_mask(wait_stages)
@@ -258,7 +257,9 @@ impl Swapchain {
                 .queue_submit(device.graphics_queue(), &[submit_info], in_flight_fence)?;
         }
 
-        command_buffer.set_state(CommandBufferState::Submitted);
+        command_buffer
+            .borrow_mut()
+            .set_state(CommandBufferState::Submitted);
 
         match self.queue_present(device.present_queue(), self.image_index, signal_semaphores) {
             Ok(suboptimal) => suboptimal,
@@ -714,8 +715,10 @@ impl Swapchain {
     unsafe fn create_draw_command_buffers(
         device: &Arc<Device>,
         frames_in_flight: u32,
-    ) -> Result<Vec<CommandBuffer>, DeviceError> {
-        unsafe { device.allocate_command_buffers(true, frames_in_flight) }
+    ) -> Result<Vec<RefCell<CommandBuffer>>, DeviceError> {
+        let cbs = unsafe { device.allocate_command_buffers(true, frames_in_flight)? };
+        let result = cbs.into_iter().map(|x| RefCell::new(x)).collect();
+        Ok(result)
     }
 
     unsafe fn destroy_swapchain_recreate_objects(&mut self) {
@@ -852,12 +855,3 @@ impl SwapChainSupportDetail {
         }
     }
 }
-
-// cleanup manually
-// impl Drop for Swapchain {
-//     fn drop(&mut self) {
-//         unsafe {
-//             self.cleanup();
-//         }
-//     }
-// }
