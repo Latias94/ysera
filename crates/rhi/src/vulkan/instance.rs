@@ -50,7 +50,7 @@ impl Instance {
 
     pub unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, InstanceError> {
         #[cfg(not(target_os = "macos"))]
-        let vulkan_api_version = desc.vulkan_version;
+        let vulkan_api_version = vk::API_VERSION_1_3;
 
         #[cfg(target_os = "macos")]
         // https://github.com/KhronosGroup/MoltenVK/issues/1567
@@ -63,7 +63,7 @@ impl Instance {
         // let entry = ash_molten::linked();
 
         let app_name = CString::new(desc.name).unwrap();
-        let engine_name = CString::new("Eureka Engine").unwrap();
+        let engine_name = CString::new("Ysera Engine").unwrap();
         let app_info = vk::ApplicationInfo::builder()
             .application_version(vk::make_api_version(0, 1, 0, 0))
             .engine_version(vk::make_api_version(0, 1, 0, 0))

@@ -31,7 +31,7 @@ impl Context {
         let instance_desc = InstanceDescriptor::builder()
             // .flags(crate::vulkan::instance::InstanceFlags::empty())
             // .debug_level_filter(log::LevelFilter::Info)
-            .vulkan_version(desc.vulkan_version)
+            // .vulkan_version(desc.vulkan_version)
             .build();
         let instance = unsafe { Instance::init(&instance_desc)? };
         let surface = unsafe { instance.create_surface(desc.window_handle, desc.display_handle)? };

@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 /// Helper function to convert [c_char; SIZE] to string
-pub fn vk_to_string(raw_string_array: &[c_char]) -> String {
+pub fn c_char_to_string(raw_string_array: &[c_char]) -> String {
     // Implementation 1
     //    let end = '\0' as u8;
     //

@@ -25,4 +25,3 @@ pub mod shader;
 pub mod swapchain;
 pub mod sync;
 pub mod texture;
-pub mod utils;

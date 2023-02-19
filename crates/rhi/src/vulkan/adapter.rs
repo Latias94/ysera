@@ -3,10 +3,11 @@ use std::sync::Arc;
 use ash::vk;
 
 use crate::types::{AdapterRequirements, DeviceFeatures, QueueFamilyIndices};
+use crate::utils::c_char_to_string;
 use crate::vulkan::instance::InstanceShared;
 use crate::DeviceError;
 
-use super::{instance::Instance, instance::Surface, utils};
+use super::{instance::Instance, instance::Surface};
 
 pub struct Adapter {
     raw: vk::PhysicalDevice,
@@ -178,7 +179,7 @@ impl Adapter {
             vk::PhysicalDeviceType::OTHER => "Unknown",
             _ => panic!(),
         };
-        let device_name = utils::vk_to_string(&device_properties.device_name);
+        let device_name = c_char_to_string(&device_properties.device_name);
         log::debug!(
             "\tDevice Name: {}, id: {}, type: {}",
             device_name,
@@ -238,23 +239,6 @@ impl Adapter {
                 is_sparse_support
             );
         }
-        // there are plenty of features
-        log::debug!(
-            "\tGeometry Shader support: {}",
-            if device_features.geometry_shader == 1 {
-                "Support"
-            } else {
-                "Unsupport"
-            }
-        );
-        log::debug!(
-            "\tTessellation Shader support: {}",
-            if device_features.tessellation_shader == 1 {
-                "Support"
-            } else {
-                "Unsupport"
-            }
-        );
     }
 
     fn get_max_msaa_samples(

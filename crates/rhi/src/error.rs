@@ -64,3 +64,24 @@ pub enum InstanceError {
     #[cfg(all(feature = "dx12"))]
     Dx12Error(#[from] windows::core::Error),
 }
+
+#[derive(Debug, Error)]
+pub enum RHIError {
+    #[error("out of memory")]
+    OutOfMemory,
+    #[error("not support")]
+    NotSupport,
+    #[error("The logical or physical device has been lost")]
+    Lost,
+    #[error("The physical device not meet requirement")]
+    NotMeetRequirement,
+    #[error("other reason: {0}")]
+    Other(&'static str),
+    #[error(transparent)]
+    #[cfg(all(feature = "vulkan"))]
+    Vulkan(#[from] ash::vk::Result),
+    #[error("Allocation error: {0}")]
+    Allocator(#[from] gpu_allocator::AllocationError),
+    #[error(transparent)]
+    AnyOther(#[from] anyhow::Error),
+}

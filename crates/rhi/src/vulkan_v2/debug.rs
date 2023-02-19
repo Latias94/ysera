@@ -101,15 +101,15 @@ pub fn setup_debug_utils(
     entry: &ash::Entry,
     instance: &ash::Instance,
     min_level: vk::DebugUtilsMessageSeverityFlagsEXT,
-) -> Result<(ext::DebugUtils, vk::DebugUtilsMessengerEXT), crate::InstanceError> {
-    let debug_utils_loader = ash::extensions::ext::DebugUtils::new(entry, instance);
+) -> Result<(ext::DebugUtils, vk::DebugUtilsMessengerEXT), crate::RHIError> {
+    let debug_utils_loader = ext::DebugUtils::new(entry, instance);
 
     let messenger_ci = populate_debug_messenger_create_info(min_level);
 
     let utils_messenger = unsafe {
         debug_utils_loader
             .create_debug_utils_messenger(&messenger_ci, None)
-            .map_err(crate::InstanceError::VulkanError)?
+            .map_err(crate::RHIError::Vulkan)?
     };
     log::debug!(
         "Vulkan debug utils messenger created with log level: {:?}",

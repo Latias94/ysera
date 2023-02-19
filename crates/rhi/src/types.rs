@@ -252,8 +252,84 @@ pub struct InstanceDescriptor<'a> {
     pub flags: InstanceFlags,
     #[builder(default = log::LevelFilter::Warn)]
     pub debug_level_filter: log::LevelFilter,
-    #[builder(default = ash::vk::API_VERSION_1_3)]
-    pub vulkan_version: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdapterInfo {
+    /// Adapter name
+    pub name: String,
+    /// Vendor PCI id of the adapter
+    ///
+    /// If the vendor has no PCI id, then this value will be the backend's vendor id equivalent. On Vulkan,
+    /// Mesa would have a vendor id equivalent to it's `VkVendorId` value.
+    pub vendor: usize,
+    /// PCI id of the adapter
+    pub device: usize,
+    /// Type of device
+    pub device_type: DeviceType,
+    /// Driver name
+    pub driver: String,
+    /// Driver info
+    pub driver_info: String,
+    /// Backend used for device
+    pub backend: Backend,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Backend {
+    Empty = 0,
+    Vulkan = 1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeviceType {
+    /// Other or Unknown.
+    Other,
+    /// Integrated GPU with shared CPU/GPU memory.
+    IntegratedGpu,
+    /// Discrete GPU with separate CPU/GPU memory.
+    DiscreteGpu,
+    /// Virtual / Hosted.
+    VirtualGpu,
+    /// Cpu / Software Rendering.
+    Cpu,
+}
+
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Default)]
+    pub struct Features: u64 {
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SurfaceConfiguration {
+    /// Number of textures in the swap chain. Must be in
+    /// `SurfaceCapabilities::swap_chain_size` range.
+    pub swap_chain_size: u32,
+    /// Vertical synchronization mode.
+    pub present_mode: PresentMode,
+    /// Format of the surface textures.
+    pub format: ImageFormat,
+    pub extent: Extent3d,
+}
+
+/// Behavior of the presentation engine based on frame rate.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PresentMode {
+    AutoNoVsync = 1,
+    #[default]
+    Fifo = 2,
+    FifoRelaxed = 3,
+    Immediate = 4,
+    Mailbox = 5,
+}
+
+#[derive(Debug, Clone)]
+pub struct Extent3d {
+    pub width: u32,
+    pub height: u32,
+    pub depth_or_array_layers: u32,
 }
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -306,22 +382,6 @@ impl QueueFamilyIndices {
                 "transfer family indices is {}",
                 self.transfer_family.unwrap()
             );
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct Extent3d {
-    pub width: u32,
-    pub height: u32,
-    pub depth: u32,
-}
-impl Extent3d {
-    pub fn new(width: u32, height: u32, depth: u32) -> Self {
-        Self {
-            width,
-            height,
-            depth,
         }
     }
 }

@@ -2,11 +2,11 @@
 resolver = "2"
 members = [
     "crates/rhi",
-    "crates/engine",
+#    "crates/engine",
     "crates/math",
     "crates/imgui",
-    "crates/playground",
-    "crates/renderer",
+#    "crates/playground",
+#    "crates/renderer",
 ]
 
 [workspace.package]
@@ -15,7 +15,7 @@ rust-version = "1.65"
 
 [workspace.dependencies]
 math = { package = "ysera-math", path = "crates/math" }
-engine = { package = "ysera-engine", path = "crates/engine" }
+#engine = { package = "ysera-engine", path = "crates/engine" }
 rhi = { package = "ysera-rhi", path = "crates/rhi" }
 renderer = { package = "ysera-renderer", path = "crates/renderer" }
 ysera-imgui = { package = "ysera-imgui", path = "crates/imgui" }
