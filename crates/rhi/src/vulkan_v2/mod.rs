@@ -5,7 +5,7 @@ pub mod utils;
 
 use crate::types_v2::{
     DeviceFeatures, DeviceRequirement, PhysicalDeviceRequirements, QueueFamilyIndices,
-    RHICommandPoolCreateInfo, RHIFormat,
+    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIFormat,
 };
 use crate::types_v2::{
     InstanceDescriptor, InstanceFlags, RHIExtent2D, RHIOffset2D, RHIRect2D, RHIViewport,
@@ -16,7 +16,9 @@ use crate::vulkan_v2::debug::DebugUtils;
 use crate::{CommandBufferAllocateInfo, InitInfo, RHIError};
 use ash::extensions::{ext, khr};
 use ash::vk;
+use gpu_allocator::vulkan::{Allocation, Allocator, AllocatorCreateDesc};
 use log::LevelFilter;
+use parking_lot::Mutex;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
@@ -36,28 +38,35 @@ pub struct VulkanRHI {
     surface: vk::SurfaceKHR,
     surface_loader: khr::Surface,
 
+    // physical_device
     physical_device_requirement: PhysicalDeviceRequirements,
     physical_device: vk::PhysicalDevice,
     max_msaa_samples: vk::SampleCountFlags,
     physical_device_properties: vk::PhysicalDeviceProperties,
     physical_device_features: vk::PhysicalDeviceFeatures,
+
+    // device
     device_features: DeviceFeatures,
     queue_family_indices: QueueFamilyIndices,
-
     device_requirement: DeviceRequirement,
     device: ash::Device,
+    allocator: Mutex<Allocator>,
+
+    // queue
     graphics_queue: VulkanQueue,
     present_queue: VulkanQueue,
     compute_queue: VulkanQueue,
-    depth_image_format: vk::Format,
+    depth_image_format: RHIFormat,
     command_pool: VulkanCommandPool,
     command_pools: Vec<VulkanCommandPool>,
+    current_command_buffer: VulkanCommandBuffer,
+    command_buffers: Vec<VulkanCommandBuffer>,
     max_material_count: u32,
     descriptor_pool: VulkanDescriptorPool,
-    image_available_for_render_semaphores: Vec<VulkanSemaphore>,
-    image_finished_for_presentation_semaphores: Vec<VulkanSemaphore>,
-    image_available_for_textures_copy_semaphores: Vec<VulkanSemaphore>,
-    frame_in_flight_fences: Vec<VulkanFence>,
+    image_available_for_render_semaphores: Vec<vk::Semaphore>,
+    image_finished_for_presentation_semaphores: Vec<vk::Semaphore>,
+    image_available_for_textures_copy_semaphores: Vec<vk::Semaphore>,
+    frame_in_flight_fences: Vec<vk::Fence>,
 
     // swapchain
     swapchain: vk::SwapchainKHR,
@@ -66,6 +75,11 @@ pub struct VulkanRHI {
     surface_format: RHIFormat,
     swapchain_extent: RHIExtent2D,
     swapchain_image_views: Vec<VulkanImageView>,
+
+    depth_image: VulkanImage,
+    depth_image_allocation: Option<Allocation>,
+    depth_image_view: VulkanImageView,
+    current_frame_index: usize,
 }
 
 const MAX_FRAME_IN_FLIGHT: u8 = 3;
@@ -74,6 +88,7 @@ pub struct VulkanCommandPool {
     raw: vk::CommandPool,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanCommandBuffer {
     raw: vk::CommandBuffer,
 }
@@ -86,12 +101,8 @@ pub struct VulkanDescriptorPool {
     raw: vk::DescriptorPool,
 }
 
-pub struct VulkanFence {
-    raw: vk::Fence,
-}
-
-pub struct VulkanSemaphore {
-    raw: vk::Semaphore,
+pub struct VulkanImage {
+    raw: vk::Image,
 }
 
 pub struct VulkanImageView {
@@ -102,31 +113,32 @@ impl crate::RHI for VulkanRHI {
     type CommandPool = VulkanCommandPool;
     type CommandBuffer = VulkanCommandBuffer;
 
-    fn initialize(init_info: InitInfo) -> Result<Self, RHIError> {
-        let window = init_info.window;
-        let size = window.inner_size();
+    unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError> {
         let viewport = RHIViewport {
             x: 0.0,
             y: 0.0,
-            width: size.width as f32,
-            height: size.height as f32,
+            width: init_info.window_size.width as f32,
+            height: init_info.window_size.height as f32,
             min_depth: 0.0,
             max_depth: 1.0,
         };
 
         let mut scissor = RHIRect2D {
             offset: RHIOffset2D { x: 0, y: 0 },
-            extent: RHIExtent2D {
-                width: size.width,
-                height: size.height,
-            },
+            extent: init_info.window_size,
         };
 
         let instance_desc = InstanceDescriptor::builder().build();
         let (entry, instance, debug_utils) = unsafe { VulkanRHI::create_instance(&instance_desc)? };
 
-        let (surface, surface_loader) =
-            unsafe { VulkanRHI::create_surface(&entry, &instance, window, window)? };
+        let (surface, surface_loader) = unsafe {
+            VulkanRHI::create_surface(
+                &entry,
+                &instance,
+                init_info.window_handle,
+                init_info.display_handle,
+            )?
+        };
 
         let physical_device_requirement = PhysicalDeviceRequirements::builder().build();
         let (
@@ -158,8 +170,15 @@ impl crate::RHI for VulkanRHI {
                 &instance_desc.flags,
             )?
         };
+
+        let allocator = VulkanRHI::create_allocator(&device, &instance, physical_device)?;
+
         let (command_pool, command_pools) = unsafe {
             VulkanRHI::create_command_pool(&device, &queue_family_indices, MAX_FRAME_IN_FLIGHT)?
+        };
+
+        let command_buffers = unsafe {
+            VulkanRHI::create_command_buffers(&device, command_pool.raw, MAX_FRAME_IN_FLIGHT)?
         };
 
         let max_material_count = 256;
@@ -174,6 +193,7 @@ impl crate::RHI for VulkanRHI {
             image_available_for_textures_copy_semaphores,
             frame_in_flight_fences,
         ) = unsafe { VulkanRHI::create_sync_objects(&device, MAX_FRAME_IN_FLIGHT)? };
+
         let (swapchain, swapchain_loader, swapchain_images, surface_format, swapchain_extent) = unsafe {
             VulkanRHI::create_swapchain(
                 &device,
@@ -182,13 +202,9 @@ impl crate::RHI for VulkanRHI {
                 surface,
                 physical_device,
                 queue_family_indices,
-                [size.width, size.height],
+                init_info.window_size,
                 MAX_FRAME_IN_FLIGHT,
             )?
-        };
-
-        let swapchain_image_views = unsafe {
-            VulkanRHI::create_swapchain_image_views(&device, &swapchain_images, surface_format)?
         };
 
         scissor = RHIRect2D {
@@ -197,6 +213,19 @@ impl crate::RHI for VulkanRHI {
                 width: swapchain_extent.width,
                 height: swapchain_extent.height,
             },
+        };
+
+        let swapchain_image_views = unsafe {
+            VulkanRHI::create_swapchain_image_views(&device, &swapchain_images, surface_format)?
+        };
+
+        let (depth_image, depth_image_allocation, depth_image_view) = unsafe {
+            VulkanRHI::create_framebuffer_images_and_image_views(
+                &device,
+                &allocator,
+                depth_image_format,
+                swapchain_extent,
+            )?
         };
 
         Ok(Self {
@@ -216,12 +245,15 @@ impl crate::RHI for VulkanRHI {
             queue_family_indices,
             device_requirement,
             device,
+            allocator,
             graphics_queue,
             present_queue,
             compute_queue,
             depth_image_format,
             command_pool,
             command_pools,
+            current_command_buffer: command_buffers[0],
+            command_buffers,
             max_material_count,
             descriptor_pool,
             image_available_for_render_semaphores,
@@ -234,18 +266,108 @@ impl crate::RHI for VulkanRHI {
             surface_format,
             swapchain_extent,
             swapchain_image_views,
+            depth_image,
+            depth_image_allocation,
+            depth_image_view,
+            current_frame_index: 0,
         })
     }
 
-    fn prepare_context() {
-        todo!()
+    fn prepare_context(&mut self) {
+        self.current_command_buffer = self.command_buffers[self.current_frame_index];
     }
 
-    fn allocate_command_buffers(
+    unsafe fn recreate_swapchain(&mut self, size: RHIExtent2D) -> Result<(), RHIError> {
+        unsafe {
+            self.device
+                .wait_for_fences(&self.frame_in_flight_fences, true, u64::MAX)?;
+            self.device
+                .destroy_image_view(self.depth_image_view.raw, None);
+            self.device.destroy_image(self.depth_image.raw, None);
+            if let Some(allocation) = self.depth_image_allocation.take() {
+                self.allocator.lock().free(allocation)?;
+            }
+            for image_view in &self.swapchain_image_views {
+                self.device.destroy_image_view(image_view.raw, None);
+            }
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None);
+            let (swapchain, swapchain_loader, swapchain_images, surface_format, swapchain_extent) = unsafe {
+                VulkanRHI::create_swapchain(
+                    &self.device,
+                    &self.instance,
+                    &self.surface_loader,
+                    self.surface,
+                    self.physical_device,
+                    self.queue_family_indices,
+                    size,
+                    MAX_FRAME_IN_FLIGHT,
+                )?
+            };
+            self.swapchain = swapchain;
+            self.swapchain_loader = swapchain_loader;
+            self.swapchain_images = swapchain_images;
+            self.surface_format = surface_format;
+            self.swapchain_extent = swapchain_extent;
+            self.scissor = RHIRect2D {
+                offset: RHIOffset2D { x: 0, y: 0 },
+                extent: RHIExtent2D {
+                    width: swapchain_extent.width,
+                    height: swapchain_extent.height,
+                },
+            };
+
+            let swapchain_image_views = VulkanRHI::create_swapchain_image_views(
+                &self.device,
+                &self.swapchain_images,
+                surface_format,
+            )?;
+            self.swapchain_image_views = swapchain_image_views;
+
+            let (depth_image, depth_image_allocation, depth_image_view) =
+                VulkanRHI::create_framebuffer_images_and_image_views(
+                    &self.device,
+                    &self.allocator,
+                    self.depth_image_format,
+                    swapchain_extent,
+                )?;
+            self.depth_image = depth_image;
+            self.depth_image_allocation = depth_image_allocation;
+            self.depth_image_view = depth_image_view;
+        }
+        Ok(())
+    }
+
+    unsafe fn wait_for_fences(&mut self) -> Result<(), RHIError> {
+        unsafe {
+            self.device.wait_for_fences(
+                &[self.frame_in_flight_fences[self.current_frame_index]],
+                true,
+                u64::MAX,
+            )?
+        };
+        Ok(())
+    }
+
+    unsafe fn allocate_command_buffers(
         &self,
         allocate_info: CommandBufferAllocateInfo<Self>,
-    ) -> Result<CommandBuffer, RHIError> {
-        todo!()
+    ) -> Result<Vec<CommandBuffer>, RHIError> {
+        let level = match allocate_info.level {
+            RHICommandBufferLevel::PRIMARY => vk::CommandBufferLevel::PRIMARY,
+            RHICommandBufferLevel::SECONDARY => vk::CommandBufferLevel::SECONDARY,
+        };
+        let create_info = vk::CommandBufferAllocateInfo::builder()
+            .command_pool(self.command_pool.raw)
+            .level(level)
+            .command_buffer_count(allocate_info.count)
+            .build();
+
+        let command_buffers = unsafe { self.device.allocate_command_buffers(&create_info)? };
+        Ok(command_buffers
+            .iter()
+            .map(|x| CommandBuffer::new(*x))
+            .collect())
     }
 
     fn create_command_pool(
@@ -259,6 +381,18 @@ impl crate::RHI for VulkanRHI {
             .build();
         let raw = unsafe { self.device.create_command_pool(&create_info, None)? };
         Ok(VulkanCommandPool { raw })
+    }
+
+    unsafe fn clear(&mut self) {
+        if let Some(DebugUtils {
+            extension,
+            messenger,
+        }) = self.debug_utils.take()
+        {
+            unsafe {
+                extension.destroy_debug_utils_messenger(messenger, None);
+            }
+        }
     }
 }
 
@@ -287,17 +421,22 @@ impl VulkanRHI {
             .application_name(app_name.as_c_str())
             .engine_name(engine_name.as_c_str())
             .api_version(vulkan_api_version);
-        let enable_validation = desc.flags.contains(InstanceFlags::VALIDATION);
+        let mut enable_validation = desc.flags.contains(InstanceFlags::VALIDATION);
         let mut required_layers = vec![];
         if enable_validation {
-            required_layers.push("VK_LAYER_KHRONOS_validation");
+            if debug::check_validation_layer_support(&entry, required_layers.as_slice()) {
+                required_layers.push("VK_LAYER_KHRONOS_validation");
+            } else {
+                enable_validation = false;
+                log::error!("Validation layers requested, but not available!");
+            }
         }
-        let enable_debug = desc.flags.contains(InstanceFlags::DEBUG);
-        if enable_validation
-            && !debug::check_validation_layer_support(&entry, required_layers.as_slice())
-        {
-            log::error!("Validation layers requested, but not available!");
-        }
+
+        let enable_debug = if enable_validation {
+            desc.flags.contains(InstanceFlags::DEBUG)
+        } else {
+            false
+        };
 
         let required_layer_raw_names: Vec<CString> = required_layers
             .iter()
@@ -506,7 +645,7 @@ impl VulkanRHI {
             VulkanQueue,
             VulkanQueue,
             VulkanQueue,
-            vk::Format,
+            RHIFormat,
         ),
         RHIError,
     > {
@@ -629,8 +768,25 @@ impl VulkanRHI {
             },
             VulkanQueue { raw: present_queue },
             VulkanQueue { raw: compute_queue },
-            depth_image_format,
+            depth_image_format.into(),
         ))
+    }
+
+    fn create_allocator(
+        device: &ash::Device,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+    ) -> Result<Mutex<Allocator>, RHIError> {
+        let allocator = Allocator::new(&AllocatorCreateDesc {
+            instance: instance.clone(),
+            device: device.clone(),
+            physical_device,
+            debug_settings: Default::default(),
+            // check https://stackoverflow.com/questions/73341075/rust-gpu-allocator-bufferdeviceaddress-must-be-enabbled
+            buffer_device_address: false,
+        })?;
+
+        Ok(Mutex::new(allocator))
     }
 
     unsafe fn create_command_pool(
@@ -709,10 +865,10 @@ impl VulkanRHI {
         max_frames_in_flight: u8,
     ) -> Result<
         (
-            Vec<VulkanSemaphore>,
-            Vec<VulkanSemaphore>,
-            Vec<VulkanSemaphore>,
-            Vec<VulkanFence>,
+            Vec<vk::Semaphore>,
+            Vec<vk::Semaphore>,
+            Vec<vk::Semaphore>,
+            Vec<vk::Fence>,
         ),
         RHIError,
     > {
@@ -728,18 +884,13 @@ impl VulkanRHI {
         let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
         for _ in 0..max_frames_in_flight {
             unsafe {
-                image_available_for_render_semaphores.push(VulkanSemaphore {
-                    raw: device.create_semaphore(&semaphore_create_info, None)?,
-                });
-                image_finished_for_presentation_semaphores.push(VulkanSemaphore {
-                    raw: device.create_semaphore(&semaphore_create_info, None)?,
-                });
-                image_available_for_textures_copy_semaphores.push(VulkanSemaphore {
-                    raw: device.create_semaphore(&semaphore_create_info, None)?,
-                });
-                frame_in_flight_fences.push(VulkanFence {
-                    raw: device.create_fence(&fence_info, None)?,
-                });
+                image_available_for_render_semaphores
+                    .push(device.create_semaphore(&semaphore_create_info, None)?);
+                image_finished_for_presentation_semaphores
+                    .push(device.create_semaphore(&semaphore_create_info, None)?);
+                image_available_for_textures_copy_semaphores
+                    .push(device.create_semaphore(&semaphore_create_info, None)?);
+                frame_in_flight_fences.push(device.create_fence(&fence_info, None)?);
             }
         }
         Ok((
@@ -757,7 +908,7 @@ impl VulkanRHI {
         surface: vk::SurfaceKHR,
         physical_device: vk::PhysicalDevice,
         indices: QueueFamilyIndices,
-        preferred_dimensions: [u32; 2],
+        preferred_dimensions: RHIExtent2D,
         max_frames_in_flight: u8,
     ) -> Result<
         (
@@ -852,7 +1003,7 @@ impl VulkanRHI {
         let mut image_views = Vec::with_capacity(images.len());
         for image in images {
             let raw = unsafe {
-                utils::create_image_views(
+                utils::create_image_view(
                     device,
                     *image,
                     surface_format.to_vk(),
@@ -865,6 +1016,45 @@ impl VulkanRHI {
             image_views.push(VulkanImageView { raw })
         }
         Ok(image_views)
+    }
+
+    unsafe fn create_framebuffer_images_and_image_views(
+        device: &ash::Device,
+        allocator: &Mutex<Allocator>,
+        depth_format: RHIFormat,
+        swapchain_extent: RHIExtent2D,
+    ) -> Result<(VulkanImage, Option<Allocation>, VulkanImageView), RHIError> {
+        let (image, allocation) = unsafe {
+            utils::create_image(
+                device,
+                allocator,
+                swapchain_extent,
+                depth_format.to_vk(),
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::INPUT_ATTACHMENT
+                    | vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                    | vk::ImageUsageFlags::TRANSFER_SRC,
+                vk::ImageCreateFlags::empty(),
+                1,
+                1,
+            )?
+        };
+
+        let image_view = unsafe {
+            utils::create_image_view(
+                device,
+                image,
+                depth_format.to_vk(),
+                vk::ImageAspectFlags::DEPTH,
+                vk::ImageViewType::TYPE_2D,
+                1,
+                1,
+            )?
+        };
+        let image = VulkanImage { raw: image };
+        let image_view = VulkanImageView { raw: image_view };
+
+        Ok((image, allocation, image_view))
     }
 }
 
@@ -1160,7 +1350,7 @@ impl SwapChainSupportDetail {
 
     fn get_ideal_swapchain_properties(
         &self,
-        preferred_dimensions: [u32; 2],
+        preferred_dimensions: RHIExtent2D,
     ) -> SwapchainProperties {
         let format = Self::choose_swapchain_format(&self.surface_formats);
         let present_mode = Self::choose_swapchain_present_mode(&self.present_modes);
@@ -1215,14 +1405,14 @@ impl SwapChainSupportDetail {
 
     fn choose_swapchain_extent(
         capabilities: &vk::SurfaceCapabilitiesKHR,
-        preferred_dimensions: [u32; 2],
+        preferred_dimensions: RHIExtent2D,
     ) -> vk::Extent2D {
         if capabilities.current_extent.width != u32::MAX {
             capabilities.current_extent
         } else {
             use num::clamp;
-            let width = preferred_dimensions[0];
-            let height = preferred_dimensions[1];
+            let width = preferred_dimensions.width;
+            let height = preferred_dimensions.height;
             log::debug!("\t\tInner Window Size: ({}, {})", width, height);
             vk::Extent2D {
                 width: clamp(

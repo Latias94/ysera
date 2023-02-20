@@ -6,6 +6,7 @@ use gpu_allocator::vulkan::{Allocation, Allocator};
 use parking_lot::Mutex;
 
 use math::{Mat4, Rect2D};
+use ysera_rhi::types_v2::RHIExtent2D;
 use ysera_rhi::vulkan::base_renderer::{BaseRenderer, RHIConfig, RendererBase};
 use ysera_rhi::vulkan_v2::VulkanRHI;
 use ysera_rhi::{InitInfo, RHI};
@@ -18,9 +19,17 @@ struct Sandbox {
 
 impl Sandbox {
     fn new(window: &winit::window::Window) -> anyhow::Result<Self> {
-        let init_info = InitInfo { window };
+        let window_size = window.inner_size();
+        let init_info = InitInfo {
+            window_size: RHIExtent2D {
+                width: window_size.width,
+                height: window_size.height,
+            },
+            window_handle: &window,
+            display_handle: &window,
+        };
 
-        let rhi = Api::initialize(init_info)?;
+        let rhi = unsafe { Api::initialize(init_info)? };
 
         Ok(Self { rhi })
     }
