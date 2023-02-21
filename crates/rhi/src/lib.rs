@@ -8,7 +8,9 @@ pub use ash;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 pub use winit;
 
-use crate::types_v2::{RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIExtent2D};
+use crate::types_v2::{
+    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIExtent2D, RHIRenderPassCreateInfo,
+};
 use crate::vulkan::command_buffer::CommandBuffer;
 pub use error::*;
 use winit::window::Window as WinitWindow;
@@ -26,21 +28,28 @@ const MAX_FRAMES_IN_FLIGHT: usize = 2;
 pub trait RHI: Sized {
     type CommandPool;
     type CommandBuffer;
+    type RenderPass;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError>;
-    fn prepare_context(&mut self);
+    unsafe fn prepare_context(&mut self);
     unsafe fn recreate_swapchain(&mut self, size: RHIExtent2D) -> Result<(), RHIError>;
     unsafe fn wait_for_fences(&mut self) -> Result<(), RHIError>;
+    unsafe fn prepare_before_render_pass(&mut self) -> Result<bool, RHIError>;
 
     unsafe fn allocate_command_buffers(
         &self,
         allocate_info: CommandBufferAllocateInfo<Self>,
     ) -> Result<Vec<CommandBuffer>, RHIError>;
 
-    fn create_command_pool(
+    unsafe fn create_command_pool(
         &self,
         create_info: &RHICommandPoolCreateInfo,
     ) -> Result<Self::CommandPool, RHIError>;
+
+    unsafe fn create_render_pass(
+        &self,
+        create_info: &RHIRenderPassCreateInfo,
+    ) -> Result<Self::RenderPass, RHIError>;
 
     unsafe fn clear(&mut self);
 }

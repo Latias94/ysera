@@ -1,3 +1,5 @@
+#![allow(non_camel_case_types)]
+
 use bitflags::bitflags;
 use typed_builder::TypedBuilder;
 
@@ -6,7 +8,6 @@ pub enum RHICommandBufferLevel {
     SECONDARY,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkFormat.html>"]
 pub enum RHIFormat {
@@ -252,6 +253,240 @@ bitflags! {
         const TRANSIENT = 1 << 0;
         #[doc = "Command buffers may release their memory individually"]
         const RESET_COMMAND_BUFFER = 1 << 1;
+    }
+}
+
+#[derive(Copy, Clone)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkRenderPassCreateInfo.html>"]
+pub struct RHIRenderPassCreateInfo<'a> {
+    pub flags: RHIRenderPassCreateFlags,
+    pub attachments: &'a [RHIAttachmentDescription],
+    pub subpasses: &'a [RHISubpassDescription<'a>],
+    pub dependencies: &'a [RHISubpassDependency],
+}
+
+#[derive(Copy, Clone)]
+pub struct RHIAttachmentDescription {
+    pub flags: RHIAttachmentDescriptionFlags,
+    pub format: RHIFormat,
+    pub samples: RHISampleCountFlagBits,
+    pub load_op: RHIAttachmentLoadOp,
+    pub store_op: RHIAttachmentStoreOp,
+    pub stecil_load_op: RHIAttachmentLoadOp,
+    pub stecil_store_op: RHIAttachmentStoreOp,
+    pub initial_layout: RHIImageLayout,
+    pub final_layout: RHIImageLayout,
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSampleCountFlagBits.html>"]
+pub enum RHISampleCountFlagBits {
+    TYPE_1 = 1 << 0,
+    TYPE_2 = 1 << 1,
+    TYPE_4 = 1 << 2,
+    TYPE_8 = 1 << 3,
+    TYPE_16 = 1 << 4,
+    TYPE_32 = 1 << 5,
+    TYPE_64 = 1 << 6,
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkImageTiling.html>"]
+pub enum RHIImageTiling {
+    OPTIMAL = 0,
+    LINEAR = 1,
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkImageType.html>"]
+pub enum RHIAttachmentLoadOp {
+    LOAD = 0,
+    CLEAR = 1,
+    DONT_CARE = 2,
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAttachmentStoreOp.html>"]
+pub enum RHIAttachmentStoreOp {
+    STORE = 0,
+    DONT_CARE = 1,
+}
+
+#[derive(
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkImageLayout.html>"]
+pub enum RHIImageLayout {
+    #[default]
+    #[doc = "Implicit layout an image is when its contents are undefined due to various reasons (e.g. right after creation)"]
+    UNDEFINED = 0,
+    #[doc = "General layout when image can be used for any kind of access"]
+    GENERAL = 1,
+    #[doc = "Optimal layout when image is only used for color attachment read/write"]
+    COLOR_ATTACHMENT_OPTIMAL = 2,
+    #[doc = "Optimal layout when image is only used for depth/stencil attachment read/write"]
+    DEPTH_STENCIL_ATTACHMENT_OPTIMAL = 3,
+    #[doc = "Optimal layout when image is used for read only depth/stencil attachment and shader access"]
+    DEPTH_STENCIL_READ_ONLY_OPTIMAL = 4,
+    #[doc = "Optimal layout when image is used for read only shader access"]
+    SHADER_READ_ONLY_OPTIMAL = 5,
+    #[doc = "Optimal layout when image is used only as source of transfer operations"]
+    TRANSFER_SRC_OPTIMAL = 6,
+    #[doc = "Optimal layout when image is used only as destination of transfer operations"]
+    TRANSFER_DST_OPTIMAL = 7,
+    #[doc = "Initial layout used when the data is populated by the CPU"]
+    PREINITIALIZED = 8,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAttachmentDescriptionFlagBits.html>"]
+    pub struct RHIAttachmentDescriptionFlags: u16 {
+        #[doc = "The attachment may alias physical memory of another attachment in the same render pass"]
+        const MAY_ALIAS = 1 << 0;
+    }
+}
+
+#[derive(Copy, Clone)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSubpassDescription.html>"]
+pub struct RHISubpassDescription<'a> {
+    pub flags: RHISubpassDescriptionFlags,
+    pub pipeline_bind_point: RHIPipelineBindPoint,
+    pub input_attachments: &'a [RHIAttachmentReference],
+    pub color_attachments: &'a [RHIAttachmentReference],
+    pub resolve_attachments: &'a [RHIAttachmentReference],
+    pub depth_stencil_attachment: RHIAttachmentReference,
+}
+
+#[derive(Copy, Clone, Default)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAttachmentReference.html>"]
+pub struct RHIAttachmentReference {
+    pub attachment: u32,
+    pub layout: RHIImageLayout,
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineBindPoint.html>"]
+pub enum RHIPipelineBindPoint {
+    GRAPHICS = 0,
+    COMPUTE = 1,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkRenderPassCreateFlagBits.html>"]
+    pub struct RHIRenderPassCreateFlags: u16 {
+        #[doc = "Provided by VK_QCOM_render_pass_transform"]
+        const CREATE_TRANSFORM_QCOM = 1 << 0;
+    }
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSubpassDescriptionFlagBits.html>"]
+    pub struct RHISubpassDescriptionFlags: u16 {
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct RHISubpassDependency {
+    pub src_subpass: u32,
+    pub dst_subpass: u32,
+    pub src_stage_mask: RHIPipelineStageFlags,
+    pub dst_stage_mask: RHIPipelineStageFlags,
+    pub src_access_mask: RHIAccessFlags,
+    pub dst_access_mask: RHIAccessFlags,
+    pub dependency_flags: RHIDependencyFlags,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineStageFlagBits.html>"]
+    pub struct RHIPipelineStageFlags: u32 {
+        #[doc = "Before subsequent commands are processed"]
+        const TOP_OF_PIPE = 0x00000001;
+        #[doc = "Draw/DispatchIndirect command fetch"]
+        const DRAW_INDIRECT = 0x00000002;
+        #[doc = "Vertex/index fetch"]
+        const VERTEX_INPUT = 0x00000004;
+        #[doc = "Vertex shading"]
+        const VERTEX_SHADER = 0x00000008;
+        #[doc = "Tessellation control shading"]
+        const TESSELLATION_CONTROL_SHADER = 0x00000010;
+        #[doc = "Tessellation evaluation shading"]
+        const TESSELLATION_EVALUATION_SHADER = 0x00000020;
+        #[doc = "Geometry shading"]
+        const GEOMETRY_SHADER = 0x00000040;
+        #[doc = "Fragment shading"]
+        const FRAGMENT_SHADER = 0x00000080;
+        #[doc = "Early fragment (depth and stencil) tests"]
+        const EARLY_FRAGMENT_TESTS = 0x00000100;
+        #[doc = "Late fragment (depth and stencil) tests"]
+        const LATE_FRAGMENT_TESTS = 0x00000200;
+        #[doc = "Color attachment writes"]
+        const COLOR_ATTACHMENT_OUTPUT = 0x00000400;
+        #[doc = "Compute shading"]
+        const COMPUTE_SHADER = 0x00000800;
+        #[doc = "Transfer/copy operations"]
+        const TRANSFER = 0x00001000;
+        #[doc = "After previous commands have completed"]
+        const BOTTOM_OF_PIPE = 0x00002000;
+        #[doc = "Indicates host (CPU) is a source/sink of the dependency"]
+        const HOST = 0x00004000;
+        #[doc = "All stages of the graphics pipeline"]
+        const ALL_GRAPHICS = 0x00008000;
+        #[doc = "All stages supported on the queue"]
+        const ALL_COMMANDS = 0x00010000;
+    }
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAccessFlagBits.html>"]
+    pub struct RHIAccessFlags: u32 {
+        #[doc = "Controls coherency of indirect command reads"]
+        const INDIRECT_COMMAND_READ = 1 << 0;
+        #[doc = "Controls coherency of index reads"]
+        const INDEX_READ = 1 << 1;
+        #[doc = "Controls coherency of vertex attribute reads"]
+        const VERTEX_ATTRIBUTE_READ = 1 << 2;
+        #[doc = "Controls coherency of uniform buffer reads"]
+        const UNIFORM_READ = 1 << 3;
+        #[doc = "Controls coherency of input attachment reads"]
+        const INPUT_ATTACHMENT_READ = 1 << 4;
+        #[doc = "Controls coherency of shader reads"]
+        const SHADER_READ = 1 << 5;
+        #[doc = "Controls coherency of shader writes"]
+        const SHADER_WRITE = 1 << 6;
+        #[doc = "Controls coherency of color attachment reads"]
+        const COLOR_ATTACHMENT_READ = 1 << 7;
+        #[doc = "Controls coherency of color attachment writes"]
+        const COLOR_ATTACHMENT_WRITE = 1 << 8;
+        #[doc = "Controls coherency of depth/stencil attachment reads"]
+        const DEPTH_STENCIL_ATTACHMENT_READ = 1 << 9;
+        #[doc = "Controls coherency of depth/stencil attachment writes"]
+        const DEPTH_STENCIL_ATTACHMENT_WRITE = 1 << 10;
+        #[doc = "Controls coherency of transfer reads"]
+        const TRANSFER_READ = 1 << 11;
+        #[doc = "Controls coherency of transfer writes"]
+        const TRANSFER_WRITE = 1 << 12;
+        #[doc = "Controls coherency of host reads"]
+        const HOST_READ = 1 << 13;
+        #[doc = "Controls coherency of host writes"]
+        const HOST_WRITE = 1 << 14;
+        #[doc = "Controls coherency of memory reads"]
+        const MEMORY_READ = 1 << 15;
+        #[doc = "Controls coherency of memory writes"]
+        const MEMORY_WRITE = 1 << 16;
+    }
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkDependencyFlagBits.html>"]
+    pub struct RHIDependencyFlags: u16 {
+        #[doc = "Dependency is per pixel region "]
+        const BY_REGION = 1<<0;
     }
 }
 

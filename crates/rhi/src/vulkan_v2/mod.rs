@@ -5,7 +5,7 @@ pub mod utils;
 
 use crate::types_v2::{
     DeviceFeatures, DeviceRequirement, PhysicalDeviceRequirements, QueueFamilyIndices,
-    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIFormat,
+    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIFormat, RHIRenderPassCreateInfo,
 };
 use crate::types_v2::{
     InstanceDescriptor, InstanceFlags, RHIExtent2D, RHIOffset2D, RHIRect2D, RHIViewport,
@@ -63,10 +63,10 @@ pub struct VulkanRHI {
     command_buffers: Vec<VulkanCommandBuffer>,
     max_material_count: u32,
     descriptor_pool: VulkanDescriptorPool,
-    image_available_for_render_semaphores: Vec<vk::Semaphore>,
-    image_finished_for_presentation_semaphores: Vec<vk::Semaphore>,
-    image_available_for_textures_copy_semaphores: Vec<vk::Semaphore>,
-    frame_in_flight_fences: Vec<vk::Fence>,
+    image_available_for_render_semaphores: Vec<VulkanSemaphore>,
+    image_finished_for_presentation_semaphores: Vec<VulkanSemaphore>,
+    image_available_for_textures_copy_semaphores: Vec<VulkanSemaphore>,
+    frame_in_flight_fences: Vec<VulkanFence>,
 
     // swapchain
     swapchain: vk::SwapchainKHR,
@@ -109,9 +109,22 @@ pub struct VulkanImageView {
     raw: vk::ImageView,
 }
 
+pub struct VulkanFence {
+    raw: vk::Fence,
+}
+
+pub struct VulkanSemaphore {
+    raw: vk::Semaphore,
+}
+
+pub struct VulkanRenderPass {
+    raw: vk::RenderPass,
+}
+
 impl crate::RHI for VulkanRHI {
     type CommandPool = VulkanCommandPool;
     type CommandBuffer = VulkanCommandBuffer;
+    type RenderPass = VulkanRenderPass;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError> {
         let viewport = RHIViewport {
@@ -273,14 +286,18 @@ impl crate::RHI for VulkanRHI {
         })
     }
 
-    fn prepare_context(&mut self) {
+    unsafe fn prepare_context(&mut self) {
         self.current_command_buffer = self.command_buffers[self.current_frame_index];
     }
 
     unsafe fn recreate_swapchain(&mut self, size: RHIExtent2D) -> Result<(), RHIError> {
         unsafe {
-            self.device
-                .wait_for_fences(&self.frame_in_flight_fences, true, u64::MAX)?;
+            let fences = self
+                .frame_in_flight_fences
+                .iter()
+                .map(|x| x.raw)
+                .collect::<Vec<_>>();
+            self.device.wait_for_fences(&fences, true, u64::MAX)?;
             self.device
                 .destroy_image_view(self.depth_image_view.raw, None);
             self.device.destroy_image(self.depth_image.raw, None);
@@ -341,12 +358,16 @@ impl crate::RHI for VulkanRHI {
     unsafe fn wait_for_fences(&mut self) -> Result<(), RHIError> {
         unsafe {
             self.device.wait_for_fences(
-                &[self.frame_in_flight_fences[self.current_frame_index]],
+                &[self.frame_in_flight_fences[self.current_frame_index].raw],
                 true,
                 u64::MAX,
             )?
         };
         Ok(())
+    }
+
+    unsafe fn prepare_before_render_pass(&mut self) -> Result<bool, RHIError> {
+        todo!()
     }
 
     unsafe fn allocate_command_buffers(
@@ -370,7 +391,7 @@ impl crate::RHI for VulkanRHI {
             .collect())
     }
 
-    fn create_command_pool(
+    unsafe fn create_command_pool(
         &self,
         create_info: &RHICommandPoolCreateInfo,
     ) -> Result<Self::CommandPool, RHIError> {
@@ -381,6 +402,81 @@ impl crate::RHI for VulkanRHI {
             .build();
         let raw = unsafe { self.device.create_command_pool(&create_info, None)? };
         Ok(VulkanCommandPool { raw })
+    }
+
+    unsafe fn create_render_pass(
+        &self,
+        create_info: &RHIRenderPassCreateInfo,
+    ) -> Result<Self::RenderPass, RHIError> {
+        let mut attachments = Vec::with_capacity(create_info.attachments.len());
+        for attachment in create_info.attachments {
+            let vk_attachment = vk::AttachmentDescription::builder()
+                .flags(attachment.flags.to_vk())
+                .format(attachment.format.to_vk())
+                .samples(attachment.samples.to_vk())
+                .load_op(attachment.load_op.to_vk())
+                .store_op(attachment.store_op.to_vk())
+                .stencil_load_op(attachment.stecil_load_op.to_vk())
+                .stencil_store_op(attachment.stecil_store_op.to_vk())
+                .initial_layout(attachment.initial_layout.to_vk())
+                .final_layout(attachment.final_layout.to_vk())
+                .build();
+            attachments.push(vk_attachment);
+        }
+
+        let mut subpasses = Vec::with_capacity(create_info.subpasses.len());
+        for attachment in create_info.subpasses {
+            let input_attachments = attachment
+                .input_attachments
+                .iter()
+                .map(|x| x.to_vk())
+                .collect::<Vec<_>>();
+            let color_attachments = attachment
+                .color_attachments
+                .iter()
+                .map(|x| x.to_vk())
+                .collect::<Vec<_>>();
+            let resolve_attachments = attachment
+                .resolve_attachments
+                .iter()
+                .map(|x| x.to_vk())
+                .collect::<Vec<_>>();
+            let vk_subpass_desc = vk::SubpassDescription::builder()
+                .flags(attachment.flags.to_vk())
+                .pipeline_bind_point(attachment.pipeline_bind_point.to_vk())
+                .input_attachments(&input_attachments)
+                .color_attachments(&color_attachments)
+                .resolve_attachments(&resolve_attachments)
+                .depth_stencil_attachment(&attachment.depth_stencil_attachment.to_vk())
+                .build();
+            subpasses.push(vk_subpass_desc);
+        }
+
+        let mut dependencies = Vec::with_capacity(create_info.dependencies.len());
+        for dependency in create_info.dependencies {
+            let vk_dependency = vk::SubpassDependency::builder()
+                .src_subpass(dependency.src_subpass)
+                .dst_subpass(dependency.dst_subpass)
+                .src_stage_mask(dependency.src_stage_mask.to_vk())
+                .dst_stage_mask(dependency.dst_stage_mask.to_vk())
+                .src_access_mask(dependency.src_access_mask.to_vk())
+                .dst_access_mask(dependency.dst_access_mask.to_vk())
+                .build();
+            dependencies.push(vk_dependency);
+        }
+
+        let render_pass_create_info = vk::RenderPassCreateInfo::builder()
+            .flags(create_info.flags.to_vk())
+            .attachments(&attachments)
+            .subpasses(&subpasses)
+            .dependencies(&dependencies)
+            .build();
+        let raw = unsafe {
+            self.device
+                .create_render_pass(&render_pass_create_info, None)?
+        };
+
+        Ok(VulkanRenderPass { raw })
     }
 
     unsafe fn clear(&mut self) {
@@ -865,10 +961,10 @@ impl VulkanRHI {
         max_frames_in_flight: u8,
     ) -> Result<
         (
-            Vec<vk::Semaphore>,
-            Vec<vk::Semaphore>,
-            Vec<vk::Semaphore>,
-            Vec<vk::Fence>,
+            Vec<VulkanSemaphore>,
+            Vec<VulkanSemaphore>,
+            Vec<VulkanSemaphore>,
+            Vec<VulkanFence>,
         ),
         RHIError,
     > {
@@ -884,13 +980,18 @@ impl VulkanRHI {
         let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
         for _ in 0..max_frames_in_flight {
             unsafe {
-                image_available_for_render_semaphores
-                    .push(device.create_semaphore(&semaphore_create_info, None)?);
-                image_finished_for_presentation_semaphores
-                    .push(device.create_semaphore(&semaphore_create_info, None)?);
-                image_available_for_textures_copy_semaphores
-                    .push(device.create_semaphore(&semaphore_create_info, None)?);
-                frame_in_flight_fences.push(device.create_fence(&fence_info, None)?);
+                image_available_for_render_semaphores.push(VulkanSemaphore {
+                    raw: device.create_semaphore(&semaphore_create_info, None)?,
+                });
+                image_finished_for_presentation_semaphores.push(VulkanSemaphore {
+                    raw: device.create_semaphore(&semaphore_create_info, None)?,
+                });
+                image_finished_for_presentation_semaphores.push(VulkanSemaphore {
+                    raw: device.create_semaphore(&semaphore_create_info, None)?,
+                });
+                frame_in_flight_fences.push(VulkanFence {
+                    raw: device.create_fence(&fence_info, None)?,
+                });
             }
         }
         Ok((
