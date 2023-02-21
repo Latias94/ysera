@@ -34,7 +34,12 @@ pub trait RHI: Sized {
     unsafe fn prepare_context(&mut self);
     unsafe fn recreate_swapchain(&mut self, size: RHIExtent2D) -> Result<(), RHIError>;
     unsafe fn wait_for_fences(&mut self) -> Result<(), RHIError>;
-    unsafe fn prepare_before_render_pass(&mut self) -> Result<bool, RHIError>;
+    unsafe fn prepare_before_render_pass<F>(
+        &mut self,
+        pass_update_after_recreate_swapchain: F,
+    ) -> Result<(), RHIError>
+    where
+        F: FnOnce();
 
     unsafe fn allocate_command_buffers(
         &self,

@@ -366,8 +366,61 @@ impl crate::RHI for VulkanRHI {
         Ok(())
     }
 
-    unsafe fn prepare_before_render_pass(&mut self) -> Result<bool, RHIError> {
-        todo!()
+    unsafe fn prepare_before_render_pass<F>(
+        &mut self,
+        pass_update_after_recreate_swapchain: F,
+    ) -> Result<(), RHIError>
+    where
+        F: FnOnce(),
+    {
+        let result = unsafe {
+            self.swapchain_loader.acquire_next_image(
+                self.swapchain,
+                u64::MAX,
+                self.image_available_for_render_semaphores[self.current_frame_index].raw,
+                vk::Fence::null(),
+            )
+        };
+        if result == Err(vk::Result::ERROR_OUT_OF_DATE_KHR) {
+            unsafe { self.recreate_swapchain(self.swapchain_extent)? };
+            pass_update_after_recreate_swapchain();
+            return Ok(());
+        } else if result == Err(vk::Result::SUBOPTIMAL_KHR) {
+            unsafe { self.recreate_swapchain(self.swapchain_extent)? };
+            pass_update_after_recreate_swapchain();
+            // NULL submit to wait semaphore
+            let semaphores =
+                &[self.image_available_for_render_semaphores[self.current_frame_index].raw];
+            let wait_dst_stage_mask = &[vk::PipelineStageFlags::BOTTOM_OF_PIPE];
+            let submit_info = vk::SubmitInfo::builder()
+                .wait_semaphores(semaphores)
+                .wait_dst_stage_mask(wait_dst_stage_mask)
+                .build();
+            let fence = self.frame_in_flight_fences[self.current_frame_index].raw;
+            let fences = &[fence];
+            unsafe {
+                self.device.reset_fences(fences)?;
+            }
+            let submit_infos = &[submit_info];
+            unsafe {
+                self.device
+                    .queue_submit(self.graphics_queue.raw, submit_infos, fence)?;
+            }
+            self.current_frame_index =
+                (self.current_frame_index + 1) % (MAX_FRAME_IN_FLIGHT as usize);
+            return Ok(());
+        } else if let Err(e) = result {
+            return Err(RHIError::from(e));
+        }
+        // let (image_index, sub_optimal) = result.unwrap();
+        let begin_info = vk::CommandBufferBeginInfo::builder().build(); // Optional.
+
+        let command_buffer = self.command_buffers[self.current_frame_index].raw;
+        unsafe {
+            self.device
+                .begin_command_buffer(command_buffer, &begin_info)?;
+        }
+        Ok(())
     }
 
     unsafe fn allocate_command_buffers(
