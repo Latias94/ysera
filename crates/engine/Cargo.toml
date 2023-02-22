@@ -1,5 +1,5 @@
 [package]
-name = "ysera-engine"
+name = "ysera_engine"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,7 @@ rust-version.workspace = true
 [dependencies]
 rhi.workspace = true
 math.workspace = true
-ysera-imgui.workspace = true
+ysera_imgui.workspace = true
 
 log.workspace = true
 env_logger.workspace = true

@@ -2,11 +2,12 @@
 resolver = "2"
 members = [
     "crates/rhi",
-#    "crates/engine",
+    "crates/rhi_types",
+    #    "crates/engine",
     "crates/math",
     "crates/imgui",
-#    "crates/playground",
-#    "crates/renderer",
+    #    "crates/playground",
+    "crates/renderer",
 ]
 
 [workspace.package]
@@ -14,11 +15,12 @@ edition = "2021"
 rust-version = "1.65"
 
 [workspace.dependencies]
-math = { package = "ysera-math", path = "crates/math" }
-#engine = { package = "ysera-engine", path = "crates/engine" }
-rhi = { package = "ysera-rhi", path = "crates/rhi" }
-renderer = { package = "ysera-renderer", path = "crates/renderer" }
-ysera-imgui = { package = "ysera-imgui", path = "crates/imgui" }
+math = { package = "ysera_math", path = "crates/math" }
+#engine = { package = "ysera_engine", path = "crates/engine" }
+rhi = { package = "ysera_rhi", path = "crates/rhi" }
+rhi_types = { package = "ysera_rhi_types", path = "crates/rhi_types" }
+renderer = { package = "ysera_renderer", path = "crates/renderer" }
+ysera_imgui = { package = "ysera_imgui", path = "crates/imgui" }
 
 image = "0.24"
 profiling = "=1.0.7"

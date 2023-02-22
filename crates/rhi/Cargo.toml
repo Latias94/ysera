@@ -1,5 +1,5 @@
 [package]
-name = "ysera-rhi"
+name = "ysera_rhi"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,8 @@ vulkan = ["naga/spv-out", "ash"]
 
 [dependencies]
 math.workspace = true
-ysera-imgui.workspace = true
+ysera_imgui.workspace = true
+rhi_types.workspace = true
 
 ash = { workspace = true, default-features = false, features = ["linked", "debug"], optional = true }
 ash-window.workspace = true
@@ -26,7 +27,7 @@ profiling.workspace = true
 typed-builder.workspace = true
 bitflags.workspace = true
 derive_more.workspace = true
-winit.workspace = true
+winit.workspace = true # will be removed
 fxhash.workspace = true
 gpu-allocator.workspace = true
 lazy_static.workspace = true
@@ -61,3 +62,4 @@ fs_extra.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true
+#winit.workspace = true

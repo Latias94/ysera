@@ -1,28 +1,30 @@
-pub mod conv;
-pub mod debug;
-pub mod platforms;
-pub mod utils;
+use std::collections::HashSet;
+use std::ffi::{c_char, CStr, CString};
 
-use crate::types_v2::{
-    DeviceFeatures, DeviceRequirement, PhysicalDeviceRequirements, QueueFamilyIndices,
-    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIFormat, RHIRenderPassCreateInfo,
-};
-use crate::types_v2::{
-    InstanceDescriptor, InstanceFlags, RHIExtent2D, RHIOffset2D, RHIRect2D, RHIViewport,
-};
-use crate::utils::c_char_to_string;
-use crate::vulkan::command_buffer::CommandBuffer;
-use crate::vulkan_v2::debug::DebugUtils;
-use crate::{CommandBufferAllocateInfo, InitInfo, RHIError};
 use ash::extensions::{ext, khr};
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, Allocator, AllocatorCreateDesc};
 use log::LevelFilter;
 use parking_lot::Mutex;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use std::collections::HashSet;
-use std::ffi::{c_char, CStr, CString};
-use winit::window::Window as WinitWindow;
+
+use rhi_types::{
+    DeviceFeatures, DeviceRequirement, InstanceDescriptor, InstanceFlags,
+    PhysicalDeviceRequirements, QueueFamilyIndices, RHICommandBufferLevel,
+    RHICommandPoolCreateInfo, RHIExtent2D, RHIFormat, RHIOffset2D, RHIRect2D,
+    RHIRenderPassCreateInfo, RHIViewport,
+};
+
+use crate::utils::c_char_to_string;
+use crate::vulkan::command_buffer::CommandBuffer;
+use crate::vulkan_v2::conv::map_pipeline_bind_point;
+use crate::vulkan_v2::debug::DebugUtils;
+use crate::{CommandBufferAllocateInfo, InitInfo, RHIError, MAX_FRAMES_IN_FLIGHT};
+
+pub mod conv;
+pub mod debug;
+pub mod platforms;
+pub mod utils;
 
 pub struct VulkanRHI {
     viewport: RHIViewport,
@@ -81,8 +83,6 @@ pub struct VulkanRHI {
     depth_image_view: VulkanImageView,
     current_frame_index: usize,
 }
-
-const MAX_FRAME_IN_FLIGHT: u8 = 3;
 
 pub struct VulkanCommandPool {
     raw: vk::CommandPool,
@@ -187,17 +187,17 @@ impl crate::RHI for VulkanRHI {
         let allocator = VulkanRHI::create_allocator(&device, &instance, physical_device)?;
 
         let (command_pool, command_pools) = unsafe {
-            VulkanRHI::create_command_pool(&device, &queue_family_indices, MAX_FRAME_IN_FLIGHT)?
+            VulkanRHI::create_command_pool(&device, &queue_family_indices, MAX_FRAMES_IN_FLIGHT)?
         };
 
         let command_buffers = unsafe {
-            VulkanRHI::create_command_buffers(&device, command_pool.raw, MAX_FRAME_IN_FLIGHT)?
+            VulkanRHI::create_command_buffers(&device, command_pool.raw, MAX_FRAMES_IN_FLIGHT)?
         };
 
         let max_material_count = 256;
 
         let descriptor_pool = unsafe {
-            VulkanRHI::create_descriptor_pool(&device, max_material_count, MAX_FRAME_IN_FLIGHT)?
+            VulkanRHI::create_descriptor_pool(&device, max_material_count, MAX_FRAMES_IN_FLIGHT)?
         };
 
         let (
@@ -205,7 +205,7 @@ impl crate::RHI for VulkanRHI {
             image_finished_for_presentation_semaphores,
             image_available_for_textures_copy_semaphores,
             frame_in_flight_fences,
-        ) = unsafe { VulkanRHI::create_sync_objects(&device, MAX_FRAME_IN_FLIGHT)? };
+        ) = unsafe { VulkanRHI::create_sync_objects(&device, MAX_FRAMES_IN_FLIGHT)? };
 
         let (swapchain, swapchain_loader, swapchain_images, surface_format, swapchain_extent) = unsafe {
             VulkanRHI::create_swapchain(
@@ -216,7 +216,7 @@ impl crate::RHI for VulkanRHI {
                 physical_device,
                 queue_family_indices,
                 init_info.window_size,
-                MAX_FRAME_IN_FLIGHT,
+                MAX_FRAMES_IN_FLIGHT,
             )?
         };
 
@@ -318,7 +318,7 @@ impl crate::RHI for VulkanRHI {
                     self.physical_device,
                     self.queue_family_indices,
                     size,
-                    MAX_FRAME_IN_FLIGHT,
+                    MAX_FRAMES_IN_FLIGHT,
                 )?
             };
             self.swapchain = swapchain;
@@ -366,52 +366,72 @@ impl crate::RHI for VulkanRHI {
         Ok(())
     }
 
+    unsafe fn reset_command_pool(&mut self) -> Result<(), RHIError> {
+        unsafe {
+            self.device.reset_command_pool(
+                self.command_pools[self.current_frame_index].raw,
+                vk::CommandPoolResetFlags::empty(),
+            )?
+        };
+        Ok(())
+    }
+
+    unsafe fn get_current_frame_index(&self) -> usize {
+        self.current_frame_index
+    }
+
     unsafe fn prepare_before_render_pass<F>(
         &mut self,
         pass_update_after_recreate_swapchain: F,
-    ) -> Result<(), RHIError>
+    ) -> Result<bool, RHIError>
     where
         F: FnOnce(),
     {
-        let result = unsafe {
+        let recreate_swapchain = match unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
                 u64::MAX,
                 self.image_available_for_render_semaphores[self.current_frame_index].raw,
                 vk::Fence::null(),
             )
-        };
-        if result == Err(vk::Result::ERROR_OUT_OF_DATE_KHR) {
-            unsafe { self.recreate_swapchain(self.swapchain_extent)? };
-            pass_update_after_recreate_swapchain();
-            return Ok(());
-        } else if result == Err(vk::Result::SUBOPTIMAL_KHR) {
-            unsafe { self.recreate_swapchain(self.swapchain_extent)? };
-            pass_update_after_recreate_swapchain();
-            // NULL submit to wait semaphore
-            let semaphores =
-                &[self.image_available_for_render_semaphores[self.current_frame_index].raw];
-            let wait_dst_stage_mask = &[vk::PipelineStageFlags::BOTTOM_OF_PIPE];
-            let submit_info = vk::SubmitInfo::builder()
-                .wait_semaphores(semaphores)
-                .wait_dst_stage_mask(wait_dst_stage_mask)
-                .build();
-            let fence = self.frame_in_flight_fences[self.current_frame_index].raw;
-            let fences = &[fence];
-            unsafe {
-                self.device.reset_fences(fences)?;
+        } {
+            Ok((_index, false)) => Ok(false),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                log::debug!("prepare_before_render_pass ERROR_OUT_OF_DATE_KHR recreate_swapchain");
+                unsafe { self.recreate_swapchain(self.swapchain_extent)? };
+                pass_update_after_recreate_swapchain();
+                Ok(true)
             }
-            let submit_infos = &[submit_info];
-            unsafe {
-                self.device
-                    .queue_submit(self.graphics_queue.raw, submit_infos, fence)?;
+            Ok((_index, true)) => {
+                // vk::Result::SUBOPTIMAL_KHR
+                log::debug!("prepare_before_render_pass SUBOPTIMAL_KHR recreate_swapchain");
+                unsafe { self.recreate_swapchain(self.swapchain_extent)? };
+                pass_update_after_recreate_swapchain();
+                // NULL submit to wait semaphore
+                let semaphores =
+                    &[self.image_available_for_render_semaphores[self.current_frame_index].raw];
+                let wait_dst_stage_mask = &[vk::PipelineStageFlags::BOTTOM_OF_PIPE];
+                let submit_info = vk::SubmitInfo::builder()
+                    .wait_semaphores(semaphores)
+                    .wait_dst_stage_mask(wait_dst_stage_mask)
+                    .build();
+                let fence = self.frame_in_flight_fences[self.current_frame_index].raw;
+                let fences = &[fence];
+                unsafe {
+                    self.device.reset_fences(fences)?;
+                }
+                let submit_infos = &[submit_info];
+                unsafe {
+                    self.device
+                        .queue_submit(self.graphics_queue.raw, submit_infos, fence)?;
+                }
+                self.current_frame_index =
+                    (self.current_frame_index + 1) % (MAX_FRAMES_IN_FLIGHT as usize);
+                Ok(true)
             }
-            self.current_frame_index =
-                (self.current_frame_index + 1) % (MAX_FRAME_IN_FLIGHT as usize);
-            return Ok(());
-        } else if let Err(e) = result {
-            return Err(RHIError::from(e));
-        }
+            Err(e) => Err(RHIError::from(e)),
+        }?;
+
         // let (image_index, sub_optimal) = result.unwrap();
         let begin_info = vk::CommandBufferBeginInfo::builder().build(); // Optional.
 
@@ -420,6 +440,66 @@ impl crate::RHI for VulkanRHI {
             self.device
                 .begin_command_buffer(command_buffer, &begin_info)?;
         }
+        Ok(recreate_swapchain)
+    }
+
+    unsafe fn submit_rendering<F>(
+        &mut self,
+        pass_update_after_recreate_swapchain: F,
+    ) -> Result<(), RHIError>
+    where
+        F: FnOnce(),
+    {
+        let command_buffer = self.command_buffers[self.current_frame_index].raw;
+        unsafe {
+            self.device.end_command_buffer(command_buffer)?;
+        }
+
+        let wait_semaphores =
+            &[self.image_available_for_render_semaphores[self.current_frame_index].raw];
+        let signal_semaphores =
+            &[self.image_finished_for_presentation_semaphores[self.current_frame_index].raw];
+        let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+        let command_buffers = &[command_buffer];
+
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(wait_semaphores)
+            .signal_semaphores(signal_semaphores)
+            .wait_dst_stage_mask(wait_stages)
+            .command_buffers(command_buffers)
+            .build();
+
+        let in_flight_fence = self.frame_in_flight_fences[self.current_frame_index].raw;
+        let in_flight_fences = &[in_flight_fence];
+        unsafe {
+            self.device.reset_fences(in_flight_fences)?;
+            self.device
+                .queue_submit(self.graphics_queue.raw, &[submit_info], in_flight_fence)?;
+        }
+
+        let swapchains = &[self.swapchain];
+        let image_indices = &[self.current_frame_index as u32];
+        let present_info = vk::PresentInfoKHR::builder()
+            .wait_semaphores(signal_semaphores)
+            .swapchains(swapchains)
+            .image_indices(image_indices);
+        match self
+            .swapchain_loader
+            .queue_present(self.present_queue.raw, &present_info)
+        {
+            Ok(true) => Ok(()),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Ok(false) => {
+                log::debug!(
+                    "submit_rendering ERROR_OUT_OF_DATE_KHR or SUBOPTIMAL_KHR recreate_swapchain"
+                );
+                // vk::Result::ERROR_OUT_OF_DATE_KHR or vk::Result::SUBOPTIMAL_KHR
+                self.recreate_swapchain(self.swapchain_extent)?;
+                pass_update_after_recreate_swapchain();
+                Ok(())
+            }
+            Err(e) => Err(RHIError::from(e)),
+        }?;
+        self.current_frame_index = (self.current_frame_index + 1) % (MAX_FRAMES_IN_FLIGHT as usize);
         Ok(())
     }
 
@@ -451,7 +531,7 @@ impl crate::RHI for VulkanRHI {
         let create_info = vk::CommandPoolCreateInfo::builder()
             .queue_family_index(create_info.queue_family_index)
             // Allow command buffers to be rerecorded individually, without this flag they all have to be reset together
-            .flags(create_info.flags.to_vk())
+            .flags(conv::map_command_pool_create_flags(create_info.flags))
             .build();
         let raw = unsafe { self.device.create_command_pool(&create_info, None)? };
         Ok(VulkanCommandPool { raw })
@@ -464,15 +544,15 @@ impl crate::RHI for VulkanRHI {
         let mut attachments = Vec::with_capacity(create_info.attachments.len());
         for attachment in create_info.attachments {
             let vk_attachment = vk::AttachmentDescription::builder()
-                .flags(attachment.flags.to_vk())
-                .format(attachment.format.to_vk())
-                .samples(attachment.samples.to_vk())
-                .load_op(attachment.load_op.to_vk())
-                .store_op(attachment.store_op.to_vk())
-                .stencil_load_op(attachment.stecil_load_op.to_vk())
-                .stencil_store_op(attachment.stecil_store_op.to_vk())
-                .initial_layout(attachment.initial_layout.to_vk())
-                .final_layout(attachment.final_layout.to_vk())
+                .flags(conv::map_attachment_description_flags(attachment.flags))
+                .format(conv::map_format(attachment.format))
+                .samples(conv::map_sample_count_flag_bits(attachment.samples))
+                .load_op(conv::map_attachment_load_op(attachment.load_op))
+                .store_op(conv::map_attachment_store_op(attachment.store_op))
+                .stencil_load_op(conv::map_attachment_load_op(attachment.stecil_load_op))
+                .stencil_store_op(conv::map_attachment_store_op(attachment.stecil_store_op))
+                .initial_layout(conv::map_image_layout(attachment.initial_layout))
+                .final_layout(conv::map_image_layout(attachment.final_layout))
                 .build();
             attachments.push(vk_attachment);
         }
@@ -482,25 +562,27 @@ impl crate::RHI for VulkanRHI {
             let input_attachments = attachment
                 .input_attachments
                 .iter()
-                .map(|x| x.to_vk())
+                .map(|x| conv::map_attachment_reference(x))
                 .collect::<Vec<_>>();
             let color_attachments = attachment
                 .color_attachments
                 .iter()
-                .map(|x| x.to_vk())
+                .map(|x| conv::map_attachment_reference(x))
                 .collect::<Vec<_>>();
             let resolve_attachments = attachment
                 .resolve_attachments
                 .iter()
-                .map(|x| x.to_vk())
+                .map(|x| conv::map_attachment_reference(x))
                 .collect::<Vec<_>>();
             let vk_subpass_desc = vk::SubpassDescription::builder()
-                .flags(attachment.flags.to_vk())
-                .pipeline_bind_point(attachment.pipeline_bind_point.to_vk())
+                .flags(conv::map_subpass_description_flags(attachment.flags))
+                .pipeline_bind_point(map_pipeline_bind_point(attachment.pipeline_bind_point))
                 .input_attachments(&input_attachments)
                 .color_attachments(&color_attachments)
                 .resolve_attachments(&resolve_attachments)
-                .depth_stencil_attachment(&attachment.depth_stencil_attachment.to_vk())
+                .depth_stencil_attachment(&conv::map_attachment_reference(
+                    &attachment.depth_stencil_attachment,
+                ))
                 .build();
             subpasses.push(vk_subpass_desc);
         }
@@ -510,16 +592,16 @@ impl crate::RHI for VulkanRHI {
             let vk_dependency = vk::SubpassDependency::builder()
                 .src_subpass(dependency.src_subpass)
                 .dst_subpass(dependency.dst_subpass)
-                .src_stage_mask(dependency.src_stage_mask.to_vk())
-                .dst_stage_mask(dependency.dst_stage_mask.to_vk())
-                .src_access_mask(dependency.src_access_mask.to_vk())
-                .dst_access_mask(dependency.dst_access_mask.to_vk())
+                .src_stage_mask(conv::map_pipeline_stage_flags(dependency.src_stage_mask))
+                .dst_stage_mask(conv::map_pipeline_stage_flags(dependency.dst_stage_mask))
+                .src_access_mask(conv::map_access_flags(dependency.src_access_mask))
+                .dst_access_mask(conv::map_access_flags(dependency.dst_access_mask))
                 .build();
             dependencies.push(vk_dependency);
         }
 
         let render_pass_create_info = vk::RenderPassCreateInfo::builder()
-            .flags(create_info.flags.to_vk())
+            .flags(conv::map_render_pass_create_flags(create_info.flags))
             .attachments(&attachments)
             .subpasses(&subpasses)
             .dependencies(&dependencies)
@@ -917,7 +999,7 @@ impl VulkanRHI {
             },
             VulkanQueue { raw: present_queue },
             VulkanQueue { raw: compute_queue },
-            depth_image_format.into(),
+            conv::map_vk_format(depth_image_format),
         ))
     }
 
@@ -1086,6 +1168,7 @@ impl VulkanRHI {
         } = properties;
 
         let mut image_count = support.capabilities.min_image_count + 1;
+        image_count.max(max_frames_in_flight as u32);
         image_count = if support.capabilities.max_image_count > 0 {
             image_count.min(support.capabilities.max_image_count)
         } else {
@@ -1135,7 +1218,7 @@ impl VulkanRHI {
         log::debug!("Vulkan swapchain created. min_image_count: {}", image_count);
 
         let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain.clone())? };
-        let surface_format = surface_format.format.into();
+        let surface_format = conv::map_vk_format(surface_format.format);
         let swapchain_extent = RHIExtent2D {
             width: support.capabilities.current_extent.width.max(1),
             height: support.capabilities.current_extent.height.max(1),
@@ -1160,7 +1243,7 @@ impl VulkanRHI {
                 utils::create_image_view(
                     device,
                     *image,
-                    surface_format.to_vk(),
+                    conv::map_format(surface_format),
                     vk::ImageAspectFlags::COLOR,
                     vk::ImageViewType::TYPE_2D,
                     1,
@@ -1183,7 +1266,7 @@ impl VulkanRHI {
                 device,
                 allocator,
                 swapchain_extent,
-                depth_format.to_vk(),
+                conv::map_format(depth_format),
                 vk::ImageTiling::OPTIMAL,
                 vk::ImageUsageFlags::INPUT_ATTACHMENT
                     | vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
@@ -1198,7 +1281,7 @@ impl VulkanRHI {
             utils::create_image_view(
                 device,
                 image,
-                depth_format.to_vk(),
+                conv::map_format(depth_format),
                 vk::ImageAspectFlags::DEPTH,
                 vk::ImageViewType::TYPE_2D,
                 1,

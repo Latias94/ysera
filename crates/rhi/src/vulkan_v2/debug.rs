@@ -2,8 +2,9 @@ use std::borrow::Cow;
 use std::ffi::CStr;
 use std::os::raw::c_void;
 
-use crate::utils::c_char_to_string;
 use ash::{extensions::ext, vk};
+
+use crate::utils::c_char_to_string;
 
 #[derive(Clone)]
 pub struct DebugUtils {

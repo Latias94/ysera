@@ -1,5 +1,8 @@
 #![allow(non_camel_case_types)]
 
+#[macro_use]
+extern crate num_derive;
+
 use bitflags::bitflags;
 use typed_builder::TypedBuilder;
 

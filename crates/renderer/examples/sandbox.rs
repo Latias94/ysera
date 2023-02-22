@@ -1,13 +1,11 @@
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ash::vk;
-use gpu_allocator::vulkan::{Allocation, Allocator};
-use parking_lot::Mutex;
-
-use math::{Mat4, Rect2D};
+use rhi::types_v2::RHIExtent2D;
+use rhi::vulkan_v2::VulkanRHI;
+use rhi::{InitInfo, RHI};
+use rhi_types::RHIExtent2D;
 use ysera_rhi::types_v2::RHIExtent2D;
-use ysera_rhi::vulkan::base_renderer::{BaseRenderer, RHIConfig, RendererBase};
+use ysera_rhi::vulkan::base_renderer::RendererBase;
 use ysera_rhi::vulkan_v2::VulkanRHI;
 use ysera_rhi::{InitInfo, RHI};
 
@@ -15,6 +13,7 @@ type Api = VulkanRHI;
 
 struct Sandbox {
     rhi: Api,
+    temp: bool,
 }
 
 impl Sandbox {
@@ -31,10 +30,26 @@ impl Sandbox {
 
         let rhi = unsafe { Api::initialize(init_info)? };
 
-        Ok(Self { rhi })
+        Ok(Self { rhi, temp: false })
     }
 
     fn update(&mut self, delta_time: Duration) -> anyhow::Result<()> {
+        if self.temp {
+            return Ok(());
+        }
+        self.temp = true;
+        unsafe {
+            self.rhi.prepare_context();
+
+            self.rhi.wait_for_fences()?;
+            self.rhi.reset_command_pool()?;
+            let recreate_swapchain = self.rhi.prepare_before_render_pass(|| {})?;
+            if recreate_swapchain {
+                return Ok(());
+            }
+            // pass...
+            self.rhi.submit_rendering(|| {})?;
+        }
         Ok(())
     }
 

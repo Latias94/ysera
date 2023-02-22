@@ -1,6 +1,6 @@
-use ash::vk;
-use bitflags::bitflags;
 use std::hash::{Hash, Hasher};
+
+use bitflags::bitflags;
 use typed_builder::TypedBuilder;
 
 pub type Label<'a> = Option<&'a str>;

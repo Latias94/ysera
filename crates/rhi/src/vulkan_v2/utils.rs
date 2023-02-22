@@ -1,9 +1,11 @@
-use crate::types_v2::RHIExtent2D;
-use crate::RHIError;
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
+
+use rhi_types::RHIExtent2D;
+
+use crate::RHIError;
 
 pub unsafe fn create_image_view(
     device: &ash::Device,

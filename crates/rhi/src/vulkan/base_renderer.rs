@@ -1,17 +1,19 @@
-use crate::types::DeviceFeatures;
-use crate::vulkan::command_buffer::CommandBuffer;
-use crate::vulkan::context::{Context, ContextDescriptor};
-use crate::vulkan::swapchain::{AcquiredImage, Swapchain, SwapchainDescriptor};
-use crate::vulkan::sync::{Fence, Semaphore};
-use crate::DeviceError;
-use anyhow::Result;
-use ash::vk;
-use imgui::Ui;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::time::Duration;
+
+use anyhow::Result;
+use ash::vk;
+use imgui::Ui;
 use typed_builder::TypedBuilder;
 use winit::window::Window;
+
+use crate::types::DeviceFeatures;
+use crate::vulkan::command_buffer::CommandBuffer;
+use crate::vulkan::context::{Context, ContextDescriptor};
+use crate::vulkan::swapchain::{Swapchain, SwapchainDescriptor};
+use crate::vulkan::sync::{Fence, Semaphore};
+use crate::DeviceError;
 
 pub trait RendererBase: Sized {
     type Gui: Gui;
