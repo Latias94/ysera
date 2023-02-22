@@ -24,6 +24,15 @@ pub trait RHI: Sized {
     type CommandPool;
     type CommandBuffer;
     type RenderPass;
+    type Image;
+    type ImageView;
+    type Allocation;
+    type Format;
+    type Framebuffer;
+    type DescriptorSet;
+    type DescriptorSetLayout;
+    type PipelineLayout;
+    type Pipeline;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError>;
     unsafe fn prepare_context(&mut self);

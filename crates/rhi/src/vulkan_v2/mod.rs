@@ -120,10 +120,47 @@ pub struct VulkanRenderPass {
     raw: vk::RenderPass,
 }
 
+pub struct VulkanPipelineLayout {
+    raw: vk::PipelineLayout,
+}
+
+pub struct VulkanPipeline {
+    raw: vk::Pipeline,
+}
+
+pub struct VulkanAllocation {
+    raw: Allocation,
+}
+
+pub struct VulkanFormat {
+    raw: vk::Format,
+}
+
+pub struct VulkanFramebuffer {
+    raw: vk::Framebuffer,
+}
+
+pub struct VulkanDescriptorSet {
+    raw: vk::DescriptorSet,
+}
+
+pub struct VulkanDescriptorSetLayout {
+    raw: vk::DescriptorSetLayout,
+}
+
 impl crate::RHI for VulkanRHI {
     type CommandPool = VulkanCommandPool;
     type CommandBuffer = VulkanCommandBuffer;
     type RenderPass = VulkanRenderPass;
+    type Image = VulkanImage;
+    type ImageView = VulkanImageView;
+    type Allocation = VulkanAllocation;
+    type Format = VulkanFormat;
+    type Framebuffer = VulkanFramebuffer;
+    type DescriptorSet = VulkanDescriptorSet;
+    type DescriptorSetLayout = VulkanDescriptorSetLayout;
+    type PipelineLayout = VulkanPipelineLayout;
+    type Pipeline = VulkanPipeline;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError> {
         let viewport = RHIViewport {
