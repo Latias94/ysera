@@ -1,13 +1,8 @@
 use std::time::{Duration, Instant};
 
-use rhi::types_v2::RHIExtent2D;
 use rhi::vulkan_v2::VulkanRHI;
 use rhi::{InitInfo, RHI};
 use rhi_types::RHIExtent2D;
-use ysera_rhi::types_v2::RHIExtent2D;
-use ysera_rhi::vulkan::base_renderer::RendererBase;
-use ysera_rhi::vulkan_v2::VulkanRHI;
-use ysera_rhi::{InitInfo, RHI};
 
 type Api = VulkanRHI;
 

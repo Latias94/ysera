@@ -2508,6 +2508,7 @@ dependencies = [
  "log",
  "parking_lot",
  "profiling",
+ "thiserror",
  "typed-builder",
  "winit",
  "ysera_math",

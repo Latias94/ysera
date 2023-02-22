@@ -4,7 +4,6 @@ extern crate alloc;
 #[macro_use]
 extern crate num_derive;
 
-pub use ash;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 pub use winit;
 
@@ -13,13 +12,10 @@ use rhi_types::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIExtent2D, RHIRenderPassCreateInfo,
 };
 
-use crate::vulkan::command_buffer::CommandBuffer;
-
 mod error;
 mod gui;
 pub mod types;
 pub mod utils;
-pub mod vulkan;
 pub mod vulkan_v2;
 
 const MAX_FRAMES_IN_FLIGHT: u8 = 3;
@@ -51,7 +47,7 @@ pub trait RHI: Sized {
     unsafe fn allocate_command_buffers(
         &self,
         allocate_info: CommandBufferAllocateInfo<Self>,
-    ) -> Result<Vec<CommandBuffer>, RHIError>;
+    ) -> Result<Vec<Self::CommandBuffer>, RHIError>;
 
     unsafe fn create_command_pool(
         &self,

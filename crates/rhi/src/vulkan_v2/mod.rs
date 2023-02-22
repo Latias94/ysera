@@ -16,7 +16,6 @@ use rhi_types::{
 };
 
 use crate::utils::c_char_to_string;
-use crate::vulkan::command_buffer::CommandBuffer;
 use crate::vulkan_v2::conv::map_pipeline_bind_point;
 use crate::vulkan_v2::debug::DebugUtils;
 use crate::{CommandBufferAllocateInfo, InitInfo, RHIError, MAX_FRAMES_IN_FLIGHT};
@@ -506,7 +505,7 @@ impl crate::RHI for VulkanRHI {
     unsafe fn allocate_command_buffers(
         &self,
         allocate_info: CommandBufferAllocateInfo<Self>,
-    ) -> Result<Vec<CommandBuffer>, RHIError> {
+    ) -> Result<Vec<Self::CommandBuffer>, RHIError> {
         let level = match allocate_info.level {
             RHICommandBufferLevel::PRIMARY => vk::CommandBufferLevel::PRIMARY,
             RHICommandBufferLevel::SECONDARY => vk::CommandBufferLevel::SECONDARY,
@@ -520,7 +519,7 @@ impl crate::RHI for VulkanRHI {
         let command_buffers = unsafe { self.device.allocate_command_buffers(&create_info)? };
         Ok(command_buffers
             .iter()
-            .map(|x| CommandBuffer::new(*x))
+            .map(|x| Self::CommandBuffer { raw: *x })
             .collect())
     }
 
