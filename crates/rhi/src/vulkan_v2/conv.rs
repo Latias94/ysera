@@ -1,13 +1,22 @@
 use crate::types_v2::{
     RHIAttachmentDescriptionFlags, RHIAttachmentReference, RHICommandPoolCreateFlags,
     RHIDescriptorSetLayoutCreateFlags, RHIFramebufferCreateFlags, RHIPipelineBindPoint,
-    RHIPipelineLayoutCreateFlags, RHIRenderPassCreateFlags, RHISubpassDescriptionFlags,
+    RHIPipelineCreateFlags, RHIPipelineDepthStencilStateCreateFlags,
+    RHIPipelineDynamicStateCreateFlags, RHIPipelineInputAssemblyStateCreateFlags,
+    RHIPipelineLayoutCreateFlags, RHIPipelineMultisampleStateCreateFlags,
+    RHIPipelineRasterizationStateCreateFlags, RHIPipelineVertexInputStateCreateFlags,
+    RHIPipelineViewportStateCreateFlags, RHIRenderPassCreateFlags, RHISampleMask,
+    RHISubpassDescriptionFlags, RHIVertexInputRate,
 };
+use crate::vulkan_v2::conv;
 use ash::vk;
 use num_traits::{FromPrimitive, ToPrimitive};
 use rhi_types::{
-    RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIDescriptorType, RHIFormat,
-    RHIImageLayout, RHIPipelineStageFlags, RHISampleCountFlagBits, RHIShaderStageFlags,
+    RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIBlendFactor, RHIBlendOp,
+    RHIColorComponentFlags, RHICompareOp, RHICullModeFlags, RHIDescriptorType, RHIDynamicState,
+    RHIExtent2D, RHIExtent3D, RHIFormat, RHIFrontFace, RHIImageLayout, RHILogicOp, RHIOffset2D,
+    RHIPipelineStageFlags, RHIPolygonMode, RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits,
+    RHIShaderStageFlags, RHIStencilOp, RHIStencilOpState,
 };
 
 pub fn map_command_pool_create_flags(
@@ -32,7 +41,7 @@ pub fn map_vk_format(value: vk::Format) -> RHIFormat {
 
 pub fn map_format(value: RHIFormat) -> vk::Format {
     match value.to_i32() {
-        None => vk::Format::UNDEFINED,
+        None => vk::Format::default(),
         Some(x) => vk::Format::from_raw(x),
     }
 }
@@ -56,35 +65,35 @@ pub fn map_subpass_description_flags(
 
 pub fn map_sample_count_flag_bits(value: RHISampleCountFlagBits) -> vk::SampleCountFlags {
     match value.to_u32() {
-        None => vk::SampleCountFlags::TYPE_1,
+        None => vk::SampleCountFlags::default(),
         Some(x) => vk::SampleCountFlags::from_raw(x),
     }
 }
 
 pub fn map_attachment_load_op(value: RHIAttachmentLoadOp) -> vk::AttachmentLoadOp {
     match value.to_i32() {
-        None => vk::AttachmentLoadOp::DONT_CARE,
+        None => vk::AttachmentLoadOp::default(),
         Some(x) => vk::AttachmentLoadOp::from_raw(x),
     }
 }
 
 pub fn map_attachment_store_op(value: RHIAttachmentStoreOp) -> vk::AttachmentStoreOp {
     match value.to_i32() {
-        None => vk::AttachmentStoreOp::DONT_CARE,
+        None => vk::AttachmentStoreOp::default(),
         Some(x) => vk::AttachmentStoreOp::from_raw(x),
     }
 }
 
 pub fn map_image_layout(value: RHIImageLayout) -> vk::ImageLayout {
     match value.to_i32() {
-        None => vk::ImageLayout::UNDEFINED,
+        None => vk::ImageLayout::default(),
         Some(x) => vk::ImageLayout::from_raw(x),
     }
 }
 
 pub fn map_pipeline_bind_point(value: RHIPipelineBindPoint) -> vk::PipelineBindPoint {
     match value.to_i32() {
-        None => vk::PipelineBindPoint::GRAPHICS,
+        None => vk::PipelineBindPoint::default(),
         Some(x) => vk::PipelineBindPoint::from_raw(x),
     }
 }
@@ -214,7 +223,7 @@ pub fn map_render_pass_create_flags(value: RHIRenderPassCreateFlags) -> vk::Rend
 }
 
 pub fn map_pipeline_layout_create_flags(
-    value: RHIPipelineLayoutCreateFlags,
+    _value: RHIPipelineLayoutCreateFlags,
 ) -> vk::PipelineLayoutCreateFlags {
     let mut flags = vk::PipelineLayoutCreateFlags::empty();
     flags
@@ -244,7 +253,7 @@ pub fn map_shader_stage_flags(value: RHIShaderStageFlags) -> vk::ShaderStageFlag
 }
 
 pub fn map_framebuffer_create_flags(
-    value: RHIFramebufferCreateFlags,
+    _value: RHIFramebufferCreateFlags,
 ) -> vk::FramebufferCreateFlags {
     let flags = vk::FramebufferCreateFlags::empty();
     // if value.contains(RHIFramebufferCreateFlags::IMAGELESS) {
@@ -254,7 +263,7 @@ pub fn map_framebuffer_create_flags(
 }
 
 pub fn map_descriptor_set_layout_create_flags(
-    value: RHIDescriptorSetLayoutCreateFlags,
+    _value: RHIDescriptorSetLayoutCreateFlags,
 ) -> vk::DescriptorSetLayoutCreateFlags {
     let flags = vk::DescriptorSetLayoutCreateFlags::empty();
     flags
@@ -262,7 +271,216 @@ pub fn map_descriptor_set_layout_create_flags(
 
 pub fn map_descriptor_type(value: RHIDescriptorType) -> vk::DescriptorType {
     match value.to_i32() {
-        None => vk::DescriptorType::SAMPLER,
+        None => vk::DescriptorType::default(),
         Some(x) => vk::DescriptorType::from_raw(x),
+    }
+}
+
+pub fn map_pipeline_create_flags(value: RHIPipelineCreateFlags) -> vk::PipelineCreateFlags {
+    let mut flags = vk::PipelineCreateFlags::empty();
+    if value.contains(RHIPipelineCreateFlags::DISABLE_OPTIMIZATION) {
+        flags |= vk::PipelineCreateFlags::DISABLE_OPTIMIZATION;
+    }
+    if value.contains(RHIPipelineCreateFlags::ALLOW_DERIVATIVES) {
+        flags |= vk::PipelineCreateFlags::ALLOW_DERIVATIVES;
+    }
+    if value.contains(RHIPipelineCreateFlags::DERIVATIVE) {
+        flags |= vk::PipelineCreateFlags::DERIVATIVE;
+    }
+    flags
+}
+
+pub fn map_vertex_input_rate(value: RHIVertexInputRate) -> vk::VertexInputRate {
+    match value.to_i32() {
+        None => vk::VertexInputRate::default(),
+        Some(x) => vk::VertexInputRate::from_raw(x),
+    }
+}
+
+pub fn map_primitive_topology(value: RHIPrimitiveTopology) -> vk::PrimitiveTopology {
+    match value.to_i32() {
+        None => vk::PrimitiveTopology::default(),
+        Some(x) => vk::PrimitiveTopology::from_raw(x),
+    }
+}
+
+pub fn map_pipeline_input_assembly_state_create_flags(
+    _value: RHIPipelineInputAssemblyStateCreateFlags,
+) -> vk::PipelineInputAssemblyStateCreateFlags {
+    let flags = vk::PipelineInputAssemblyStateCreateFlags::empty();
+    flags
+}
+
+pub fn map_pipeline_vertex_input_state_create_flags(
+    _value: RHIPipelineVertexInputStateCreateFlags,
+) -> vk::PipelineVertexInputStateCreateFlags {
+    let flags = vk::PipelineVertexInputStateCreateFlags::empty();
+    flags
+}
+
+pub fn map_pipeline_viewport_state_create_flags(
+    _value: RHIPipelineViewportStateCreateFlags,
+) -> vk::PipelineViewportStateCreateFlags {
+    let flags = vk::PipelineViewportStateCreateFlags::empty();
+    flags
+}
+
+pub fn map_rect_2d(value: RHIRect2D) -> vk::Rect2D {
+    vk::Rect2D {
+        offset: map_offset_2d(value.offset),
+        extent: map_extent_2d(value.extent),
+    }
+}
+
+pub fn map_offset_2d(value: RHIOffset2D) -> vk::Offset2D {
+    vk::Offset2D {
+        x: value.x,
+        y: value.y,
+    }
+}
+
+pub fn map_extent_2d(value: RHIExtent2D) -> vk::Extent2D {
+    vk::Extent2D {
+        width: value.width,
+        height: value.height,
+    }
+}
+
+pub fn map_extent_3d(value: RHIExtent3D) -> vk::Extent3D {
+    vk::Extent3D {
+        width: value.width,
+        height: value.height,
+        depth: value.depth,
+    }
+}
+
+pub fn map_polygon_mode(value: RHIPolygonMode) -> vk::PolygonMode {
+    match value.to_i32() {
+        None => vk::PolygonMode::default(),
+        Some(x) => vk::PolygonMode::from_raw(x),
+    }
+}
+
+pub fn map_cull_mode_flags(value: RHICullModeFlags) -> vk::CullModeFlags {
+    let mut flags = vk::CullModeFlags::empty();
+    if value.contains(RHICullModeFlags::NONE) {
+        flags |= vk::CullModeFlags::NONE;
+    }
+    if value.contains(RHICullModeFlags::FRONT) {
+        flags |= vk::CullModeFlags::FRONT;
+    }
+    if value.contains(RHICullModeFlags::BACK) {
+        flags |= vk::CullModeFlags::BACK;
+    }
+    flags
+}
+
+pub fn map_front_face(value: RHIFrontFace) -> vk::FrontFace {
+    match value.to_i32() {
+        None => vk::FrontFace::default(),
+        Some(x) => vk::FrontFace::from_raw(x),
+    }
+}
+
+pub fn map_pipeline_rasterization_state_create_flags(
+    _value: RHIPipelineRasterizationStateCreateFlags,
+) -> vk::PipelineRasterizationStateCreateFlags {
+    let flags = vk::PipelineRasterizationStateCreateFlags::empty();
+    flags
+}
+
+pub fn map_pipeline_multisample_state_create_flags(
+    _value: RHIPipelineMultisampleStateCreateFlags,
+) -> vk::PipelineMultisampleStateCreateFlags {
+    let flags = vk::PipelineMultisampleStateCreateFlags::empty();
+    flags
+}
+
+pub fn map_pipeline_depth_stencil_state_create_flags(
+    _value: RHIPipelineDepthStencilStateCreateFlags,
+) -> vk::PipelineDepthStencilStateCreateFlags {
+    let flags = vk::PipelineDepthStencilStateCreateFlags::empty();
+    flags
+}
+
+pub fn map_sample_mask(value: RHISampleMask) -> vk::SampleMask {
+    value
+}
+
+pub fn map_compare_op(value: RHICompareOp) -> vk::CompareOp {
+    match value.to_i32() {
+        None => vk::CompareOp::default(),
+        Some(x) => vk::CompareOp::from_raw(x),
+    }
+}
+
+pub fn map_stencil_op_state(value: RHIStencilOpState) -> vk::StencilOpState {
+    vk::StencilOpState {
+        fail_op: map_stencil_op(value.fail_op),
+        pass_op: map_stencil_op(value.pass_op),
+        depth_fail_op: map_stencil_op(value.depth_fail_op),
+        compare_op: map_compare_op(value.compare_op),
+        compare_mask: value.compare_mask,
+        write_mask: value.write_mask,
+        reference: value.reference,
+    }
+}
+
+pub fn map_stencil_op(value: RHIStencilOp) -> vk::StencilOp {
+    match value.to_i32() {
+        None => vk::StencilOp::default(),
+        Some(x) => vk::StencilOp::from_raw(x),
+    }
+}
+
+pub fn map_logic_op(value: RHILogicOp) -> vk::LogicOp {
+    match value.to_i32() {
+        None => vk::LogicOp::default(),
+        Some(x) => vk::LogicOp::from_raw(x),
+    }
+}
+
+pub fn map_blend_factor(value: RHIBlendFactor) -> vk::BlendFactor {
+    match value.to_i32() {
+        None => vk::BlendFactor::default(),
+        Some(x) => vk::BlendFactor::from_raw(x),
+    }
+}
+
+pub fn map_blend_op(value: RHIBlendOp) -> vk::BlendOp {
+    match value.to_i32() {
+        None => vk::BlendOp::default(),
+        Some(x) => vk::BlendOp::from_raw(x),
+    }
+}
+
+pub fn map_color_component_flags(value: RHIColorComponentFlags) -> vk::ColorComponentFlags {
+    let mut flags = vk::ColorComponentFlags::empty();
+    if value.contains(RHIColorComponentFlags::R) {
+        flags |= vk::ColorComponentFlags::R;
+    }
+    if value.contains(RHIColorComponentFlags::G) {
+        flags |= vk::ColorComponentFlags::G;
+    }
+    if value.contains(RHIColorComponentFlags::B) {
+        flags |= vk::ColorComponentFlags::B;
+    }
+    if value.contains(RHIColorComponentFlags::A) {
+        flags |= vk::ColorComponentFlags::A;
+    }
+    flags
+}
+
+pub fn map_pipeline_dynamic_state_create_flags(
+    _value: RHIPipelineDynamicStateCreateFlags,
+) -> vk::PipelineDynamicStateCreateFlags {
+    let flags = vk::PipelineDynamicStateCreateFlags::empty();
+    flags
+}
+
+pub fn map_dynamic_state(value: RHIDynamicState) -> vk::DynamicState {
+    match value.to_i32() {
+        None => vk::DynamicState::default(),
+        Some(x) => vk::DynamicState::from_raw(x),
     }
 }

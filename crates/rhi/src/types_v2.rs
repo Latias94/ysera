@@ -2,10 +2,13 @@
 
 use bitflags::bitflags;
 use rhi_types::{
-    RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIDescriptorType, RHIFormat,
-    RHIImageLayout, RHIPipelineStageFlags, RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits,
-    RHIShaderStageFlags,
+    RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHICompareOp, RHICullModeFlags,
+    RHIDescriptorType, RHIDynamicState, RHIFormat, RHIFrontFace, RHIImageLayout, RHILogicOp,
+    RHIPipelineColorBlendAttachmentState, RHIPipelineStageFlags, RHIPolygonMode,
+    RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits, RHIShaderStageFlags,
+    RHIStencilOpState,
 };
+use std::ffi::CString;
 use typed_builder::TypedBuilder;
 
 use crate::RHI;
@@ -190,11 +193,20 @@ bitflags! {
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkGraphicsPipelineCreateInfo.html>"]
 pub struct RHIGraphicsPipelineCreateInfo<'a, R: RHI> {
     pub flags: RHIPipelineCreateFlags,
-    pub stages: &'a [RHIPipelineShaderStageCreateInfo<R>],
+    pub stages: &'a [RHIPipelineShaderStageCreateInfo<'a, R>],
     pub vertex_input_stage: &'a RHIPipelineVertexInputStateCreateInfo<'a>,
     pub input_assembly_stage: &'a RHIPipelineInputAssemblyStateCreateInfo,
     pub tessellation_stage: &'a RHIPipelineTessellationStateCreateInfo,
     pub viewport_stage: &'a RHIPipelineViewportStateCreateInfo<'a, R>,
+    pub rasterization_stage: &'a RHIPipelineRasterizationStateCreateInfo,
+    pub multisample_stage: &'a RHIPipelineMultisampleStateCreateInfo<'a>,
+    pub depth_stencil_stage: &'a RHIPipelineDepthStencilStateCreateInfo,
+    pub color_blend_stage: &'a RHIPipelineColorBlendStateCreateInfo<'a>,
+    pub dynamic_stage: &'a RHIPipelineDynamicStateCreateInfo<'a>,
+    pub layout: R::PipelineLayout,
+    pub render_pass: R::RenderPass,
+    pub subpass: u32,
+    pub base_pipeline_index: u32,
 }
 
 bitflags! {
@@ -208,10 +220,11 @@ bitflags! {
 }
 
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineShaderStageCreateInfo.html>"]
-pub struct RHIPipelineShaderStageCreateInfo<R: RHI> {
+pub struct RHIPipelineShaderStageCreateInfo<'a, R: RHI> {
     pub flags: RHIPipelineShaderStageCreateFlags,
     pub stage: RHIShaderStageFlags,
     pub shader: R::Shader,
+    pub name: &'a CString,
 }
 
 bitflags! {
@@ -298,5 +311,103 @@ bitflags! {
     #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineViewportStateCreateFlags.html>"]
     pub struct RHIPipelineViewportStateCreateFlags: u32 {
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineRasterizationStateCreateInfo.html>"]
+pub struct RHIPipelineRasterizationStateCreateInfo {
+    pub flags: RHIPipelineRasterizationStateCreateFlags,
+    pub depth_clamp_enable: bool,
+    pub rasterizer_discard_enable: bool,
+    pub polygon_mode: RHIPolygonMode,
+    pub cull_mode: RHICullModeFlags,
+    pub front_face: RHIFrontFace,
+    pub depth_bias_enable: bool,
+    pub depth_bias_constant_factor: f32,
+    pub depth_bias_clamp: f32,
+    pub depth_bias_slope_factor: f32,
+    pub line_width: f32,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineRasterizationStateCreateFlags.html>"]
+    pub struct RHIPipelineRasterizationStateCreateFlags: u32 {
+    }
+}
+
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSampleMask.html>"]
+pub type RHISampleMask = u32;
+
+#[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineMultisampleStateCreateInfo.html>"]
+pub struct RHIPipelineMultisampleStateCreateInfo<'a> {
+    pub flags: RHIPipelineMultisampleStateCreateFlags,
+    pub rasterization_samples: RHISampleCountFlagBits,
+    pub sample_shading_enable: bool,
+    pub min_sample_shading: f32,
+    pub sample_masks: &'a [RHISampleMask],
+    pub alpha_to_coverage_enable: bool,
+    pub alpha_to_one_enable: bool,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineMultisampleStateCreateFlags.html>"]
+    pub struct RHIPipelineMultisampleStateCreateFlags: u32 {
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineDepthStencilStateCreateInfo.html>"]
+pub struct RHIPipelineDepthStencilStateCreateInfo {
+    pub flags: RHIPipelineDepthStencilStateCreateFlags,
+    pub depth_test_enable: bool,
+    pub depth_write_enable: bool,
+    pub depth_compare_op: RHICompareOp,
+    pub depth_bounds_test_enable: bool,
+    pub stencil_test_enable: bool,
+    pub front: RHIStencilOpState,
+    pub back: RHIStencilOpState,
+    pub min_depth_bounds: f32,
+    pub max_depth_bounds: f32,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineDepthStencilStateCreateFlags.html>"]
+    pub struct RHIPipelineDepthStencilStateCreateFlags: u32 {
+    }
+}
+
+#[derive(Clone, Copy)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineColorBlendStateCreateInfo.html>"]
+pub struct RHIPipelineColorBlendStateCreateInfo<'a> {
+    pub flags: RHIPipelineColorBlendStateCreateFlags,
+    pub logic_op_enable: bool,
+    pub logic_op: RHILogicOp,
+    pub attachments: &'a [RHIPipelineColorBlendAttachmentState],
+    pub blend_constants: [f32; 4],
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineColorBlendStateCreateFlags.html>"]
+    pub struct RHIPipelineColorBlendStateCreateFlags: u32 {
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineDynamicStateCreateInfo.html>"]
+pub struct RHIPipelineDynamicStateCreateInfo<'a> {
+    pub flags: RHIPipelineDynamicStateCreateFlags,
+    pub dynamic_states: &'a [RHIDynamicState],
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineDynamicStateCreateFlags.html>"]
+    pub struct RHIPipelineDynamicStateCreateFlags: u32 {
     }
 }

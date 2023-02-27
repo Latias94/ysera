@@ -369,8 +369,8 @@ pub struct RHIViewport {
 
 #[derive(Copy, Clone)]
 pub struct RHIOffset2D {
-    pub x: u32,
-    pub y: u32,
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Copy, Clone)]
@@ -379,9 +379,12 @@ pub struct RHIRect2D {
     pub extent: RHIExtent2D,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSampleCountFlagBits.html>"]
 pub enum RHISampleCountFlagBits {
+    #[default]
     TYPE_1 = 1 << 0,
     TYPE_2 = 1 << 1,
     TYPE_4 = 1 << 2,
@@ -534,7 +537,9 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPrimitiveTopology.html>"]
 pub enum RHIPrimitiveTopology {
     POINT_LIST = 0,
@@ -568,4 +573,172 @@ pub enum RHIDescriptorType {
     UNIFORM_BUFFER_DYNAMIC = 8,
     STORAGE_BUFFER_DYNAMIC = 9,
     INPUT_ATTACHMENT = 10,
+}
+
+#[derive(
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPolygonMode.html>"]
+pub enum RHIPolygonMode {
+    #[default]
+    FILL = 0,
+    LINE = 1,
+    POINT = 2,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkCullModeFlagBits.html>"]
+    pub struct RHICullModeFlags: u32 {
+        const NONE = 1 << 0;
+        const FRONT = 1 << 1;
+        const BACK = 1 << 2;
+    }
+}
+
+#[derive(
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkFrontFace.html>"]
+pub enum RHIFrontFace {
+    #[default]
+    COUNTER_CLOCKWISE = 0,
+    CLOCKWISE = 1,
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkCompareOp.html>"]
+pub enum RHICompareOp {
+    NEVER = 0,
+    LESS = 1,
+    EQUAL = 2,
+    LESS_OR_EQUAL = 3,
+    GREATER = 4,
+    NOT_EQUAL = 5,
+    GREATER_OR_EQUAL = 6,
+    ALWAYS = 7,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkStencilOpState.html>"]
+pub struct RHIStencilOpState {
+    pub fail_op: RHIStencilOp,
+    pub pass_op: RHIStencilOp,
+    pub depth_fail_op: RHIStencilOp,
+    pub compare_op: RHICompareOp,
+    pub compare_mask: u32,
+    pub write_mask: u32,
+    pub reference: u32,
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkStencilOp.html>"]
+pub enum RHIStencilOp {
+    KEEP = 0,
+    ZERO = 1,
+    REPLACE = 2,
+    INCREMENT_AND_CLAMP = 3,
+    DECREMENT_AND_CLAMP = 4,
+    INVERT = 5,
+    INCREMENT_AND_WRAP = 6,
+    DECREMENT_AND_WRAP = 7,
+}
+
+#[derive(
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkLogicOp.html>"]
+pub enum RHILogicOp {
+    CLEAR = 0,
+    AND = 1,
+    AND_REVERSE = 2,
+    #[default]
+    COPY = 3,
+    AND_INVERTED = 4,
+    NO_OP = 5,
+    XOR = 6,
+    OR = 7,
+    NOR = 8,
+    EQUIVALENT = 9,
+    INVERT = 10,
+    OR_REVERSE = 11,
+    COPY_INVERTED = 12,
+    OR_INVERTED = 13,
+    NAND = 14,
+    SET = 15,
+}
+
+#[derive(Copy, Clone)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineColorBlendAttachmentState.html>"]
+pub struct RHIPipelineColorBlendAttachmentState {
+    pub blend_enable: bool,
+    pub src_color_blend_factor: RHIBlendFactor,
+    pub dst_color_blend_factor: RHIBlendFactor,
+    pub color_blend_op: RHIBlendOp,
+    pub src_alpha_blend_factor: RHIBlendFactor,
+    pub dst_alpha_blend_factor: RHIBlendFactor,
+    pub alpha_blend_op: RHIBlendOp,
+    pub color_write_mask: RHIColorComponentFlags,
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkBlendFactor.html>"]
+pub enum RHIBlendFactor {
+    ZERO = 0,
+    ONE = 1,
+    SRC_COLOR = 2,
+    ONE_MINUS_SRC_COLOR = 3,
+    DST_COLOR = 4,
+    ONE_MINUS_DST_COLOR = 5,
+    SRC_ALPHA = 6,
+    ONE_MINUS_SRC_ALPHA = 7,
+    DST_ALPHA = 8,
+    ONE_MINUS_DST_ALPHA = 9,
+    CONSTANT_COLOR = 10,
+    ONE_MINUS_CONSTANT_COLOR = 11,
+    CONSTANT_ALPHA = 12,
+    ONE_MINUS_CONSTANT_ALPHA = 13,
+    SRC_ALPHA_SATURATE = 14,
+    SRC1_COLOR = 15,
+    ONE_MINUS_SRC1_COLOR = 16,
+    SRC1_ALPHA = 17,
+    ONE_MINUS_SRC1_ALPHA = 18,
+}
+
+#[derive(
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkBlendOp.html>"]
+pub enum RHIBlendOp {
+    #[default]
+    ADD = 0,
+    SUBTRACT = 1,
+    REVERSE_SUBTRACT = 2,
+    MIN = 3,
+    MAX = 4,
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkColorComponentFlagBits.html>"]
+    pub struct RHIColorComponentFlags: u32 {
+        const R = 1 << 0;
+        const G = 1 << 1;
+        const B = 1 << 2;
+        const A = 1 << 3;
+    }
+}
+
+#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkDynamicState.html>"]
+pub enum RHIDynamicState {
+    VIEWPORT = 0,
+    SCISSOR = 1,
+    LINE_WIDTH = 2,
+    DEPTH_BIAS = 3,
+    BLEND_CONSTANTS = 4,
+    DEPTH_BOUNDS = 5,
+    STENCIL_COMPARE_MASK = 6,
+    STENCIL_WRITE_MASK = 7,
+    STENCIL_REFERENCE = 8,
 }

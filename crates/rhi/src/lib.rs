@@ -12,7 +12,8 @@ use rhi_types::RHIExtent2D;
 
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
-    RHIFramebufferCreateInfo, RHIPipelineLayoutCreateInfo, RHIRenderPassCreateInfo,
+    RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
+    RHIRenderPassCreateInfo,
 };
 
 mod error;
@@ -89,6 +90,11 @@ pub trait RHI: Sized {
         &self,
         create_info: &RHIPipelineLayoutCreateInfo<Self>,
     ) -> Result<Self::PipelineLayout, RHIError>;
+
+    unsafe fn create_graphics_pipelines<'a>(
+        &self,
+        create_infos: &'a [RHIGraphicsPipelineCreateInfo<Self>],
+    ) -> Result<Vec<Self::Pipeline>, RHIError>;
 
     unsafe fn clear(&mut self);
 }
