@@ -7,13 +7,15 @@ use gpu_allocator::vulkan::{Allocation, Allocator, AllocatorCreateDesc};
 use log::LevelFilter;
 use parking_lot::Mutex;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use rhi_types::{
+    DeviceFeatures, DeviceRequirement, InstanceDescriptor, InstanceFlags,
+    PhysicalDeviceRequirements, QueueFamilyIndices, RHIExtent2D, RHIFormat, RHIOffset2D, RHIRect2D,
+    RHIViewport,
+};
 
 use crate::types_v2::{
-    DeviceFeatures, DeviceRequirement, InstanceDescriptor, InstanceFlags,
-    PhysicalDeviceRequirements, QueueFamilyIndices, RHICommandBufferLevel,
-    RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo, RHIExtent2D, RHIFormat,
-    RHIFramebufferCreateInfo, RHIOffset2D, RHIPipelineLayoutCreateInfo, RHIRect2D,
-    RHIRenderPassCreateInfo, RHIViewport,
+    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
+    RHIFramebufferCreateInfo, RHIPipelineLayoutCreateInfo, RHIRenderPassCreateInfo,
 };
 use crate::utils::c_char_to_string;
 use crate::vulkan_v2::debug::DebugUtils;

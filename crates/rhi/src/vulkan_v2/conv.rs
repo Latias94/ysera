@@ -1,12 +1,13 @@
+use crate::types_v2::{
+    RHIAttachmentDescriptionFlags, RHIAttachmentReference, RHICommandPoolCreateFlags,
+    RHIDescriptorSetLayoutCreateFlags, RHIFramebufferCreateFlags, RHIPipelineBindPoint,
+    RHIPipelineLayoutCreateFlags, RHIRenderPassCreateFlags, RHISubpassDescriptionFlags,
+};
 use ash::vk;
 use num_traits::{FromPrimitive, ToPrimitive};
-
-use crate::types_v2::{
-    RHIAccessFlags, RHIAttachmentDescriptionFlags, RHIAttachmentLoadOp, RHIAttachmentReference,
-    RHIAttachmentStoreOp, RHICommandPoolCreateFlags, RHIDescriptorSetLayoutCreateFlags,
-    RHIDescriptorType, RHIFormat, RHIFramebufferCreateFlags, RHIImageLayout, RHIPipelineBindPoint,
-    RHIPipelineLayoutCreateFlags, RHIPipelineStageFlags, RHIRenderPassCreateFlags,
-    RHISampleCountFlagBits, RHIShaderStageFlags, RHISubpassDescriptionFlags,
+use rhi_types::{
+    RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIDescriptorType, RHIFormat,
+    RHIImageLayout, RHIPipelineStageFlags, RHISampleCountFlagBits, RHIShaderStageFlags,
 };
 
 pub fn map_command_pool_create_flags(

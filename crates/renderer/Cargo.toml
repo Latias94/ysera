@@ -6,6 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 rhi.workspace = true
+rhi_types.workspace = true
 math.workspace = true
 log.workspace = true
 profiling.workspace = true

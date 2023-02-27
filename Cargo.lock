@@ -2513,6 +2513,7 @@ dependencies = [
  "winit",
  "ysera_math",
  "ysera_rhi",
+ "ysera_rhi_types",
 ]
 
 [[package]]
@@ -2554,6 +2555,19 @@ dependencies = [
  "winit",
  "ysera_imgui",
  "ysera_math",
+ "ysera_rhi_types",
+]
+
+[[package]]
+name = "ysera_rhi_types"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.0.0-rc.3",
+ "log",
+ "num-derive",
+ "num-traits",
+ "parking_lot",
+ "typed-builder",
 ]
 
 [[package]]

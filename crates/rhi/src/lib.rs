@@ -8,9 +8,10 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 pub use winit;
 
 pub use error::*;
+use rhi_types::RHIExtent2D;
 
 use crate::types_v2::{
-    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo, RHIExtent2D,
+    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
     RHIFramebufferCreateInfo, RHIPipelineLayoutCreateInfo, RHIRenderPassCreateInfo,
 };
 

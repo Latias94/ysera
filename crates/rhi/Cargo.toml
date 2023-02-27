@@ -14,6 +14,7 @@ vulkan = ["naga/spv-out", "ash"]
 [dependencies]
 math.workspace = true
 ysera_imgui.workspace = true
+rhi_types.workspace = true
 
 ash = { workspace = true, default-features = false, features = ["linked", "debug"], optional = true }
 ash-window.workspace = true
