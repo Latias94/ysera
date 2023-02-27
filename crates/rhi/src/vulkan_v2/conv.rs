@@ -1,11 +1,12 @@
 use ash::vk;
 use num_traits::{FromPrimitive, ToPrimitive};
 
-use rhi_types::{
+use crate::types_v2::{
     RHIAccessFlags, RHIAttachmentDescriptionFlags, RHIAttachmentLoadOp, RHIAttachmentReference,
-    RHIAttachmentStoreOp, RHICommandPoolCreateFlags, RHIFormat, RHIImageLayout,
-    RHIPipelineBindPoint, RHIPipelineStageFlags, RHIRenderPassCreateFlags, RHISampleCountFlagBits,
-    RHISubpassDescriptionFlags,
+    RHIAttachmentStoreOp, RHICommandPoolCreateFlags, RHIDescriptorSetLayoutCreateFlags,
+    RHIDescriptorType, RHIFormat, RHIFramebufferCreateFlags, RHIImageLayout, RHIPipelineBindPoint,
+    RHIPipelineLayoutCreateFlags, RHIPipelineStageFlags, RHIRenderPassCreateFlags,
+    RHISampleCountFlagBits, RHIShaderStageFlags, RHISubpassDescriptionFlags,
 };
 
 pub fn map_command_pool_create_flags(
@@ -209,4 +210,58 @@ pub fn map_access_flags(value: RHIAccessFlags) -> vk::AccessFlags {
 pub fn map_render_pass_create_flags(value: RHIRenderPassCreateFlags) -> vk::RenderPassCreateFlags {
     let mut flags = vk::RenderPassCreateFlags::empty();
     flags
+}
+
+pub fn map_pipeline_layout_create_flags(
+    value: RHIPipelineLayoutCreateFlags,
+) -> vk::PipelineLayoutCreateFlags {
+    let mut flags = vk::PipelineLayoutCreateFlags::empty();
+    flags
+}
+
+pub fn map_shader_stage_flags(value: RHIShaderStageFlags) -> vk::ShaderStageFlags {
+    let mut flags = vk::ShaderStageFlags::empty();
+    if value.contains(RHIShaderStageFlags::VERTEX) {
+        flags |= vk::ShaderStageFlags::VERTEX;
+    }
+    if value.contains(RHIShaderStageFlags::TESSELLATION_CONTROL) {
+        flags |= vk::ShaderStageFlags::TESSELLATION_CONTROL;
+    }
+    if value.contains(RHIShaderStageFlags::TESSELLATION_EVALUATION) {
+        flags |= vk::ShaderStageFlags::TESSELLATION_EVALUATION;
+    }
+    if value.contains(RHIShaderStageFlags::GEOMETRY) {
+        flags |= vk::ShaderStageFlags::GEOMETRY;
+    }
+    if value.contains(RHIShaderStageFlags::FRAGMENT) {
+        flags |= vk::ShaderStageFlags::FRAGMENT;
+    }
+    if value.contains(RHIShaderStageFlags::COMPUTE) {
+        flags |= vk::ShaderStageFlags::COMPUTE;
+    }
+    flags
+}
+
+pub fn map_framebuffer_create_flags(
+    value: RHIFramebufferCreateFlags,
+) -> vk::FramebufferCreateFlags {
+    let flags = vk::FramebufferCreateFlags::empty();
+    // if value.contains(RHIFramebufferCreateFlags::IMAGELESS) {
+    //     flags |= vk::FramebufferCreateFlags::IMAGELESS;
+    // }
+    flags
+}
+
+pub fn map_descriptor_set_layout_create_flags(
+    value: RHIDescriptorSetLayoutCreateFlags,
+) -> vk::DescriptorSetLayoutCreateFlags {
+    let flags = vk::DescriptorSetLayoutCreateFlags::empty();
+    flags
+}
+
+pub fn map_descriptor_type(value: RHIDescriptorType) -> vk::DescriptorType {
+    match value.to_i32() {
+        None => vk::DescriptorType::SAMPLER,
+        Some(x) => vk::DescriptorType::from_raw(x),
+    }
 }

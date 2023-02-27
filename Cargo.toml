@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/rhi",
-    "crates/rhi_types",
     #    "crates/engine",
     "crates/math",
     "crates/imgui",
@@ -18,7 +17,6 @@ rust-version = "1.65"
 math = { package = "ysera_math", path = "crates/math" }
 #engine = { package = "ysera_engine", path = "crates/engine" }
 rhi = { package = "ysera_rhi", path = "crates/rhi" }
-rhi_types = { package = "ysera_rhi_types", path = "crates/rhi_types" }
 renderer = { package = "ysera_renderer", path = "crates/renderer" }
 ysera_imgui = { package = "ysera_imgui", path = "crates/imgui" }
 

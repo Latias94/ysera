@@ -8,13 +8,16 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 pub use winit;
 
 pub use error::*;
-use rhi_types::{
-    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIExtent2D, RHIRenderPassCreateInfo,
+
+use crate::types_v2::{
+    RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo, RHIExtent2D,
+    RHIFramebufferCreateInfo, RHIPipelineLayoutCreateInfo, RHIRenderPassCreateInfo,
 };
 
 mod error;
 mod gui;
 pub mod types;
+pub mod types_v2;
 pub mod utils;
 pub mod vulkan_v2;
 
@@ -33,6 +36,9 @@ pub trait RHI: Sized {
     type DescriptorSetLayout;
     type PipelineLayout;
     type Pipeline;
+    type Sampler;
+    type Shader;
+    type Viewport;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError>;
     unsafe fn prepare_context(&mut self);
@@ -67,6 +73,21 @@ pub trait RHI: Sized {
         &self,
         create_info: &RHIRenderPassCreateInfo,
     ) -> Result<Self::RenderPass, RHIError>;
+
+    unsafe fn create_framebuffer(
+        &self,
+        create_info: &RHIFramebufferCreateInfo<Self>,
+    ) -> Result<Self::Framebuffer, RHIError>;
+
+    unsafe fn create_descriptor_set_layout(
+        &self,
+        create_info: &RHIDescriptorSetLayoutCreateInfo,
+    ) -> Result<Self::DescriptorSetLayout, RHIError>;
+
+    unsafe fn create_pipeline_layout(
+        &self,
+        create_info: &RHIPipelineLayoutCreateInfo<Self>,
+    ) -> Result<Self::PipelineLayout, RHIError>;
 
     unsafe fn clear(&mut self);
 }

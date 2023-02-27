@@ -3,8 +3,7 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, 
 use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 
-use rhi_types::RHIExtent2D;
-
+use crate::types_v2::RHIExtent2D;
 use crate::RHIError;
 
 pub unsafe fn create_image_view(

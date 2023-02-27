@@ -8,15 +8,14 @@ use log::LevelFilter;
 use parking_lot::Mutex;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 
-use rhi_types::{
+use crate::types_v2::{
     DeviceFeatures, DeviceRequirement, InstanceDescriptor, InstanceFlags,
     PhysicalDeviceRequirements, QueueFamilyIndices, RHICommandBufferLevel,
-    RHICommandPoolCreateInfo, RHIExtent2D, RHIFormat, RHIOffset2D, RHIRect2D,
+    RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo, RHIExtent2D, RHIFormat,
+    RHIFramebufferCreateInfo, RHIOffset2D, RHIPipelineLayoutCreateInfo, RHIRect2D,
     RHIRenderPassCreateInfo, RHIViewport,
 };
-
 use crate::utils::c_char_to_string;
-use crate::vulkan_v2::conv::map_pipeline_bind_point;
 use crate::vulkan_v2::debug::DebugUtils;
 use crate::{CommandBufferAllocateInfo, InitInfo, RHIError, MAX_FRAMES_IN_FLIGHT};
 
@@ -148,6 +147,18 @@ pub struct VulkanDescriptorSetLayout {
     raw: vk::DescriptorSetLayout,
 }
 
+pub struct VulkanSampler {
+    raw: vk::Sampler,
+}
+
+pub struct VulkanShader {
+    raw: vk::ShaderModule,
+}
+
+pub struct VulkanViewport {
+    raw: vk::Viewport,
+}
+
 impl crate::RHI for VulkanRHI {
     type CommandPool = VulkanCommandPool;
     type CommandBuffer = VulkanCommandBuffer;
@@ -161,6 +172,9 @@ impl crate::RHI for VulkanRHI {
     type DescriptorSetLayout = VulkanDescriptorSetLayout;
     type PipelineLayout = VulkanPipelineLayout;
     type Pipeline = VulkanPipeline;
+    type Sampler = VulkanSampler;
+    type Shader = VulkanShader;
+    type Viewport = VulkanViewport;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError> {
         let viewport = RHIViewport {
@@ -612,7 +626,9 @@ impl crate::RHI for VulkanRHI {
                 .collect::<Vec<_>>();
             let vk_subpass_desc = vk::SubpassDescription::builder()
                 .flags(conv::map_subpass_description_flags(attachment.flags))
-                .pipeline_bind_point(map_pipeline_bind_point(attachment.pipeline_bind_point))
+                .pipeline_bind_point(conv::map_pipeline_bind_point(
+                    attachment.pipeline_bind_point,
+                ))
                 .input_attachments(&input_attachments)
                 .color_attachments(&color_attachments)
                 .resolve_attachments(&resolve_attachments)
@@ -648,6 +664,95 @@ impl crate::RHI for VulkanRHI {
         };
 
         Ok(VulkanRenderPass { raw })
+    }
+
+    unsafe fn create_framebuffer(
+        &self,
+        create_info: &RHIFramebufferCreateInfo<Self>,
+    ) -> Result<Self::Framebuffer, RHIError> {
+        let attachments = create_info
+            .attachments
+            .iter()
+            .map(|x| x.raw)
+            .collect::<Vec<_>>();
+        let framebuffer_create_info = vk::FramebufferCreateInfo::builder()
+            .flags(conv::map_framebuffer_create_flags(create_info.flags))
+            .render_pass(create_info.render_pass.raw)
+            .attachments(&attachments)
+            .width(create_info.width)
+            .height(create_info.height)
+            .layers(create_info.layers)
+            .build();
+        let raw = unsafe {
+            self.device
+                .create_framebuffer(&framebuffer_create_info, None)?
+        };
+
+        Ok(VulkanFramebuffer { raw })
+    }
+
+    unsafe fn create_descriptor_set_layout(
+        &self,
+        create_info: &RHIDescriptorSetLayoutCreateInfo,
+    ) -> Result<Self::DescriptorSetLayout, RHIError> {
+        let bindings = create_info
+            .bindings
+            .iter()
+            .map(|x| {
+                vk::DescriptorSetLayoutBinding::builder()
+                    .binding(x.binding)
+                    .descriptor_type(conv::map_descriptor_type(x.descriptor_type))
+                    .descriptor_count(x.descriptor_count)
+                    .stage_flags(conv::map_shader_stage_flags(x.stage_flags))
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let descriptor_set_layout_create_info = vk::DescriptorSetLayoutCreateInfo::builder()
+            .flags(conv::map_descriptor_set_layout_create_flags(
+                create_info.flags,
+            ))
+            .bindings(&bindings);
+
+        let raw = unsafe {
+            self.device
+                .create_descriptor_set_layout(&descriptor_set_layout_create_info, None)?
+        };
+
+        Ok(VulkanDescriptorSetLayout { raw })
+    }
+
+    unsafe fn create_pipeline_layout(
+        &self,
+        create_info: &RHIPipelineLayoutCreateInfo<Self>,
+    ) -> Result<Self::PipelineLayout, RHIError> {
+        let set_layout_list = create_info
+            .descriptor_set_layouts
+            .iter()
+            .map(|x| x.raw)
+            .collect::<Vec<_>>();
+        let push_constant_ranges = create_info
+            .push_constant_ranges
+            .iter()
+            .map(|x| {
+                vk::PushConstantRange::builder()
+                    .stage_flags(conv::map_shader_stage_flags(x.stage_flags))
+                    .offset(x.offset)
+                    .size(x.size)
+                    .build()
+            })
+            .collect::<Vec<_>>();
+
+        let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo::builder()
+            .flags(conv::map_pipeline_layout_create_flags(create_info.flags))
+            .set_layouts(&set_layout_list)
+            .push_constant_ranges(&push_constant_ranges);
+
+        let raw = unsafe {
+            self.device
+                .create_pipeline_layout(&pipeline_layout_create_info, None)?
+        };
+        Ok(VulkanPipelineLayout { raw })
     }
 
     unsafe fn clear(&mut self) {
@@ -1204,7 +1309,7 @@ impl VulkanRHI {
         } = properties;
 
         let mut image_count = support.capabilities.min_image_count + 1;
-        image_count.max(max_frames_in_flight as u32);
+        image_count = image_count.max(max_frames_in_flight as u32);
         image_count = if support.capabilities.max_image_count > 0 {
             image_count.min(support.capabilities.max_image_count)
         } else {
