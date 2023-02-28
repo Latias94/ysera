@@ -8,6 +8,7 @@ type Api = VulkanRHI;
 
 struct Sandbox {
     rhi: Api,
+    // main_camera_pass: MainCameraPass<Api>,
     temp: bool,
 }
 
@@ -24,8 +25,16 @@ impl Sandbox {
         };
 
         let rhi = unsafe { Api::initialize(init_info)? };
+        // let rhi = Arc::new(rhi);
+        //
+        // let pass_init_info = MainCameraPassInitInfo { rhi: rhi.clone() };
+        // let main_camera_pass = MainCameraPass::initialize(&pass_init_info)?;
 
-        Ok(Self { rhi, temp: false })
+        Ok(Self {
+            rhi,
+            // main_camera_pass,
+            temp: false,
+        })
     }
 
     fn update(&mut self, delta_time: Duration) -> anyhow::Result<()> {

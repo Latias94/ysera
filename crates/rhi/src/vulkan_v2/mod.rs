@@ -164,6 +164,10 @@ pub struct VulkanViewport {
     raw: vk::Viewport,
 }
 
+pub struct VulkanBuffer {
+    raw: vk::Buffer,
+}
+
 impl crate::RHI for VulkanRHI {
     type CommandPool = VulkanCommandPool;
     type CommandBuffer = VulkanCommandBuffer;
@@ -180,6 +184,7 @@ impl crate::RHI for VulkanRHI {
     type Sampler = VulkanSampler;
     type Shader = VulkanShader;
     type Viewport = VulkanViewport;
+    type Buffer = VulkanBuffer;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError> {
         let viewport = RHIViewport {
@@ -988,6 +993,30 @@ impl crate::RHI for VulkanRHI {
                 .map_err(|e| e.1)?
         }[0];
         Ok(VulkanPipeline { raw })
+    }
+
+    unsafe fn destroy_shader_module(&self, shader: Self::Shader) {
+        unsafe { self.device.destroy_shader_module(shader.raw, None) }
+    }
+
+    unsafe fn destroy_sampler(&self, sampler: Self::Sampler) {
+        unsafe { self.device.destroy_sampler(sampler.raw, None) }
+    }
+
+    unsafe fn destroy_image(&self, image: Self::Image) {
+        unsafe { self.device.destroy_image(image.raw, None) }
+    }
+
+    unsafe fn destroy_image_view(&self, image_view: Self::ImageView) {
+        unsafe { self.device.destroy_image_view(image_view.raw, None) }
+    }
+
+    unsafe fn destroy_framebuffer(&self, framebuffer: Self::Framebuffer) {
+        unsafe { self.device.destroy_framebuffer(framebuffer.raw, None) }
+    }
+
+    unsafe fn destroy_buffer(&self, buffer: Self::Buffer) {
+        unsafe { self.device.destroy_buffer(buffer.raw, None) }
     }
 
     unsafe fn clear(&mut self) {

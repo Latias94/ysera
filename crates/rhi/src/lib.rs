@@ -25,7 +25,7 @@ pub mod vulkan_v2;
 
 const MAX_FRAMES_IN_FLIGHT: u8 = 3;
 
-pub trait RHI: Sized {
+pub trait RHI: Sized + Send + Sync {
     type CommandPool;
     type CommandBuffer;
     type RenderPass;
@@ -41,6 +41,7 @@ pub trait RHI: Sized {
     type Sampler;
     type Shader;
     type Viewport;
+    type Buffer;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError>;
     unsafe fn prepare_context(&mut self);
@@ -100,6 +101,18 @@ pub trait RHI: Sized {
         &self,
         create_info: &RHIGraphicsPipelineCreateInfo<Self>,
     ) -> Result<Self::Pipeline, RHIError>;
+
+    unsafe fn destroy_shader_module(&self, shader: Self::Shader);
+
+    unsafe fn destroy_sampler(&self, sampler: Self::Sampler);
+
+    unsafe fn destroy_image(&self, image: Self::Image);
+
+    unsafe fn destroy_image_view(&self, image_view: Self::ImageView);
+
+    unsafe fn destroy_framebuffer(&self, framebuffer: Self::Framebuffer);
+
+    unsafe fn destroy_buffer(&self, buffer: Self::Buffer);
 
     unsafe fn clear(&mut self);
 }

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use spirq::ty::Type;
-use spirq::{EntryPoint, ReflectConfig, Variable};
+use spirq::{EntryPoint, ExecutionModel, ReflectConfig, Variable};
 use typed_builder::TypedBuilder;
 
 use rhi::types::Label;
@@ -25,17 +25,22 @@ pub struct ShaderDescriptor<'a> {
 }
 
 impl<R: RHI> Shader<R> {
-    pub fn new(
-        rhi: R,
-        desc: &ShaderDescriptor,
-        stage: RHIShaderStageFlags,
-    ) -> Result<Self, RendererError> {
+    pub fn new(rhi: &R, desc: &ShaderDescriptor) -> Result<Self, RendererError> {
         let create_info = RHIShaderCreateInfo {
             spv: desc.spv_bytes,
         };
 
         let shader = unsafe { rhi.create_shader_module(&create_info)? };
-        let entry_point = Self::reflect_entry_point(desc.entry_name, desc.spv_bytes)?;
+        let entry_point = ShaderUtil::reflect_entry_point(desc.entry_name, desc.spv_bytes)?;
+        let stage = match entry_point.exec_model {
+            ExecutionModel::Vertex => RHIShaderStageFlags::VERTEX,
+            ExecutionModel::TessellationControl => RHIShaderStageFlags::TESSELLATION_CONTROL,
+            ExecutionModel::TessellationEvaluation => RHIShaderStageFlags::TESSELLATION_EVALUATION,
+            ExecutionModel::Geometry => RHIShaderStageFlags::GEOMETRY,
+            ExecutionModel::Fragment => RHIShaderStageFlags::FRAGMENT,
+            ExecutionModel::GLCompute => RHIShaderStageFlags::COMPUTE,
+            _ => RHIShaderStageFlags::empty(),
+        };
         log::debug!("shader module created.");
         Ok(Self {
             shader,
@@ -44,19 +49,8 @@ impl<R: RHI> Shader<R> {
         })
     }
 
-    // pub unsafe fn load_pre_compiled_spv_bytes_from_name(shader_file_name: &str) -> Vec<u32> {
-    //     let path = format!("{}/{}.spv", env!("OUT_DIR"), shader_file_name);
-    //     log::debug!("load shader spv file from: {}", path);
-    //     unsafe { Self::load_pre_compiled_spv_bytes_from_path(Path::new(&path)) }
-    // }
-
-    pub unsafe fn load_pre_compiled_spv_bytes_from_path<P: AsRef<Path>>(path: P) -> Vec<u32> {
-        use std::fs::File;
-        use std::io::Read;
-        let spv_file = File::open(path).unwrap();
-        let bytes_code: Vec<u8> = spv_file.bytes().filter_map(|byte| byte.ok()).collect();
-        let (_prefix, bytes, _suffix) = unsafe { bytes_code.align_to::<u32>() };
-        bytes.into()
+    pub fn destroy(self, rhi: &R) {
+        unsafe { rhi.destroy_shader_module(self.shader) }
     }
 
     pub fn get_push_constant_range(&self) -> Option<RHIPushConstantRange> {
@@ -80,6 +74,25 @@ impl<R: RHI> Shader<R> {
                 size: (push_const.end - push_const.start) as _,
                 offset: push_const.start as _,
             })
+    }
+}
+
+pub struct ShaderUtil;
+
+impl ShaderUtil {
+    pub unsafe fn load_pre_compiled_spv_bytes_from_name(shader_file_name: &str) -> Vec<u32> {
+        let path = format!("{}/{}.spv", env!("OUT_DIR"), shader_file_name);
+        log::debug!("load shader spv file from: {}", path);
+        unsafe { Self::load_pre_compiled_spv_bytes_from_path(Path::new(&path)) }
+    }
+
+    pub unsafe fn load_pre_compiled_spv_bytes_from_path<P: AsRef<Path>>(path: P) -> Vec<u32> {
+        use std::fs::File;
+        use std::io::Read;
+        let spv_file = File::open(path).unwrap();
+        let bytes_code: Vec<u8> = spv_file.bytes().filter_map(|byte| byte.ok()).collect();
+        let (_prefix, bytes, _suffix) = unsafe { bytes_code.align_to::<u32>() };
+        bytes.into()
     }
 
     fn reflect_entry_point(entry_name: &str, spv: &[u32]) -> Result<EntryPoint, RendererError> {

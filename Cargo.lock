@@ -2505,9 +2505,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "fs_extra",
+ "glob",
  "log",
+ "naga",
  "parking_lot",
  "profiling",
+ "rayon",
  "spirq",
  "thiserror",
  "typed-builder",
