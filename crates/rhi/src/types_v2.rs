@@ -1,6 +1,9 @@
 #![allow(non_camel_case_types)]
 
+use std::ffi::CString;
+
 use bitflags::bitflags;
+
 use rhi_types::{
     RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHICompareOp, RHICullModeFlags,
     RHIDescriptorType, RHIDynamicState, RHIFormat, RHIFrontFace, RHIImageLayout, RHILogicOp,
@@ -8,8 +11,6 @@ use rhi_types::{
     RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits, RHIShaderStageFlags,
     RHIStencilOpState,
 };
-use std::ffi::CString;
-use typed_builder::TypedBuilder;
 
 use crate::RHI;
 
@@ -410,4 +411,9 @@ bitflags! {
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineDynamicStateCreateFlags.html>"]
     pub struct RHIPipelineDynamicStateCreateFlags: u32 {
     }
+}
+
+#[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
+pub struct RHIShaderCreateInfo<'a> {
+    pub spv: &'a [u32],
 }

@@ -2508,6 +2508,7 @@ dependencies = [
  "log",
  "parking_lot",
  "profiling",
+ "spirq",
  "thiserror",
  "typed-builder",
  "winit",

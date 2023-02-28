@@ -13,7 +13,7 @@ use rhi_types::RHIExtent2D;
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
     RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIRenderPassCreateInfo,
+    RHIRenderPassCreateInfo, RHIShaderCreateInfo,
 };
 
 mod error;
@@ -81,6 +81,11 @@ pub trait RHI: Sized {
         create_info: &RHIFramebufferCreateInfo<Self>,
     ) -> Result<Self::Framebuffer, RHIError>;
 
+    unsafe fn create_shader_module(
+        &self,
+        create_info: &RHIShaderCreateInfo,
+    ) -> Result<Self::Shader, RHIError>;
+
     unsafe fn create_descriptor_set_layout(
         &self,
         create_info: &RHIDescriptorSetLayoutCreateInfo,
@@ -91,10 +96,10 @@ pub trait RHI: Sized {
         create_info: &RHIPipelineLayoutCreateInfo<Self>,
     ) -> Result<Self::PipelineLayout, RHIError>;
 
-    unsafe fn create_graphics_pipelines<'a>(
+    unsafe fn create_graphics_pipeline(
         &self,
-        create_infos: &'a [RHIGraphicsPipelineCreateInfo<Self>],
-    ) -> Result<Vec<Self::Pipeline>, RHIError>;
+        create_info: &RHIGraphicsPipelineCreateInfo<Self>,
+    ) -> Result<Self::Pipeline, RHIError>;
 
     unsafe fn clear(&mut self);
 }

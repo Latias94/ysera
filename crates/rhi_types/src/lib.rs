@@ -6,7 +6,7 @@ extern crate num_derive;
 use bitflags::bitflags;
 use typed_builder::TypedBuilder;
 
-#[derive(Clone, Debug, TypedBuilder)]
+#[derive(Debug, Clone, Copy, TypedBuilder)]
 pub struct InstanceDescriptor<'a> {
     #[builder(default)]
     pub name: &'a str,
@@ -24,7 +24,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, TypedBuilder)]
+#[derive(Debug, Clone, TypedBuilder)]
 pub struct PhysicalDeviceRequirements {
     // queue requirement
     #[builder(default = true)]
@@ -85,7 +85,7 @@ impl DeviceFeatures {
     }
 }
 
-#[derive(Debug, TypedBuilder)]
+#[derive(Debug, Clone, TypedBuilder)]
 pub struct DeviceRequirement {
     /// extension except swapchain ext
     pub required_extension: Vec<String>,
@@ -94,7 +94,7 @@ pub struct DeviceRequirement {
     pub use_swapchain: bool,
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct QueueFamilyIndices {
     pub graphics_family: Option<u32>,
     pub present_family: Option<u32>,
@@ -380,7 +380,7 @@ pub struct RHIRect2D {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSampleCountFlagBits.html>"]
 pub enum RHISampleCountFlagBits {
@@ -394,14 +394,14 @@ pub enum RHISampleCountFlagBits {
     TYPE_64 = 1 << 6,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkImageTiling.html>"]
 pub enum RHIImageTiling {
     OPTIMAL = 0,
     LINEAR = 1,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkImageType.html>"]
 pub enum RHIAttachmentLoadOp {
     LOAD = 0,
@@ -409,7 +409,7 @@ pub enum RHIAttachmentLoadOp {
     DONT_CARE = 2,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAttachmentStoreOp.html>"]
 pub enum RHIAttachmentStoreOp {
     STORE = 0,
@@ -417,7 +417,7 @@ pub enum RHIAttachmentStoreOp {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkImageLayout.html>"]
 pub enum RHIImageLayout {
@@ -443,7 +443,7 @@ pub enum RHIImageLayout {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineStageFlagBits.html>"]
     pub struct RHIPipelineStageFlags: u32 {
         #[doc = "Before subsequent commands are processed"]
@@ -484,7 +484,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAccessFlagBits.html>"]
     pub struct RHIAccessFlags: u32 {
         #[doc = "Controls coherency of indirect command reads"]
@@ -525,7 +525,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkShaderStageFlagBits.html>"]
     pub struct RHIShaderStageFlags: u32 {
         const VERTEX = 1 << 0;
@@ -538,7 +538,7 @@ bitflags! {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPrimitiveTopology.html>"]
 pub enum RHIPrimitiveTopology {
@@ -557,7 +557,7 @@ pub enum RHIPrimitiveTopology {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkDescriptorType.html>"]
 pub enum RHIDescriptorType {
@@ -576,7 +576,7 @@ pub enum RHIDescriptorType {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPolygonMode.html>"]
 pub enum RHIPolygonMode {
@@ -587,7 +587,7 @@ pub enum RHIPolygonMode {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkCullModeFlagBits.html>"]
     pub struct RHICullModeFlags: u32 {
         const NONE = 1 << 0;
@@ -597,7 +597,7 @@ bitflags! {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkFrontFace.html>"]
 pub enum RHIFrontFace {
@@ -606,7 +606,7 @@ pub enum RHIFrontFace {
     CLOCKWISE = 1,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkCompareOp.html>"]
 pub enum RHICompareOp {
     NEVER = 0,
@@ -619,7 +619,7 @@ pub enum RHICompareOp {
     ALWAYS = 7,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkStencilOpState.html>"]
 pub struct RHIStencilOpState {
     pub fail_op: RHIStencilOp,
@@ -631,7 +631,7 @@ pub struct RHIStencilOpState {
     pub reference: u32,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkStencilOp.html>"]
 pub enum RHIStencilOp {
     KEEP = 0,
@@ -645,7 +645,7 @@ pub enum RHIStencilOp {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkLogicOp.html>"]
 pub enum RHILogicOp {
@@ -668,7 +668,7 @@ pub enum RHILogicOp {
     SET = 15,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineColorBlendAttachmentState.html>"]
 pub struct RHIPipelineColorBlendAttachmentState {
     pub blend_enable: bool,
@@ -681,7 +681,7 @@ pub struct RHIPipelineColorBlendAttachmentState {
     pub color_write_mask: RHIColorComponentFlags,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkBlendFactor.html>"]
 pub enum RHIBlendFactor {
     ZERO = 0,
@@ -706,7 +706,7 @@ pub enum RHIBlendFactor {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkBlendOp.html>"]
 pub enum RHIBlendOp {
@@ -719,17 +719,18 @@ pub enum RHIBlendOp {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Debug, Clone,  Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkColorComponentFlagBits.html>"]
     pub struct RHIColorComponentFlags: u32 {
         const R = 1 << 0;
         const G = 1 << 1;
         const B = 1 << 2;
         const A = 1 << 3;
+        const RGBA = Self::R.bits() | Self::G.bits() | Self::B.bits() | Self::A.bits();
     }
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkDynamicState.html>"]
 pub enum RHIDynamicState {
     VIEWPORT = 0,

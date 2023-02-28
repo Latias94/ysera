@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
 
@@ -7,6 +8,7 @@ use gpu_allocator::vulkan::{Allocation, Allocator, AllocatorCreateDesc};
 use log::LevelFilter;
 use parking_lot::Mutex;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+
 use rhi_types::{
     DeviceFeatures, DeviceRequirement, InstanceDescriptor, InstanceFlags,
     PhysicalDeviceRequirements, QueueFamilyIndices, RHIExtent2D, RHIFormat, RHIOffset2D, RHIRect2D,
@@ -16,7 +18,7 @@ use rhi_types::{
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
     RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIRenderPassCreateInfo,
+    RHIRenderPassCreateInfo, RHIShaderCreateInfo,
 };
 use crate::utils::c_char_to_string;
 use crate::vulkan_v2::debug::DebugUtils;
@@ -694,6 +696,18 @@ impl crate::RHI for VulkanRHI {
         Ok(VulkanFramebuffer { raw })
     }
 
+    unsafe fn create_shader_module(
+        &self,
+        create_info: &RHIShaderCreateInfo,
+    ) -> Result<Self::Shader, RHIError> {
+        let spv = Cow::Borrowed(create_info.spv);
+        let vk_info = vk::ShaderModuleCreateInfo::builder()
+            .flags(vk::ShaderModuleCreateFlags::empty())
+            .code(&spv);
+        let raw = unsafe { self.device.create_shader_module(&vk_info, None)? };
+        Ok(VulkanShader { raw })
+    }
+
     unsafe fn create_descriptor_set_layout(
         &self,
         create_info: &RHIDescriptorSetLayoutCreateInfo,
@@ -758,232 +772,222 @@ impl crate::RHI for VulkanRHI {
         Ok(VulkanPipelineLayout { raw })
     }
 
-    unsafe fn create_graphics_pipelines<'a>(
+    unsafe fn create_graphics_pipeline(
         &self,
-        create_infos: &'a [RHIGraphicsPipelineCreateInfo<Self>],
-    ) -> Result<Vec<Self::Pipeline>, RHIError> {
-        let pipeline_create_infos = create_infos
-            .iter()
-            .map(|create_info| {
-                let shader_stages = create_info
-                    .stages
-                    .iter()
-                    .map(|stage| {
-                        vk::PipelineShaderStageCreateInfo::builder()
-                            .module(stage.shader.raw)
-                            .name(stage.name)
-                            .stage(conv::map_shader_stage_flags(stage.stage))
-                            .build()
-                    })
-                    .collect::<Vec<_>>();
-                let vertex_input_stage = create_info.vertex_input_stage;
-                let vertex_binding_descriptions = vertex_input_stage
-                    .vertex_binding_descriptions
-                    .iter()
-                    .map(|description| {
-                        vk::VertexInputBindingDescription::builder()
-                            .binding(description.binding)
-                            .stride(description.stride)
-                            .input_rate(conv::map_vertex_input_rate(description.input_rate))
-                            .build()
-                    })
-                    .collect::<Vec<_>>();
-                let attribute_descriptions = vertex_input_stage
-                    .vertex_input_attribute_descriptions
-                    .iter()
-                    .map(|description| {
-                        vk::VertexInputAttributeDescription::builder()
-                            .location(description.location)
-                            .binding(description.binding)
-                            .format(conv::map_format(description.format))
-                            .offset(description.offset)
-                            .build()
-                    })
-                    .collect::<Vec<_>>();
-                let vertex_input_state_create_info =
-                    vk::PipelineVertexInputStateCreateInfo::builder()
-                        .flags(conv::map_pipeline_vertex_input_state_create_flags(
-                            create_info.vertex_input_stage.flags,
-                        ))
-                        .vertex_binding_descriptions(&vertex_binding_descriptions)
-                        .vertex_attribute_descriptions(&attribute_descriptions);
+        create_info: &RHIGraphicsPipelineCreateInfo<Self>,
+    ) -> Result<Self::Pipeline, RHIError> {
+        let pipeline_create_info = {
+            let shader_stages = create_info
+                .stages
+                .iter()
+                .map(|stage| {
+                    vk::PipelineShaderStageCreateInfo::builder()
+                        .module(stage.shader.raw)
+                        .name(stage.name)
+                        .stage(conv::map_shader_stage_flags(stage.stage))
+                        .build()
+                })
+                .collect::<Vec<_>>();
+            let vertex_input_stage = create_info.vertex_input_stage;
+            let vertex_binding_descriptions = vertex_input_stage
+                .vertex_binding_descriptions
+                .iter()
+                .map(|description| {
+                    vk::VertexInputBindingDescription::builder()
+                        .binding(description.binding)
+                        .stride(description.stride)
+                        .input_rate(conv::map_vertex_input_rate(description.input_rate))
+                        .build()
+                })
+                .collect::<Vec<_>>();
+            let attribute_descriptions = vertex_input_stage
+                .vertex_input_attribute_descriptions
+                .iter()
+                .map(|description| {
+                    vk::VertexInputAttributeDescription::builder()
+                        .location(description.location)
+                        .binding(description.binding)
+                        .format(conv::map_format(description.format))
+                        .offset(description.offset)
+                        .build()
+                })
+                .collect::<Vec<_>>();
+            let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder()
+                .flags(conv::map_pipeline_vertex_input_state_create_flags(
+                    create_info.vertex_input_stage.flags,
+                ))
+                .vertex_binding_descriptions(&vertex_binding_descriptions)
+                .vertex_attribute_descriptions(&attribute_descriptions);
 
-                let input_assembly_stage = create_info.input_assembly_stage;
-                let input_assembly_state_create_info =
-                    vk::PipelineInputAssemblyStateCreateInfo::builder()
-                        .flags(conv::map_pipeline_input_assembly_state_create_flags(
-                            input_assembly_stage.flags,
-                        ))
-                        // Normally, the vertices are loaded from the vertex buffer by index in sequential order,
-                        // but with an element buffer you can specify the indices to use yourself. This allows
-                        // you to perform optimizations like reusing vertices. If you set the `primitive_restart_enable`
-                        // member to true, then it's possible to break up lines and triangles in the STRIP
-                        // topology modes by using a special index of 0xFFFF or 0xFFFFFFFF.
-                        .primitive_restart_enable(input_assembly_stage.primitive_restart_enable)
-                        .topology(conv::map_primitive_topology(
-                            input_assembly_stage.primitive_topology,
-                        ));
-                let viewport_stage = create_info.viewport_stage;
-                let scissors = viewport_stage
-                    .scissors
-                    .iter()
-                    .map(|scissor| conv::map_rect_2d(*scissor))
-                    .collect::<Vec<_>>();
-                let viewports = viewport_stage
-                    .viewports
-                    .iter()
-                    .map(|viewport| viewport.raw)
-                    .collect::<Vec<_>>();
-                let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
-                    .flags(conv::map_pipeline_viewport_state_create_flags(
-                        viewport_stage.flags,
+            let input_assembly_stage = create_info.input_assembly_stage;
+            let input_assembly_state_create_info =
+                vk::PipelineInputAssemblyStateCreateInfo::builder()
+                    .flags(conv::map_pipeline_input_assembly_state_create_flags(
+                        input_assembly_stage.flags,
                     ))
-                    .scissors(&scissors)
-                    .viewports(&viewports);
-                let rasterization_stage = create_info.rasterization_stage;
-                let rasterization_state_create_info =
-                    vk::PipelineRasterizationStateCreateInfo::builder()
-                        .flags(conv::map_pipeline_rasterization_state_create_flags(
-                            rasterization_stage.flags,
-                        ))
-                        // If depth_clamp_enable is set to true, then fragments that are beyond the near and far
-                        // planes are clamped to them as opposed to discarding them. This is useful in some special
-                        // cases like shadow maps. Using this requires enabling a GPU feature.
-                        .depth_clamp_enable(rasterization_stage.depth_clamp_enable)
-                        // If rasterizer_discard_enable is set to true, then geometry never passes through the
-                        // rasterizer stage. This basically disables any output to the framebuffer.
-                        .rasterizer_discard_enable(rasterization_stage.rasterizer_discard_enable)
-                        // Using any mode other than fill requires enabling a GPU feature.
-                        .polygon_mode(conv::map_polygon_mode(rasterization_stage.polygon_mode))
-                        .cull_mode(conv::map_cull_mode_flags(rasterization_stage.cull_mode))
-                        .front_face(conv::map_front_face(rasterization_stage.front_face))
-                        // 光栅化器可以通过添加一个常数值或根据片段的斜率偏置它们来改变深度值。这有时用于阴影映射，但我们不会使用它。
-                        .depth_bias_enable(rasterization_stage.depth_bias_enable)
-                        .depth_bias_constant_factor(rasterization_stage.depth_bias_constant_factor)
-                        .depth_bias_clamp(rasterization_stage.depth_bias_clamp)
-                        .depth_bias_slope_factor(rasterization_stage.depth_bias_slope_factor)
-                        .line_width(rasterization_stage.line_width);
-
-                let multisample_stage = create_info.multisample_stage;
-                let sample_mask = multisample_stage
-                    .sample_masks
-                    .iter()
-                    .map(|mask| conv::map_sample_mask(*mask))
-                    .collect::<Vec<_>>();
-                let multisample_state_create_info =
-                    vk::PipelineMultisampleStateCreateInfo::builder()
-                        .flags(conv::map_pipeline_multisample_state_create_flags(
-                            multisample_stage.flags,
-                        ))
-                        // Enable sample shading in the pipeline.
-                        .sample_shading_enable(multisample_stage.sample_shading_enable)
-                        .min_sample_shading(multisample_stage.min_sample_shading)
-                        .sample_mask(&sample_mask)
-                        .alpha_to_coverage_enable(multisample_stage.alpha_to_coverage_enable)
-                        .alpha_to_one_enable(multisample_stage.alpha_to_one_enable);
-
-                let depth_stencil_stage = create_info.depth_stencil_stage;
-                let depth_stencil_state_create_info =
-                    vk::PipelineDepthStencilStateCreateInfo::builder()
-                        .flags(conv::map_pipeline_depth_stencil_state_create_flags(
-                            depth_stencil_stage.flags,
-                        ))
-                        // depth_test_enable 字段指定是否应将新片段的深度与深度缓冲区进行比较，看它们是否应被丢弃。
-                        .depth_test_enable(depth_stencil_stage.depth_test_enable)
-                        // depth_write_enable 字段指定是否应将通过深度测试的新片段的深度实际写入深度缓冲区。
-                        .depth_write_enable(depth_stencil_stage.depth_write_enable)
-                        // depth_compare_op 字段指定了为保留或丢弃片段所进行的比较。我们坚持较低的深度 = 较近的惯例，所以新片段的深度应该较小。
-                        .depth_compare_op(conv::map_compare_op(
-                            depth_stencil_stage.depth_compare_op,
-                        ))
-                        // depth_bounds_test_enable、min_depth_bounds 和 max_depth_bounds 字段用于可选的深度边界测试。
-                        // 基本上，这允许你只保留落在指定深度范围内的片段。我们将不会使用这个功能。
-                        .depth_bounds_test_enable(depth_stencil_stage.depth_bounds_test_enable)
-                        // 最后三个字段配置了模板缓冲区的操作，
-                        // 如果你想使用这些操作，那么你必须确保深度 / 模板图像的格式包含一个模板组件。
-                        .stencil_test_enable(depth_stencil_stage.stencil_test_enable)
-                        .front(conv::map_stencil_op_state(depth_stencil_stage.front))
-                        .back(conv::map_stencil_op_state(depth_stencil_stage.back))
-                        .min_depth_bounds(depth_stencil_stage.min_depth_bounds) // Optional.
-                        .max_depth_bounds(depth_stencil_stage.max_depth_bounds); // Optional.
-
-                let color_blend_stage = create_info.color_blend_stage;
-                let color_blend_attachment_states = color_blend_stage
-                    .attachments
-                    .iter()
-                    .map(|attachment| {
-                        vk::PipelineColorBlendAttachmentState::builder()
-                            .blend_enable(attachment.blend_enable)
-                            .src_color_blend_factor(conv::map_blend_factor(
-                                attachment.src_color_blend_factor,
-                            ))
-                            .dst_color_blend_factor(conv::map_blend_factor(
-                                attachment.dst_color_blend_factor,
-                            ))
-                            .color_blend_op(conv::map_blend_op(attachment.color_blend_op))
-                            .src_alpha_blend_factor(conv::map_blend_factor(
-                                attachment.src_alpha_blend_factor,
-                            ))
-                            .dst_alpha_blend_factor(conv::map_blend_factor(
-                                attachment.dst_alpha_blend_factor,
-                            ))
-                            .alpha_blend_op(conv::map_blend_op(attachment.alpha_blend_op))
-                            .color_write_mask(conv::map_color_component_flags(
-                                attachment.color_write_mask,
-                            ))
-                            .build()
-                    })
-                    .collect::<Vec<_>>();
-                let color_blend_state_create_info =
-                    vk::PipelineColorBlendStateCreateInfo::builder()
-                        .logic_op_enable(color_blend_stage.logic_op_enable)
-                        .logic_op(conv::map_logic_op(color_blend_stage.logic_op))
-                        .attachments(&color_blend_attachment_states)
-                        .blend_constants(color_blend_stage.blend_constants);
-
-                let dynamic_stage = create_info.dynamic_stage;
-                let dynamic_states = dynamic_stage
-                    .dynamic_states
-                    .iter()
-                    .map(|state| conv::map_dynamic_state(*state))
-                    .collect::<Vec<_>>();
-                let dynamic_state_create_info = vk::PipelineDynamicStateCreateInfo::builder()
-                    .flags(conv::map_pipeline_dynamic_state_create_flags(
-                        dynamic_stage.flags,
+                    // Normally, the vertices are loaded from the vertex buffer by index in sequential order,
+                    // but with an element buffer you can specify the indices to use yourself. This allows
+                    // you to perform optimizations like reusing vertices. If you set the `primitive_restart_enable`
+                    // member to true, then it's possible to break up lines and triangles in the STRIP
+                    // topology modes by using a special index of 0xFFFF or 0xFFFFFFFF.
+                    .primitive_restart_enable(input_assembly_stage.primitive_restart_enable)
+                    .topology(conv::map_primitive_topology(
+                        input_assembly_stage.primitive_topology,
+                    ));
+            let viewport_stage = create_info.viewport_stage;
+            let scissors = viewport_stage
+                .scissors
+                .iter()
+                .map(|scissor| conv::map_rect_2d(*scissor))
+                .collect::<Vec<_>>();
+            let viewports = viewport_stage
+                .viewports
+                .iter()
+                .map(|viewport| viewport.raw)
+                .collect::<Vec<_>>();
+            let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
+                .flags(conv::map_pipeline_viewport_state_create_flags(
+                    viewport_stage.flags,
+                ))
+                .scissors(&scissors)
+                .viewports(&viewports);
+            let rasterization_stage = create_info.rasterization_stage;
+            let rasterization_state_create_info =
+                vk::PipelineRasterizationStateCreateInfo::builder()
+                    .flags(conv::map_pipeline_rasterization_state_create_flags(
+                        rasterization_stage.flags,
                     ))
-                    .dynamic_states(&dynamic_states);
+                    // If depth_clamp_enable is set to true, then fragments that are beyond the near and far
+                    // planes are clamped to them as opposed to discarding them. This is useful in some special
+                    // cases like shadow maps. Using this requires enabling a GPU feature.
+                    .depth_clamp_enable(rasterization_stage.depth_clamp_enable)
+                    // If rasterizer_discard_enable is set to true, then geometry never passes through the
+                    // rasterizer stage. This basically disables any output to the framebuffer.
+                    .rasterizer_discard_enable(rasterization_stage.rasterizer_discard_enable)
+                    // Using any mode other than fill requires enabling a GPU feature.
+                    .polygon_mode(conv::map_polygon_mode(rasterization_stage.polygon_mode))
+                    .cull_mode(conv::map_cull_mode_flags(rasterization_stage.cull_mode))
+                    .front_face(conv::map_front_face(rasterization_stage.front_face))
+                    // 光栅化器可以通过添加一个常数值或根据片段的斜率偏置它们来改变深度值。这有时用于阴影映射，但我们不会使用它。
+                    .depth_bias_enable(rasterization_stage.depth_bias_enable)
+                    .depth_bias_constant_factor(rasterization_stage.depth_bias_constant_factor)
+                    .depth_bias_clamp(rasterization_stage.depth_bias_clamp)
+                    .depth_bias_slope_factor(rasterization_stage.depth_bias_slope_factor)
+                    .line_width(rasterization_stage.line_width);
 
-                vk::GraphicsPipelineCreateInfo::builder()
-                    .flags(conv::map_pipeline_create_flags(create_info.flags))
-                    .stages(&shader_stages)
-                    .vertex_input_state(&vertex_input_state_create_info)
-                    .input_assembly_state(&input_assembly_state_create_info)
-                    .viewport_state(&viewport_state_create_info)
-                    .rasterization_state(&rasterization_state_create_info)
-                    .multisample_state(&multisample_state_create_info)
-                    .depth_stencil_state(&depth_stencil_state_create_info)
-                    .color_blend_state(&color_blend_state_create_info)
-                    .dynamic_state(&dynamic_state_create_info)
-                    .layout(create_info.layout.raw)
-                    .render_pass(create_info.render_pass.raw)
-                    .subpass(create_info.subpass)
-                    .build()
-            })
-            .collect::<Vec<_>>();
+            let multisample_stage = create_info.multisample_stage;
+            let sample_mask = multisample_stage
+                .sample_masks
+                .iter()
+                .map(|mask| conv::map_sample_mask(*mask))
+                .collect::<Vec<_>>();
+            let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
+                .flags(conv::map_pipeline_multisample_state_create_flags(
+                    multisample_stage.flags,
+                ))
+                // Enable sample shading in the pipeline.
+                .sample_shading_enable(multisample_stage.sample_shading_enable)
+                .min_sample_shading(multisample_stage.min_sample_shading)
+                .sample_mask(&sample_mask)
+                .alpha_to_coverage_enable(multisample_stage.alpha_to_coverage_enable)
+                .alpha_to_one_enable(multisample_stage.alpha_to_one_enable);
 
-        let pipelines = unsafe {
+            let depth_stencil_stage = create_info.depth_stencil_stage;
+            let depth_stencil_state_create_info =
+                vk::PipelineDepthStencilStateCreateInfo::builder()
+                    .flags(conv::map_pipeline_depth_stencil_state_create_flags(
+                        depth_stencil_stage.flags,
+                    ))
+                    // depth_test_enable 字段指定是否应将新片段的深度与深度缓冲区进行比较，看它们是否应被丢弃。
+                    .depth_test_enable(depth_stencil_stage.depth_test_enable)
+                    // depth_write_enable 字段指定是否应将通过深度测试的新片段的深度实际写入深度缓冲区。
+                    .depth_write_enable(depth_stencil_stage.depth_write_enable)
+                    // depth_compare_op 字段指定了为保留或丢弃片段所进行的比较。我们坚持较低的深度 = 较近的惯例，所以新片段的深度应该较小。
+                    .depth_compare_op(conv::map_compare_op(depth_stencil_stage.depth_compare_op))
+                    // depth_bounds_test_enable、min_depth_bounds 和 max_depth_bounds 字段用于可选的深度边界测试。
+                    // 基本上，这允许你只保留落在指定深度范围内的片段。我们将不会使用这个功能。
+                    .depth_bounds_test_enable(depth_stencil_stage.depth_bounds_test_enable)
+                    // 最后三个字段配置了模板缓冲区的操作，
+                    // 如果你想使用这些操作，那么你必须确保深度 / 模板图像的格式包含一个模板组件。
+                    .stencil_test_enable(depth_stencil_stage.stencil_test_enable)
+                    .front(conv::map_stencil_op_state(depth_stencil_stage.front))
+                    .back(conv::map_stencil_op_state(depth_stencil_stage.back))
+                    .min_depth_bounds(depth_stencil_stage.min_depth_bounds) // Optional.
+                    .max_depth_bounds(depth_stencil_stage.max_depth_bounds); // Optional.
+
+            let color_blend_stage = create_info.color_blend_stage;
+            let color_blend_attachment_states = color_blend_stage
+                .attachments
+                .iter()
+                .map(|attachment| {
+                    vk::PipelineColorBlendAttachmentState::builder()
+                        .blend_enable(attachment.blend_enable)
+                        .src_color_blend_factor(conv::map_blend_factor(
+                            attachment.src_color_blend_factor,
+                        ))
+                        .dst_color_blend_factor(conv::map_blend_factor(
+                            attachment.dst_color_blend_factor,
+                        ))
+                        .color_blend_op(conv::map_blend_op(attachment.color_blend_op))
+                        .src_alpha_blend_factor(conv::map_blend_factor(
+                            attachment.src_alpha_blend_factor,
+                        ))
+                        .dst_alpha_blend_factor(conv::map_blend_factor(
+                            attachment.dst_alpha_blend_factor,
+                        ))
+                        .alpha_blend_op(conv::map_blend_op(attachment.alpha_blend_op))
+                        .color_write_mask(conv::map_color_component_flags(
+                            attachment.color_write_mask,
+                        ))
+                        .build()
+                })
+                .collect::<Vec<_>>();
+            let color_blend_state_create_info = vk::PipelineColorBlendStateCreateInfo::builder()
+                .logic_op_enable(color_blend_stage.logic_op_enable)
+                .logic_op(conv::map_logic_op(color_blend_stage.logic_op))
+                .attachments(&color_blend_attachment_states)
+                .blend_constants(color_blend_stage.blend_constants);
+
+            let dynamic_stage = create_info.dynamic_stage;
+            let dynamic_states = dynamic_stage
+                .dynamic_states
+                .iter()
+                .map(|state| conv::map_dynamic_state(*state))
+                .collect::<Vec<_>>();
+            let dynamic_state_create_info = vk::PipelineDynamicStateCreateInfo::builder()
+                .flags(conv::map_pipeline_dynamic_state_create_flags(
+                    dynamic_stage.flags,
+                ))
+                .dynamic_states(&dynamic_states);
+
+            vk::GraphicsPipelineCreateInfo::builder()
+                .flags(conv::map_pipeline_create_flags(create_info.flags))
+                .stages(&shader_stages)
+                .vertex_input_state(&vertex_input_state_create_info)
+                .input_assembly_state(&input_assembly_state_create_info)
+                .viewport_state(&viewport_state_create_info)
+                .rasterization_state(&rasterization_state_create_info)
+                .multisample_state(&multisample_state_create_info)
+                .depth_stencil_state(&depth_stencil_state_create_info)
+                .color_blend_state(&color_blend_state_create_info)
+                .dynamic_state(&dynamic_state_create_info)
+                .layout(create_info.layout.raw)
+                .render_pass(create_info.render_pass.raw)
+                .subpass(create_info.subpass)
+                .build()
+        };
+
+        let pipeline_create_infos = &[pipeline_create_info];
+        let raw = unsafe {
             self.device
                 .create_graphics_pipelines(
                     vk::PipelineCache::default(),
-                    &pipeline_create_infos,
+                    pipeline_create_infos,
                     None,
                 )
                 .map_err(|e| e.1)?
-        };
-        Ok(pipelines
-            .iter()
-            .map(|raw| VulkanPipeline { raw: *raw })
-            .collect())
+        }[0];
+        Ok(VulkanPipeline { raw })
     }
 
     unsafe fn clear(&mut self) {
