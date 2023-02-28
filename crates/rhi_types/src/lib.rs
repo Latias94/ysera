@@ -668,16 +668,24 @@ pub enum RHILogicOp {
     SET = 15,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(TypedBuilder, Debug, Clone, Copy)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineColorBlendAttachmentState.html>"]
 pub struct RHIPipelineColorBlendAttachmentState {
+    #[builder(default)]
     pub blend_enable: bool,
+    #[builder(default = RHIBlendFactor::ONE)]
     pub src_color_blend_factor: RHIBlendFactor,
+    #[builder(default = RHIBlendFactor::ZERO)]
     pub dst_color_blend_factor: RHIBlendFactor,
+    #[builder(default = RHIBlendOp::ADD)]
     pub color_blend_op: RHIBlendOp,
+    #[builder(default = RHIBlendFactor::ONE)]
     pub src_alpha_blend_factor: RHIBlendFactor,
+    #[builder(default = RHIBlendFactor::ZERO)]
     pub dst_alpha_blend_factor: RHIBlendFactor,
+    #[builder(default = RHIBlendOp::ADD)]
     pub alpha_blend_op: RHIBlendOp,
+    #[builder(default = RHIColorComponentFlags::RGBA)]
     pub color_write_mask: RHIColorComponentFlags,
 }
 

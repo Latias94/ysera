@@ -3,7 +3,9 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, 
 use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 use rhi_types::RHIExtent2D;
+use std::sync::Arc;
 
+use crate::vulkan_v2::VulkanAllocation;
 use crate::RHIError;
 
 pub unsafe fn create_image_view(
@@ -56,7 +58,7 @@ pub unsafe fn create_image(
     image_create_flags: vk::ImageCreateFlags,
     array_layers: u32,
     mip_levels: u32,
-) -> Result<(vk::Image, Option<Allocation>), RHIError> {
+) -> Result<(vk::Image, VulkanAllocation), RHIError> {
     let create_info = vk::ImageCreateInfo::builder()
         .image_type(vk::ImageType::TYPE_2D)
         .extent(vk::Extent3D {
@@ -101,5 +103,10 @@ pub unsafe fn create_image(
         device.bind_image_memory(raw, allocation.memory(), allocation.offset())?;
     }
 
-    Ok((raw, Some(allocation)))
+    Ok((
+        raw,
+        VulkanAllocation {
+            raw: Arc::new(Mutex::new(Some(allocation))),
+        },
+    ))
 }

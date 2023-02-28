@@ -1,6 +1,7 @@
 use alloc::borrow::Cow;
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
+use std::sync::Arc;
 
 use ash::extensions::{ext, khr};
 use ash::vk;
@@ -18,7 +19,7 @@ use rhi_types::{
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
     RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIRenderPassCreateInfo, RHIShaderCreateInfo,
+    RHIRenderPassCreateInfo, RHIShaderCreateInfo, RHISwapChainDesc,
 };
 use crate::utils::c_char_to_string;
 use crate::vulkan_v2::debug::DebugUtils;
@@ -29,6 +30,7 @@ pub mod debug;
 pub mod platforms;
 pub mod utils;
 
+#[derive(Clone)]
 pub struct VulkanRHI {
     viewport: RHIViewport,
     scissor: RHIRect2D,
@@ -55,7 +57,7 @@ pub struct VulkanRHI {
     queue_family_indices: QueueFamilyIndices,
     device_requirement: DeviceRequirement,
     device: ash::Device,
-    allocator: Mutex<Allocator>,
+    allocator: Arc<Mutex<Allocator>>,
 
     // queue
     graphics_queue: VulkanQueue,
@@ -82,11 +84,12 @@ pub struct VulkanRHI {
     swapchain_image_views: Vec<VulkanImageView>,
 
     depth_image: VulkanImage,
-    depth_image_allocation: Option<Allocation>,
+    depth_image_allocation: VulkanAllocation,
     depth_image_view: VulkanImageView,
     current_frame_index: usize,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanCommandPool {
     raw: vk::CommandPool,
 }
@@ -96,74 +99,92 @@ pub struct VulkanCommandBuffer {
     raw: vk::CommandBuffer,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanQueue {
     raw: vk::Queue,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanDescriptorPool {
     raw: vk::DescriptorPool,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanImage {
     raw: vk::Image,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanImageView {
     raw: vk::ImageView,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanFence {
     raw: vk::Fence,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanSemaphore {
     raw: vk::Semaphore,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanRenderPass {
     raw: vk::RenderPass,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanPipelineLayout {
     raw: vk::PipelineLayout,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanPipeline {
     raw: vk::Pipeline,
 }
 
+#[derive(Clone)]
 pub struct VulkanAllocation {
-    raw: Allocation,
+    raw: Arc<Mutex<Option<Allocation>>>,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanFormat {
     raw: vk::Format,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanFramebuffer {
     raw: vk::Framebuffer,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanDescriptorSet {
     raw: vk::DescriptorSet,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanDescriptorSetLayout {
     raw: vk::DescriptorSetLayout,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanSampler {
     raw: vk::Sampler,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanShader {
     raw: vk::ShaderModule,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanViewport {
     raw: vk::Viewport,
 }
 
+#[derive(Copy, Clone)]
 pub struct VulkanBuffer {
     raw: vk::Buffer,
 }
@@ -245,6 +266,7 @@ impl crate::RHI for VulkanRHI {
         };
 
         let allocator = VulkanRHI::create_allocator(&device, &instance, physical_device)?;
+        let allocator = Arc::new(allocator);
 
         let (command_pool, command_pools) = unsafe {
             VulkanRHI::create_command_pool(&device, &queue_family_indices, MAX_FRAMES_IN_FLIGHT)?
@@ -361,7 +383,7 @@ impl crate::RHI for VulkanRHI {
             self.device
                 .destroy_image_view(self.depth_image_view.raw, None);
             self.device.destroy_image(self.depth_image.raw, None);
-            if let Some(allocation) = self.depth_image_allocation.take() {
+            if let Some(allocation) = self.depth_image_allocation.raw.lock().take() {
                 self.allocator.lock().free(allocation)?;
             }
             for image_view in &self.swapchain_image_views {
@@ -369,7 +391,7 @@ impl crate::RHI for VulkanRHI {
             }
             self.swapchain_loader
                 .destroy_swapchain(self.swapchain, None);
-            let (swapchain, swapchain_loader, swapchain_images, surface_format, swapchain_extent) = unsafe {
+            let (swapchain, swapchain_loader, swapchain_images, surface_format, swapchain_extent) =
                 VulkanRHI::create_swapchain(
                     &self.device,
                     &self.instance,
@@ -379,8 +401,7 @@ impl crate::RHI for VulkanRHI {
                     self.queue_family_indices,
                     size,
                     MAX_FRAMES_IN_FLIGHT,
-                )?
-            };
+                )?;
             self.swapchain = swapchain;
             self.swapchain_loader = swapchain_loader;
             self.swapchain_images = swapchain_images;
@@ -836,9 +857,7 @@ impl crate::RHI for VulkanRHI {
                     // member to true, then it's possible to break up lines and triangles in the STRIP
                     // topology modes by using a special index of 0xFFFF or 0xFFFFFFFF.
                     .primitive_restart_enable(input_assembly_stage.primitive_restart_enable)
-                    .topology(conv::map_primitive_topology(
-                        input_assembly_stage.primitive_topology,
-                    ));
+                    .topology(conv::map_primitive_topology(input_assembly_stage.topology));
             let viewport_stage = create_info.viewport_stage;
             let scissors = viewport_stage
                 .scissors
@@ -848,7 +867,7 @@ impl crate::RHI for VulkanRHI {
             let viewports = viewport_stage
                 .viewports
                 .iter()
-                .map(|viewport| viewport.raw)
+                .map(|viewport| conv::map_viewport(*viewport))
                 .collect::<Vec<_>>();
             let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
                 .flags(conv::map_pipeline_viewport_state_create_flags(
@@ -993,6 +1012,16 @@ impl crate::RHI for VulkanRHI {
                 .map_err(|e| e.1)?
         }[0];
         Ok(VulkanPipeline { raw })
+    }
+
+    fn get_swapchain_info(&self) -> RHISwapChainDesc<Self> {
+        RHISwapChainDesc {
+            extent: self.swapchain_extent,
+            image_format: self.surface_format,
+            viewport: self.viewport,
+            scissor: self.scissor,
+            image_views: self.swapchain_image_views.clone(),
+        }
     }
 
     unsafe fn destroy_shader_module(&self, shader: Self::Shader) {
@@ -1665,7 +1694,7 @@ impl VulkanRHI {
         allocator: &Mutex<Allocator>,
         depth_format: RHIFormat,
         swapchain_extent: RHIExtent2D,
-    ) -> Result<(VulkanImage, Option<Allocation>, VulkanImageView), RHIError> {
+    ) -> Result<(VulkanImage, VulkanAllocation, VulkanImageView), RHIError> {
         let (image, allocation) = unsafe {
             utils::create_image(
                 device,

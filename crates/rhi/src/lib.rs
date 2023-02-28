@@ -13,7 +13,7 @@ use rhi_types::RHIExtent2D;
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
     RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIRenderPassCreateInfo, RHIShaderCreateInfo,
+    RHIRenderPassCreateInfo, RHIShaderCreateInfo, RHISwapChainDesc,
 };
 
 mod error;
@@ -25,7 +25,7 @@ pub mod vulkan_v2;
 
 const MAX_FRAMES_IN_FLIGHT: u8 = 3;
 
-pub trait RHI: Sized + Send + Sync {
+pub trait RHI: Sized + Send + Sync + Clone {
     type CommandPool;
     type CommandBuffer;
     type RenderPass;
@@ -101,6 +101,8 @@ pub trait RHI: Sized + Send + Sync {
         &self,
         create_info: &RHIGraphicsPipelineCreateInfo<Self>,
     ) -> Result<Self::Pipeline, RHIError>;
+
+    fn get_swapchain_info(&self) -> RHISwapChainDesc<Self>;
 
     unsafe fn destroy_shader_module(&self, shader: Self::Shader);
 

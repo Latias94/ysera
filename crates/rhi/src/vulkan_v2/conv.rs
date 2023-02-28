@@ -16,7 +16,7 @@ use rhi_types::{
     RHIColorComponentFlags, RHICompareOp, RHICullModeFlags, RHIDescriptorType, RHIDynamicState,
     RHIExtent2D, RHIExtent3D, RHIFormat, RHIFrontFace, RHIImageLayout, RHILogicOp, RHIOffset2D,
     RHIPipelineStageFlags, RHIPolygonMode, RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits,
-    RHIShaderStageFlags, RHIStencilOp, RHIStencilOpState,
+    RHIShaderStageFlags, RHIStencilOp, RHIStencilOpState, RHIViewport,
 };
 
 pub fn map_command_pool_create_flags(
@@ -329,6 +329,17 @@ pub fn map_rect_2d(value: RHIRect2D) -> vk::Rect2D {
     vk::Rect2D {
         offset: map_offset_2d(value.offset),
         extent: map_extent_2d(value.extent),
+    }
+}
+
+pub fn map_viewport(value: RHIViewport) -> vk::Viewport {
+    vk::Viewport {
+        x: value.x,
+        y: value.y,
+        width: value.width,
+        height: value.height,
+        min_depth: value.min_depth,
+        max_depth: value.max_depth,
     }
 }
 

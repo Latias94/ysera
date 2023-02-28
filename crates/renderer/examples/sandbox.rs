@@ -1,18 +1,21 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rhi::vulkan_v2::VulkanRHI;
 use rhi::{InitInfo, RHI};
 use rhi_types::RHIExtent2D;
+use ysera_renderer::passes::main_camera_pass::{MainCameraPass, MainCameraPassInitInfo};
+use ysera_renderer::passes::RenderPass;
 
 type Api = VulkanRHI;
 
-struct Sandbox {
-    rhi: Api,
-    // main_camera_pass: MainCameraPass<Api>,
+struct Sandbox<R: RHI> {
+    rhi: R,
+    main_camera_pass: MainCameraPass<R>,
     temp: bool,
 }
 
-impl Sandbox {
+impl<R: RHI> Sandbox<R> {
     fn new(window: &winit::window::Window) -> anyhow::Result<Self> {
         let window_size = window.inner_size();
         let init_info = InitInfo {
@@ -24,15 +27,14 @@ impl Sandbox {
             display_handle: &window,
         };
 
-        let rhi = unsafe { Api::initialize(init_info)? };
-        // let rhi = Arc::new(rhi);
-        //
-        // let pass_init_info = MainCameraPassInitInfo { rhi: rhi.clone() };
-        // let main_camera_pass = MainCameraPass::initialize(&pass_init_info)?;
+        let rhi = unsafe { R::initialize(init_info)? };
+
+        let pass_init_info = MainCameraPassInitInfo { rhi: rhi.clone() };
+        let main_camera_pass = MainCameraPass::initialize(pass_init_info)?;
 
         Ok(Self {
             rhi,
-            // main_camera_pass,
+            main_camera_pass,
             temp: false,
         })
     }
@@ -83,7 +85,7 @@ fn main() -> anyhow::Result<()> {
     let mut last_frame_inst = Instant::now();
     let (mut frame_count, mut accum_time) = (0, 0.0);
 
-    let mut sandbox = Some(Sandbox::new(&window)?);
+    let mut sandbox = Some(Sandbox::<Api>::new(&window)?);
 
     event_loop.run(move |event, _, control_flow| {
         let _ = &window; // force ownership by the closure
