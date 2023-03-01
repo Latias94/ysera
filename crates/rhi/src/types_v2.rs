@@ -223,15 +223,15 @@ where
     #[builder(default)]
     pub flags: RHIPipelineCreateFlags,
     pub stages: &'a [RHIPipelineShaderStageCreateInfo<'a, R>],
-    pub vertex_input_stage: &'a RHIPipelineVertexInputStateCreateInfo<'a>,
-    pub input_assembly_stage: &'a RHIPipelineInputAssemblyStateCreateInfo,
-    pub tessellation_stage: &'a RHIPipelineTessellationStateCreateInfo,
-    pub viewport_stage: &'a RHIPipelineViewportStateCreateInfo<'a>,
-    pub rasterization_stage: &'a RHIPipelineRasterizationStateCreateInfo,
-    pub multisample_stage: &'a RHIPipelineMultisampleStateCreateInfo<'a>,
-    pub depth_stencil_stage: &'a RHIPipelineDepthStencilStateCreateInfo,
-    pub color_blend_stage: &'a RHIPipelineColorBlendStateCreateInfo<'a>,
-    pub dynamic_stage: &'a RHIPipelineDynamicStateCreateInfo<'a>,
+    pub vertex_input_state: &'a RHIPipelineVertexInputStateCreateInfo<'a>,
+    pub input_assembly_state: &'a RHIPipelineInputAssemblyStateCreateInfo,
+    pub tessellation_state: &'a RHIPipelineTessellationStateCreateInfo,
+    pub viewport_state: &'a RHIPipelineViewportStateCreateInfo<'a>,
+    pub rasterization_state: &'a RHIPipelineRasterizationStateCreateInfo,
+    pub multisample_state: &'a RHIPipelineMultisampleStateCreateInfo<'a>,
+    pub depth_stencil_state: &'a RHIPipelineDepthStencilStateCreateInfo,
+    pub color_blend_state: &'a RHIPipelineColorBlendStateCreateInfo<'a>,
+    pub dynamic_state: &'a RHIPipelineDynamicStateCreateInfo<'a>,
     pub layout: R::PipelineLayout,
     pub render_pass: R::RenderPass,
     #[builder(default)]
@@ -270,7 +270,7 @@ bitflags! {
     }
 }
 
-#[derive(TypedBuilder)]
+#[derive(TypedBuilder, Default)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineTessellationStateCreateInfo.html>"]
 pub struct RHIPipelineTessellationStateCreateInfo {
     #[builder(default)]

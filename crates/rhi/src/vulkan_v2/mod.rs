@@ -814,8 +814,8 @@ impl crate::RHI for VulkanRHI {
                         .build()
                 })
                 .collect::<Vec<_>>();
-            let vertex_input_stage = create_info.vertex_input_stage;
-            let vertex_binding_descriptions = vertex_input_stage
+            let vertex_input_state = create_info.vertex_input_state;
+            let vertex_binding_descriptions = vertex_input_state
                 .vertex_binding_descriptions
                 .iter()
                 .map(|description| {
@@ -826,7 +826,7 @@ impl crate::RHI for VulkanRHI {
                         .build()
                 })
                 .collect::<Vec<_>>();
-            let attribute_descriptions = vertex_input_stage
+            let attribute_descriptions = vertex_input_state
                 .vertex_input_attribute_descriptions
                 .iter()
                 .map(|description| {
@@ -840,42 +840,50 @@ impl crate::RHI for VulkanRHI {
                 .collect::<Vec<_>>();
             let vertex_input_state_create_info = vk::PipelineVertexInputStateCreateInfo::builder()
                 .flags(conv::map_pipeline_vertex_input_state_create_flags(
-                    create_info.vertex_input_stage.flags,
+                    create_info.vertex_input_state.flags,
                 ))
                 .vertex_binding_descriptions(&vertex_binding_descriptions)
                 .vertex_attribute_descriptions(&attribute_descriptions);
 
-            let input_assembly_stage = create_info.input_assembly_stage;
+            let input_assembly_state = create_info.input_assembly_state;
             let input_assembly_state_create_info =
                 vk::PipelineInputAssemblyStateCreateInfo::builder()
                     .flags(conv::map_pipeline_input_assembly_state_create_flags(
-                        input_assembly_stage.flags,
+                        input_assembly_state.flags,
                     ))
                     // Normally, the vertices are loaded from the vertex buffer by index in sequential order,
                     // but with an element buffer you can specify the indices to use yourself. This allows
                     // you to perform optimizations like reusing vertices. If you set the `primitive_restart_enable`
                     // member to true, then it's possible to break up lines and triangles in the STRIP
                     // topology modes by using a special index of 0xFFFF or 0xFFFFFFFF.
-                    .primitive_restart_enable(input_assembly_stage.primitive_restart_enable)
-                    .topology(conv::map_primitive_topology(input_assembly_stage.topology));
-            let viewport_stage = create_info.viewport_stage;
-            let scissors = viewport_stage
+                    .primitive_restart_enable(input_assembly_state.primitive_restart_enable)
+                    .topology(conv::map_primitive_topology(input_assembly_state.topology));
+
+            let tessellation_state = create_info.tessellation_state;
+            let tessellation_state_create_info = vk::PipelineTessellationStateCreateInfo::builder()
+                .flags(conv::map_pipeline_tessellation_state_create_flags(
+                    tessellation_state.flags,
+                ))
+                .patch_control_points(tessellation_state.patch_control_points);
+
+            let viewport_state = create_info.viewport_state;
+            let scissors = viewport_state
                 .scissors
                 .iter()
                 .map(|scissor| conv::map_rect_2d(*scissor))
                 .collect::<Vec<_>>();
-            let viewports = viewport_stage
+            let viewports = viewport_state
                 .viewports
                 .iter()
                 .map(|viewport| conv::map_viewport(*viewport))
                 .collect::<Vec<_>>();
             let viewport_state_create_info = vk::PipelineViewportStateCreateInfo::builder()
                 .flags(conv::map_pipeline_viewport_state_create_flags(
-                    viewport_stage.flags,
+                    viewport_state.flags,
                 ))
                 .scissors(&scissors)
                 .viewports(&viewports);
-            let rasterization_stage = create_info.rasterization_stage;
+            let rasterization_stage = create_info.rasterization_state;
             let rasterization_state_create_info =
                 vk::PipelineRasterizationStateCreateInfo::builder()
                     .flags(conv::map_pipeline_rasterization_state_create_flags(
@@ -899,48 +907,48 @@ impl crate::RHI for VulkanRHI {
                     .depth_bias_slope_factor(rasterization_stage.depth_bias_slope_factor)
                     .line_width(rasterization_stage.line_width);
 
-            let multisample_stage = create_info.multisample_stage;
-            let sample_mask = multisample_stage
+            let multisample_state = create_info.multisample_state;
+            let sample_mask = multisample_state
                 .sample_masks
                 .iter()
                 .map(|mask| conv::map_sample_mask(*mask))
                 .collect::<Vec<_>>();
             let multisample_state_create_info = vk::PipelineMultisampleStateCreateInfo::builder()
                 .flags(conv::map_pipeline_multisample_state_create_flags(
-                    multisample_stage.flags,
+                    multisample_state.flags,
                 ))
                 // Enable sample shading in the pipeline.
-                .sample_shading_enable(multisample_stage.sample_shading_enable)
-                .min_sample_shading(multisample_stage.min_sample_shading)
+                .sample_shading_enable(multisample_state.sample_shading_enable)
+                .min_sample_shading(multisample_state.min_sample_shading)
                 .sample_mask(&sample_mask)
-                .alpha_to_coverage_enable(multisample_stage.alpha_to_coverage_enable)
-                .alpha_to_one_enable(multisample_stage.alpha_to_one_enable);
+                .alpha_to_coverage_enable(multisample_state.alpha_to_coverage_enable)
+                .alpha_to_one_enable(multisample_state.alpha_to_one_enable);
 
-            let depth_stencil_stage = create_info.depth_stencil_stage;
+            let depth_stencil_state = create_info.depth_stencil_state;
             let depth_stencil_state_create_info =
                 vk::PipelineDepthStencilStateCreateInfo::builder()
                     .flags(conv::map_pipeline_depth_stencil_state_create_flags(
-                        depth_stencil_stage.flags,
+                        depth_stencil_state.flags,
                     ))
                     // depth_test_enable 字段指定是否应将新片段的深度与深度缓冲区进行比较，看它们是否应被丢弃。
-                    .depth_test_enable(depth_stencil_stage.depth_test_enable)
+                    .depth_test_enable(depth_stencil_state.depth_test_enable)
                     // depth_write_enable 字段指定是否应将通过深度测试的新片段的深度实际写入深度缓冲区。
-                    .depth_write_enable(depth_stencil_stage.depth_write_enable)
+                    .depth_write_enable(depth_stencil_state.depth_write_enable)
                     // depth_compare_op 字段指定了为保留或丢弃片段所进行的比较。我们坚持较低的深度 = 较近的惯例，所以新片段的深度应该较小。
-                    .depth_compare_op(conv::map_compare_op(depth_stencil_stage.depth_compare_op))
+                    .depth_compare_op(conv::map_compare_op(depth_stencil_state.depth_compare_op))
                     // depth_bounds_test_enable、min_depth_bounds 和 max_depth_bounds 字段用于可选的深度边界测试。
                     // 基本上，这允许你只保留落在指定深度范围内的片段。我们将不会使用这个功能。
-                    .depth_bounds_test_enable(depth_stencil_stage.depth_bounds_test_enable)
+                    .depth_bounds_test_enable(depth_stencil_state.depth_bounds_test_enable)
                     // 最后三个字段配置了模板缓冲区的操作，
                     // 如果你想使用这些操作，那么你必须确保深度 / 模板图像的格式包含一个模板组件。
-                    .stencil_test_enable(depth_stencil_stage.stencil_test_enable)
-                    .front(conv::map_stencil_op_state(depth_stencil_stage.front))
-                    .back(conv::map_stencil_op_state(depth_stencil_stage.back))
-                    .min_depth_bounds(depth_stencil_stage.min_depth_bounds) // Optional.
-                    .max_depth_bounds(depth_stencil_stage.max_depth_bounds); // Optional.
+                    .stencil_test_enable(depth_stencil_state.stencil_test_enable)
+                    .front(conv::map_stencil_op_state(depth_stencil_state.front))
+                    .back(conv::map_stencil_op_state(depth_stencil_state.back))
+                    .min_depth_bounds(depth_stencil_state.min_depth_bounds) // Optional.
+                    .max_depth_bounds(depth_stencil_state.max_depth_bounds); // Optional.
 
-            let color_blend_stage = create_info.color_blend_stage;
-            let color_blend_attachment_states = color_blend_stage
+            let color_blend_state = create_info.color_blend_state;
+            let color_blend_attachment_states = color_blend_state
                 .attachments
                 .iter()
                 .map(|attachment| {
@@ -967,20 +975,20 @@ impl crate::RHI for VulkanRHI {
                 })
                 .collect::<Vec<_>>();
             let color_blend_state_create_info = vk::PipelineColorBlendStateCreateInfo::builder()
-                .logic_op_enable(color_blend_stage.logic_op_enable)
-                .logic_op(conv::map_logic_op(color_blend_stage.logic_op))
+                .logic_op_enable(color_blend_state.logic_op_enable)
+                .logic_op(conv::map_logic_op(color_blend_state.logic_op))
                 .attachments(&color_blend_attachment_states)
-                .blend_constants(color_blend_stage.blend_constants);
+                .blend_constants(color_blend_state.blend_constants);
 
-            let dynamic_stage = create_info.dynamic_stage;
-            let dynamic_states = dynamic_stage
+            let dynamic_state = create_info.dynamic_state;
+            let dynamic_states = dynamic_state
                 .dynamic_states
                 .iter()
                 .map(|state| conv::map_dynamic_state(*state))
                 .collect::<Vec<_>>();
             let dynamic_state_create_info = vk::PipelineDynamicStateCreateInfo::builder()
                 .flags(conv::map_pipeline_dynamic_state_create_flags(
-                    dynamic_stage.flags,
+                    dynamic_state.flags,
                 ))
                 .dynamic_states(&dynamic_states);
 
@@ -994,6 +1002,7 @@ impl crate::RHI for VulkanRHI {
                 .multisample_state(&multisample_state_create_info)
                 .depth_stencil_state(&depth_stencil_state_create_info)
                 .color_blend_state(&color_blend_state_create_info)
+                .tessellation_state(&tessellation_state_create_info)
                 .dynamic_state(&dynamic_state_create_info)
                 .layout(create_info.layout.raw)
                 .render_pass(create_info.render_pass.raw)

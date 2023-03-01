@@ -127,9 +127,9 @@ impl<R: RHI> MainCameraPass<R> {
             .attachments(attachments)
             .blend_constants([0.0, 0.0, 0.0, 0.0])
             .build();
-        let depth_stencil_stage = RHIPipelineDepthStencilStateCreateInfo::builder().build();
+        let depth_stencil_state = RHIPipelineDepthStencilStateCreateInfo::builder().build();
         let tessellation_state = RHIPipelineTessellationStateCreateInfo::builder().build();
-        let dynamic_states = &[RHIDynamicState::VIEWPORT, RHIDynamicState::LINE_WIDTH];
+        let dynamic_states = &[RHIDynamicState::VIEWPORT, RHIDynamicState::SCISSOR];
         let dynamic_state = RHIPipelineDynamicStateCreateInfo::builder()
             .dynamic_states(dynamic_states)
             .build();
@@ -138,20 +138,20 @@ impl<R: RHI> MainCameraPass<R> {
 
         let pipeline_create_info = RHIGraphicsPipelineCreateInfo::builder()
             .stages(shader_states)
-            .vertex_input_stage(&vertex_input_state)
-            .input_assembly_stage(&input_assembly_state)
-            .viewport_stage(&viewport_state)
-            .rasterization_stage(&rasterization_state)
-            .multisample_stage(&multisample_state)
-            .color_blend_stage(&color_blend_state)
-            .depth_stencil_stage(&depth_stencil_stage)
-            .dynamic_stage(&dynamic_state)
-            .tessellation_stage(&tessellation_state)
+            .vertex_input_state(&vertex_input_state)
+            .input_assembly_state(&input_assembly_state)
+            .viewport_state(&viewport_state)
+            .rasterization_state(&rasterization_state)
+            .multisample_state(&multisample_state)
+            .color_blend_state(&color_blend_state)
+            .depth_stencil_state(&depth_stencil_state)
+            .dynamic_state(&dynamic_state)
+            .tessellation_state(&tessellation_state)
             .layout(pipeline_layout)
             .render_pass(render_pass)
             .build();
         let pipeline = unsafe { rhi.create_graphics_pipeline(&pipeline_create_info)? };
-        Ok(RenderPipelineBase{
+        Ok(RenderPipelineBase {
             pipeline_layout,
             pipeline,
         })

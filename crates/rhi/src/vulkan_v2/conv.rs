@@ -1,22 +1,23 @@
-use crate::types_v2::{
-    RHIAttachmentDescriptionFlags, RHIAttachmentReference, RHICommandPoolCreateFlags,
-    RHIDescriptorSetLayoutCreateFlags, RHIFramebufferCreateFlags, RHIPipelineBindPoint,
-    RHIPipelineCreateFlags, RHIPipelineDepthStencilStateCreateFlags,
-    RHIPipelineDynamicStateCreateFlags, RHIPipelineInputAssemblyStateCreateFlags,
-    RHIPipelineLayoutCreateFlags, RHIPipelineMultisampleStateCreateFlags,
-    RHIPipelineRasterizationStateCreateFlags, RHIPipelineVertexInputStateCreateFlags,
-    RHIPipelineViewportStateCreateFlags, RHIRenderPassCreateFlags, RHISampleMask,
-    RHISubpassDescriptionFlags, RHIVertexInputRate,
-};
-use crate::vulkan_v2::conv;
 use ash::vk;
 use num_traits::{FromPrimitive, ToPrimitive};
+
 use rhi_types::{
     RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIBlendFactor, RHIBlendOp,
     RHIColorComponentFlags, RHICompareOp, RHICullModeFlags, RHIDescriptorType, RHIDynamicState,
     RHIExtent2D, RHIExtent3D, RHIFormat, RHIFrontFace, RHIImageLayout, RHILogicOp, RHIOffset2D,
     RHIPipelineStageFlags, RHIPolygonMode, RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits,
     RHIShaderStageFlags, RHIStencilOp, RHIStencilOpState, RHIViewport,
+};
+
+use crate::types_v2::{
+    RHIAttachmentDescriptionFlags, RHIAttachmentReference, RHICommandPoolCreateFlags,
+    RHIDescriptorSetLayoutCreateFlags, RHIFramebufferCreateFlags, RHIPipelineBindPoint,
+    RHIPipelineCreateFlags, RHIPipelineDepthStencilStateCreateFlags,
+    RHIPipelineDynamicStateCreateFlags, RHIPipelineInputAssemblyStateCreateFlags,
+    RHIPipelineLayoutCreateFlags, RHIPipelineMultisampleStateCreateFlags,
+    RHIPipelineRasterizationStateCreateFlags, RHIPipelineTessellationStateCreateFlags,
+    RHIPipelineVertexInputStateCreateFlags, RHIPipelineViewportStateCreateFlags,
+    RHIRenderPassCreateFlags, RHISampleMask, RHISubpassDescriptionFlags, RHIVertexInputRate,
 };
 
 pub fn map_command_pool_create_flags(
@@ -308,6 +309,13 @@ pub fn map_pipeline_input_assembly_state_create_flags(
     _value: RHIPipelineInputAssemblyStateCreateFlags,
 ) -> vk::PipelineInputAssemblyStateCreateFlags {
     let flags = vk::PipelineInputAssemblyStateCreateFlags::empty();
+    flags
+}
+
+pub fn map_pipeline_tessellation_state_create_flags(
+    _value: RHIPipelineTessellationStateCreateFlags,
+) -> vk::PipelineTessellationStateCreateFlags {
+    let flags = vk::PipelineTessellationStateCreateFlags::empty();
     flags
 }
 
