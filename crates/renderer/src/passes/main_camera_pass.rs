@@ -1,11 +1,10 @@
-use std::sync::Arc;
-
 use rhi::types_v2::{
-    RHIPipelineColorBlendStateCreateInfo, RHIPipelineDynamicStateCreateInfo,
+    RHIGraphicsPipelineCreateInfo, RHIPipelineColorBlendStateCreateInfo,
+    RHIPipelineDepthStencilStateCreateInfo, RHIPipelineDynamicStateCreateInfo,
     RHIPipelineInputAssemblyStateCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIPipelineMultisampleStateCreateInfo, RHIPipelineRasterizationStateCreateFlags,
-    RHIPipelineRasterizationStateCreateInfo, RHIPipelineVertexInputStateCreateInfo,
-    RHIPipelineViewportStateCreateInfo,
+    RHIPipelineMultisampleStateCreateInfo, RHIPipelineRasterizationStateCreateInfo,
+    RHIPipelineShaderStageCreateInfo, RHIPipelineTessellationStateCreateInfo,
+    RHIPipelineVertexInputStateCreateInfo, RHIPipelineViewportStateCreateInfo,
 };
 use rhi::RHI;
 use rhi_types::{
@@ -14,7 +13,7 @@ use rhi_types::{
     RHIPrimitiveTopology, RHISampleCountFlagBits,
 };
 
-use crate::passes::{Descriptor, Framebuffer, RenderPass, RenderPassInitInfo, RenderPipelineBase};
+use crate::passes::{RenderPass, RenderPassInitInfo, RenderPipelineBase};
 use crate::shader::{Shader, ShaderDescriptor, ShaderUtil};
 use crate::RendererError;
 
@@ -38,7 +37,8 @@ impl<R: RHI> RenderPass for MainCameraPass<R> {
     fn initialize(init_info: Self::RenderPassInitInfo) -> Result<Self, RendererError> {
         // Self::setup_attachments(&init_info.rhi)?;
         let rhi = init_info.rhi;
-        let pipeline = Self::setup_pipelines(&rhi)?;
+        let render_pass = Self::setup_render_pass(&rhi)?;
+        let pipeline = Self::setup_pipelines(&rhi, render_pass)?;
 
         Ok(Self { rhi })
     }
@@ -49,7 +49,14 @@ impl<R: RHI> MainCameraPass<R> {
         todo!()
     }
 
-    fn setup_pipelines(rhi: &R) -> Result<RenderPipelineBase<R>, RendererError> {
+    fn setup_render_pass(rhi: &R) -> Result<R::RenderPass, RendererError> {
+        todo!()
+    }
+
+    fn setup_pipelines(
+        rhi: &R,
+        render_pass: R::RenderPass,
+    ) -> Result<RenderPipelineBase<R>, RendererError> {
         let vert_bytes =
             unsafe { ShaderUtil::load_pre_compiled_spv_bytes_from_name("triangle.vert") };
         let frag_bytes =
@@ -66,6 +73,18 @@ impl<R: RHI> MainCameraPass<R> {
             entry_name: "main",
         };
         let frag_shader = Shader::<R>::new(rhi, &frag_desc)?;
+        let vert_shader_state = RHIPipelineShaderStageCreateInfo::builder()
+            .stage(vert_shader.stage)
+            .name(&vert_shader.name)
+            .shader_module(vert_shader.shader)
+            .build();
+        let frag_shader_state = RHIPipelineShaderStageCreateInfo::builder()
+            .stage(frag_shader.stage)
+            .name(&frag_shader.name)
+            .shader_module(frag_shader.shader)
+            .build();
+        let shader_states = &[vert_shader_state, frag_shader_state];
+
         let vertex_input_state = RHIPipelineVertexInputStateCreateInfo::builder().build();
         let input_assembly_state = RHIPipelineInputAssemblyStateCreateInfo::builder()
             .topology(RHIPrimitiveTopology::TRIANGLE_LIST)
@@ -108,6 +127,8 @@ impl<R: RHI> MainCameraPass<R> {
             .attachments(attachments)
             .blend_constants([0.0, 0.0, 0.0, 0.0])
             .build();
+        let depth_stencil_stage = RHIPipelineDepthStencilStateCreateInfo::builder().build();
+        let tessellation_state = RHIPipelineTessellationStateCreateInfo::builder().build();
         let dynamic_states = &[RHIDynamicState::VIEWPORT, RHIDynamicState::LINE_WIDTH];
         let dynamic_state = RHIPipelineDynamicStateCreateInfo::builder()
             .dynamic_states(dynamic_states)
@@ -115,6 +136,24 @@ impl<R: RHI> MainCameraPass<R> {
         let layout_info = RHIPipelineLayoutCreateInfo::builder().build();
         let pipeline_layout = unsafe { rhi.create_pipeline_layout(&layout_info)? };
 
-        todo!()
+        let pipeline_create_info = RHIGraphicsPipelineCreateInfo::builder()
+            .stages(shader_states)
+            .vertex_input_stage(&vertex_input_state)
+            .input_assembly_stage(&input_assembly_state)
+            .viewport_stage(&viewport_state)
+            .rasterization_stage(&rasterization_state)
+            .multisample_stage(&multisample_state)
+            .color_blend_stage(&color_blend_state)
+            .depth_stencil_stage(&depth_stencil_stage)
+            .dynamic_stage(&dynamic_state)
+            .tessellation_stage(&tessellation_state)
+            .layout(pipeline_layout)
+            .render_pass(render_pass)
+            .build();
+        let pipeline = unsafe { rhi.create_graphics_pipeline(&pipeline_create_info)? };
+        Ok(RenderPipelineBase{
+            pipeline_layout,
+            pipeline,
+        })
     }
 }

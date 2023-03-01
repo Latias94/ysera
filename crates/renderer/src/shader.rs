@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::path::Path;
 
 use spirq::ty::Type;
@@ -15,6 +16,7 @@ pub struct Shader<R: RHI> {
     pub shader: R::Shader,
     pub entry_point: EntryPoint,
     pub stage: RHIShaderStageFlags,
+    pub name: CString,
 }
 
 #[derive(Clone, TypedBuilder)]
@@ -46,6 +48,7 @@ impl<R: RHI> Shader<R> {
             shader,
             entry_point,
             stage,
+            name: CString::new(desc.entry_name).unwrap(),
         })
     }
 

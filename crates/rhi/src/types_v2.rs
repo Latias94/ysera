@@ -259,7 +259,7 @@ where
     #[builder(default)]
     pub flags: RHIPipelineShaderStageCreateFlags,
     pub stage: RHIShaderStageFlags,
-    pub shader: R::Shader,
+    pub shader_module: R::Shader,
     pub name: &'a CString,
 }
 
@@ -440,12 +440,15 @@ pub struct RHIPipelineDepthStencilStateCreateInfo {
     pub depth_test_enable: bool,
     #[builder(default)]
     pub depth_write_enable: bool,
+    #[builder(default)]
     pub depth_compare_op: RHICompareOp,
     #[builder(default)]
     pub depth_bounds_test_enable: bool,
     #[builder(default)]
     pub stencil_test_enable: bool,
+    #[builder(default)]
     pub front: RHIStencilOpState,
+    #[builder(default)]
     pub back: RHIStencilOpState,
     #[builder(default)]
     pub min_depth_bounds: f32,

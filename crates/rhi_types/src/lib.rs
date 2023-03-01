@@ -606,9 +606,12 @@ pub enum RHIFrontFace {
     CLOCKWISE = 1,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkCompareOp.html>"]
 pub enum RHICompareOp {
+    #[default]
     NEVER = 0,
     LESS = 1,
     EQUAL = 2,
@@ -619,21 +622,28 @@ pub enum RHICompareOp {
     ALWAYS = 7,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(TypedBuilder, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkStencilOpState.html>"]
 pub struct RHIStencilOpState {
+    #[builder(default = RHIStencilOp::KEEP)]
     pub fail_op: RHIStencilOp,
+    #[builder(default = RHIStencilOp::KEEP)]
     pub pass_op: RHIStencilOp,
+    #[builder(default = RHIStencilOp::KEEP)]
     pub depth_fail_op: RHIStencilOp,
+    #[builder(default = RHICompareOp::NEVER)]
     pub compare_op: RHICompareOp,
     pub compare_mask: u32,
     pub write_mask: u32,
     pub reference: u32,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkStencilOp.html>"]
 pub enum RHIStencilOp {
+    #[default]
     KEEP = 0,
     ZERO = 1,
     REPLACE = 2,
@@ -649,10 +659,10 @@ pub enum RHIStencilOp {
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkLogicOp.html>"]
 pub enum RHILogicOp {
+    #[default]
     CLEAR = 0,
     AND = 1,
     AND_REVERSE = 2,
-    #[default]
     COPY = 3,
     AND_INVERTED = 4,
     NO_OP = 5,

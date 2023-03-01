@@ -808,7 +808,7 @@ impl crate::RHI for VulkanRHI {
                 .iter()
                 .map(|stage| {
                     vk::PipelineShaderStageCreateInfo::builder()
-                        .module(stage.shader.raw)
+                        .module(stage.shader_module.raw)
                         .name(stage.name)
                         .stage(conv::map_shader_stage_flags(stage.stage))
                         .build()
