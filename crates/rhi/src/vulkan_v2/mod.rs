@@ -13,13 +13,13 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rhi_types::{
     DeviceFeatures, DeviceRequirement, InstanceDescriptor, InstanceFlags,
     PhysicalDeviceRequirements, QueueFamilyIndices, RHIExtent2D, RHIFormat, RHIOffset2D, RHIRect2D,
-    RHIViewport,
+    RHISubpassContents, RHIViewport,
 };
 
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
     RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIRenderPassCreateInfo, RHIShaderCreateInfo, RHISwapChainDesc,
+    RHIRenderPassBeginInfo, RHIRenderPassCreateInfo, RHIShaderCreateInfo, RHISwapChainDesc,
 };
 use crate::utils::c_char_to_string;
 use crate::vulkan_v2::debug::DebugUtils;
@@ -139,7 +139,7 @@ pub struct VulkanPipelineLayout {
     raw: vk::PipelineLayout,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct VulkanPipeline {
     raw: vk::Pipeline,
 }
@@ -655,18 +655,25 @@ impl crate::RHI for VulkanRHI {
                 .iter()
                 .map(|x| conv::map_attachment_reference(x))
                 .collect::<Vec<_>>();
-            let vk_subpass_desc = vk::SubpassDescription::builder()
+
+            let mut vk_subpass_desc = vk::SubpassDescription::builder()
                 .flags(conv::map_subpass_description_flags(attachment.flags))
                 .pipeline_bind_point(conv::map_pipeline_bind_point(
                     attachment.pipeline_bind_point,
                 ))
                 .input_attachments(&input_attachments)
                 .color_attachments(&color_attachments)
-                .resolve_attachments(&resolve_attachments)
-                .depth_stencil_attachment(&conv::map_attachment_reference(
-                    &attachment.depth_stencil_attachment,
-                ))
-                .build();
+                .resolve_attachments(&resolve_attachments);
+
+            let mut vk_ds_ref = None;
+            if let Some(ref ds_ref) = attachment.depth_stencil_attachment {
+                vk_ds_ref = Some(conv::map_attachment_reference(ds_ref));
+            }
+            if let Some(ref ds_ref) = vk_ds_ref {
+                vk_subpass_desc = vk_subpass_desc.depth_stencil_attachment(ds_ref);
+            }
+            let vk_subpass_desc = vk_subpass_desc.build();
+
             subpasses.push(vk_subpass_desc);
         }
 
@@ -917,6 +924,9 @@ impl crate::RHI for VulkanRHI {
                 .flags(conv::map_pipeline_multisample_state_create_flags(
                     multisample_state.flags,
                 ))
+                .rasterization_samples(conv::map_sample_count_flag_bits(
+                    multisample_state.rasterization_samples,
+                ))
                 // Enable sample shading in the pipeline.
                 .sample_shading_enable(multisample_state.sample_shading_enable)
                 .min_sample_shading(multisample_state.min_sample_shading)
@@ -1007,6 +1017,8 @@ impl crate::RHI for VulkanRHI {
                 .layout(create_info.layout.raw)
                 .render_pass(create_info.render_pass.raw)
                 .subpass(create_info.subpass)
+                .base_pipeline_index(create_info.base_pipeline_index)
+                // .base_pipeline_handle(create_info.base_pipeline_handle.raw)
                 .build()
         };
 
@@ -1031,6 +1043,37 @@ impl crate::RHI for VulkanRHI {
             scissor: self.scissor,
             image_views: self.swapchain_image_views.clone(),
         }
+    }
+
+    fn get_current_command_buffer(&self) -> Self::CommandBuffer {
+        self.current_command_buffer
+    }
+
+    unsafe fn cmd_begin_render_pass(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        begin_info: &RHIRenderPassBeginInfo<Self>,
+        subpass_contents: RHISubpassContents,
+    ) {
+        let clear_values = conv::map_clear_values(begin_info.clear_values);
+        let vk_begin_info = vk::RenderPassBeginInfo::builder()
+            .render_pass(begin_info.renderpass.raw)
+            .framebuffer(begin_info.framebuffer.raw)
+            .render_area(conv::map_rect_2d(begin_info.render_area))
+            .clear_values(&clear_values)
+            .build();
+
+        unsafe {
+            self.device.cmd_begin_render_pass(
+                command_buffer.raw,
+                &vk_begin_info,
+                conv::map_subpass_contents(subpass_contents),
+            )
+        };
+    }
+
+    unsafe fn cmd_end_render_pass(&self, command_buffer: Self::CommandBuffer) {
+        unsafe { self.device.cmd_end_render_pass(command_buffer.raw) };
     }
 
     unsafe fn destroy_shader_module(&self, shader: Self::Shader) {

@@ -6,10 +6,10 @@ use bitflags::bitflags;
 use typed_builder::TypedBuilder;
 
 use rhi_types::{
-    RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHICompareOp, RHICullModeFlags,
-    RHIDescriptorType, RHIDynamicState, RHIExtent2D, RHIFormat, RHIFrontFace, RHIImageLayout,
-    RHILogicOp, RHIPipelineColorBlendAttachmentState, RHIPipelineStageFlags, RHIPolygonMode,
-    RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits, RHIShaderStageFlags,
+    RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIClearValue, RHICompareOp,
+    RHICullModeFlags, RHIDescriptorType, RHIDynamicState, RHIExtent2D, RHIFormat, RHIFrontFace,
+    RHIImageLayout, RHILogicOp, RHIPipelineColorBlendAttachmentState, RHIPipelineStageFlags,
+    RHIPolygonMode, RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits, RHIShaderStageFlags,
     RHIStencilOpState, RHIViewport,
 };
 
@@ -37,24 +37,31 @@ bitflags! {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkRenderPassCreateInfo.html>"]
 pub struct RHIRenderPassCreateInfo<'a> {
+    #[builder(default)]
     pub flags: RHIRenderPassCreateFlags,
+    #[builder(default)]
     pub attachments: &'a [RHIAttachmentDescription],
+    #[builder(default)]
     pub subpasses: &'a [RHISubpassDescription<'a>],
+    #[builder(default)]
     pub dependencies: &'a [RHISubpassDependency],
 }
 
-#[derive(Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone)]
 pub struct RHIAttachmentDescription {
+    #[builder(default)]
     pub flags: RHIAttachmentDescriptionFlags,
     pub format: RHIFormat,
+    #[builder(default)]
     pub samples: RHISampleCountFlagBits,
     pub load_op: RHIAttachmentLoadOp,
     pub store_op: RHIAttachmentStoreOp,
     pub stecil_load_op: RHIAttachmentLoadOp,
     pub stecil_store_op: RHIAttachmentStoreOp,
+    #[builder(default)]
     pub initial_layout: RHIImageLayout,
     pub final_layout: RHIImageLayout,
 }
@@ -68,27 +75,36 @@ bitflags! {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSubpassDescription.html>"]
 pub struct RHISubpassDescription<'a> {
+    #[builder(default)]
     pub flags: RHISubpassDescriptionFlags,
+    #[builder(default)]
     pub pipeline_bind_point: RHIPipelineBindPoint,
+    #[builder(default)]
     pub input_attachments: &'a [RHIAttachmentReference],
+    #[builder(default)]
     pub color_attachments: &'a [RHIAttachmentReference],
+    #[builder(default)]
     pub resolve_attachments: &'a [RHIAttachmentReference],
-    pub depth_stencil_attachment: RHIAttachmentReference,
+    #[builder(default)]
+    pub depth_stencil_attachment: Option<RHIAttachmentReference>,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(TypedBuilder, Copy, Clone, Default)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAttachmentReference.html>"]
 pub struct RHIAttachmentReference {
     pub attachment: u32,
     pub layout: RHIImageLayout,
 }
 
-#[derive(FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineBindPoint.html>"]
 pub enum RHIPipelineBindPoint {
+    #[default]
     GRAPHICS = 0,
     COMPUTE = 1,
 }
@@ -109,7 +125,7 @@ bitflags! {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone)]
 pub struct RHISubpassDependency {
     pub src_subpass: u32,
     pub dst_subpass: u32,
@@ -236,8 +252,10 @@ where
     pub render_pass: R::RenderPass,
     #[builder(default)]
     pub subpass: u32,
+    // #[builder(default)]
+    // pub base_pipeline_handle: R::Pipeline,
     #[builder(default)]
-    pub base_pipeline_index: u32,
+    pub base_pipeline_index: i32,
 }
 
 bitflags! {
@@ -513,4 +531,12 @@ pub struct RHISwapChainDesc<R: RHI> {
     pub viewport: RHIViewport,
     pub scissor: RHIRect2D,
     pub image_views: Vec<R::ImageView>,
+}
+
+#[derive(TypedBuilder, Clone)]
+pub struct RHIRenderPassBeginInfo<'a, R: RHI> {
+    pub renderpass: &'a R::RenderPass,
+    pub framebuffer: &'a R::Framebuffer,
+    pub render_area: RHIRect2D,
+    pub clear_values: &'a [RHIClearValue],
 }

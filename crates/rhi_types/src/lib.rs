@@ -367,14 +367,15 @@ pub struct RHIViewport {
     pub max_depth: f32,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct RHIOffset2D {
     pub x: i32,
     pub y: i32,
 }
 
-#[derive(Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone)]
 pub struct RHIRect2D {
+    #[builder(default)]
     pub offset: RHIOffset2D,
     pub extent: RHIExtent2D,
 }
@@ -440,6 +441,8 @@ pub enum RHIImageLayout {
     TRANSFER_DST_OPTIMAL = 7,
     #[doc = "Initial layout used when the data is populated by the CPU"]
     PREINITIALIZED = 8,
+    #[doc = "Generated from 'VK_KHR_swapchain'"]
+    PRESENT_SRC_KHR = 1_000_001_002,
 }
 
 bitflags! {
@@ -760,4 +763,39 @@ pub enum RHIDynamicState {
     STENCIL_COMPARE_MASK = 6,
     STENCIL_WRITE_MASK = 7,
     STENCIL_REFERENCE = 8,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkClearValue.html>"]
+pub union RHIClearValue {
+    pub color: RHIClearColorValue,
+    pub depth_stencil: RHIClearDepthStencilValue,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkClearColorValue.html>"]
+pub union RHIClearColorValue {
+    pub float32: [f32; 4],
+    pub int32: [i32; 4],
+    pub uint32: [u32; 4],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkClearDepthStencilValue.html>"]
+pub struct RHIClearDepthStencilValue {
+    pub depth: f32,
+    pub stencil: u32,
+}
+
+#[derive(
+    FromPrimitive, ToPrimitive, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+)]
+#[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSubpassContents.html>"]
+pub enum RHISubpassContents {
+    #[default]
+    INLINE = 0,
+    SECONDARY_COMMAND_BUFFERS = 1,
 }

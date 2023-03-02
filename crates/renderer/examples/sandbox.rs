@@ -54,6 +54,9 @@ impl<R: RHI> Sandbox<R> {
                 return Ok(());
             }
             // pass...
+            self.main_camera_pass
+                .draw(self.rhi.get_current_frame_index())?;
+
             self.rhi.submit_rendering(|| {})?;
         }
         Ok(())

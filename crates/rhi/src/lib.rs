@@ -8,12 +8,12 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 pub use winit;
 
 pub use error::*;
-use rhi_types::RHIExtent2D;
+use rhi_types::{RHIExtent2D, RHISubpassContents};
 
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
     RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIRenderPassCreateInfo, RHIShaderCreateInfo, RHISwapChainDesc,
+    RHIRenderPassBeginInfo, RHIRenderPassCreateInfo, RHIShaderCreateInfo, RHISwapChainDesc,
 };
 
 mod error;
@@ -33,11 +33,11 @@ pub trait RHI: Sized + Send + Sync + Clone {
     type ImageView: Copy + Clone;
     type Allocation;
     type Format: Copy + Clone;
-    type Framebuffer;
+    type Framebuffer: Copy + Clone;
     type DescriptorSet: Copy + Clone;
     type DescriptorSetLayout: Copy + Clone;
     type PipelineLayout: Copy + Clone;
-    type Pipeline;
+    type Pipeline: Default + Copy + Clone;
     type Sampler: Copy + Clone;
     type Shader: Copy + Clone;
     type Viewport: Copy + Clone;
@@ -103,6 +103,17 @@ pub trait RHI: Sized + Send + Sync + Clone {
     ) -> Result<Self::Pipeline, RHIError>;
 
     fn get_swapchain_info(&self) -> RHISwapChainDesc<Self>;
+
+    fn get_current_command_buffer(&self) -> Self::CommandBuffer;
+
+    unsafe fn cmd_begin_render_pass(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        begin_info: &RHIRenderPassBeginInfo<Self>,
+        subpass_contents: RHISubpassContents,
+    );
+
+    unsafe fn cmd_end_render_pass(&self, command_buffer: Self::CommandBuffer);
 
     unsafe fn destroy_shader_module(&self, shader: Self::Shader);
 

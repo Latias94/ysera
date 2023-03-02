@@ -3,10 +3,11 @@ use num_traits::{FromPrimitive, ToPrimitive};
 
 use rhi_types::{
     RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIBlendFactor, RHIBlendOp,
-    RHIColorComponentFlags, RHICompareOp, RHICullModeFlags, RHIDescriptorType, RHIDynamicState,
-    RHIExtent2D, RHIExtent3D, RHIFormat, RHIFrontFace, RHIImageLayout, RHILogicOp, RHIOffset2D,
-    RHIPipelineStageFlags, RHIPolygonMode, RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits,
-    RHIShaderStageFlags, RHIStencilOp, RHIStencilOpState, RHIViewport,
+    RHIClearColorValue, RHIClearDepthStencilValue, RHIClearValue, RHIColorComponentFlags,
+    RHICompareOp, RHICullModeFlags, RHIDescriptorType, RHIDynamicState, RHIExtent2D, RHIExtent3D,
+    RHIFormat, RHIFrontFace, RHIImageLayout, RHILogicOp, RHIOffset2D, RHIPipelineStageFlags,
+    RHIPolygonMode, RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits, RHIShaderStageFlags,
+    RHIStencilOp, RHIStencilOpState, RHISubpassContents, RHIViewport,
 };
 
 use crate::types_v2::{
@@ -501,5 +502,41 @@ pub fn map_dynamic_state(value: RHIDynamicState) -> vk::DynamicState {
     match value.to_i32() {
         None => vk::DynamicState::default(),
         Some(x) => vk::DynamicState::from_raw(x),
+    }
+}
+
+pub fn map_subpass_contents(value: RHISubpassContents) -> vk::SubpassContents {
+    match value.to_i32() {
+        None => vk::SubpassContents::default(),
+        Some(x) => vk::SubpassContents::from_raw(x),
+    }
+}
+
+pub fn map_clear_values(values: &[RHIClearValue]) -> Vec<vk::ClearValue> {
+    values.iter().map(|x| map_clear_value(*x)).collect()
+}
+
+pub fn map_clear_value(value: RHIClearValue) -> vk::ClearValue {
+    unsafe {
+        vk::ClearValue {
+            depth_stencil: map_clear_depth_stencil_value(value.depth_stencil),
+        }
+    }
+}
+
+pub fn map_clear_color_value(value: RHIClearColorValue) -> vk::ClearColorValue {
+    unsafe {
+        vk::ClearColorValue {
+            float32: value.float32,
+        }
+    }
+}
+
+pub fn map_clear_depth_stencil_value(
+    value: RHIClearDepthStencilValue,
+) -> vk::ClearDepthStencilValue {
+    vk::ClearDepthStencilValue {
+        depth: value.depth,
+        stencil: value.stencil,
     }
 }

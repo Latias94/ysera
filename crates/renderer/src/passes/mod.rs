@@ -35,3 +35,8 @@ pub struct Descriptor<R: RHI> {
     descriptor_set_layout: R::DescriptorSetLayout,
     descriptor_set: R::DescriptorSet,
 }
+
+pub enum RenderPassAttachmentType {
+    SwapchainImage,
+    Depth,
+}

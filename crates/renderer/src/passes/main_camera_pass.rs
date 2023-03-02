@@ -1,27 +1,32 @@
 use rhi::types_v2::{
-    RHIGraphicsPipelineCreateInfo, RHIPipelineColorBlendStateCreateInfo,
+    RHIAttachmentDescription, RHIAttachmentReference, RHIFramebufferCreateInfo,
+    RHIGraphicsPipelineCreateInfo, RHIPipelineBindPoint, RHIPipelineColorBlendStateCreateInfo,
     RHIPipelineDepthStencilStateCreateInfo, RHIPipelineDynamicStateCreateInfo,
     RHIPipelineInputAssemblyStateCreateInfo, RHIPipelineLayoutCreateInfo,
     RHIPipelineMultisampleStateCreateInfo, RHIPipelineRasterizationStateCreateInfo,
     RHIPipelineShaderStageCreateInfo, RHIPipelineTessellationStateCreateInfo,
     RHIPipelineVertexInputStateCreateInfo, RHIPipelineViewportStateCreateInfo,
+    RHIRenderPassBeginInfo, RHIRenderPassCreateInfo, RHISubpassDescription,
 };
 use rhi::RHI;
 use rhi_types::{
-    RHIBlendFactor, RHIBlendOp, RHIColorComponentFlags, RHICullModeFlags, RHIDynamicState,
-    RHIFrontFace, RHILogicOp, RHIPipelineColorBlendAttachmentState, RHIPolygonMode,
-    RHIPrimitiveTopology, RHISampleCountFlagBits,
+    RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIBlendFactor, RHIBlendOp, RHIClearColorValue,
+    RHIClearValue, RHIColorComponentFlags, RHICullModeFlags, RHIDynamicState, RHIFrontFace,
+    RHIImageLayout, RHILogicOp, RHIOffset2D, RHIPipelineColorBlendAttachmentState, RHIPolygonMode,
+    RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits, RHISubpassContents,
 };
+use std::collections::HashMap;
 
-use crate::passes::{RenderPass, RenderPassInitInfo, RenderPipelineBase};
+use crate::passes::{
+    Framebuffer, RenderPass, RenderPassAttachmentType, RenderPassInitInfo, RenderPipelineBase,
+};
 use crate::shader::{Shader, ShaderDescriptor, ShaderUtil};
 use crate::RendererError;
 
 pub struct MainCameraPass<R: RHI> {
-    // framebuffer: Framebuffer<R>,
-    // descriptor: Descriptor<R>,
-    // render_pipeline: Vec<RenderPipelineBase<R>>,
-    // _marker: PhantomData<&'a ()>,
+    pub framebuffers: Vec<R::Framebuffer>,
+    pub render_pass: R::RenderPass,
+    pub pipeline: RenderPipelineBase<R>,
     rhi: R,
 }
 
@@ -37,10 +42,53 @@ impl<R: RHI> RenderPass for MainCameraPass<R> {
     fn initialize(init_info: Self::RenderPassInitInfo) -> Result<Self, RendererError> {
         // Self::setup_attachments(&init_info.rhi)?;
         let rhi = init_info.rhi;
-        let render_pass = Self::setup_render_pass(&rhi)?;
+        let mut attachments_map = HashMap::new();
+        let render_pass = Self::setup_render_pass(&rhi, &mut attachments_map)?;
+        let framebuffers = Self::setup_framebuffers(&rhi, &render_pass, attachments_map)?;
         let pipeline = Self::setup_pipelines(&rhi, render_pass)?;
 
-        Ok(Self { rhi })
+        Ok(Self {
+            rhi,
+            framebuffers,
+            render_pass,
+            pipeline,
+        })
+    }
+}
+
+impl<R: RHI> MainCameraPass<R> {
+    pub fn draw(&self, current_image_index: usize) -> Result<(), RendererError> {
+        let swapchain_desc = self.rhi.get_swapchain_info();
+        let clear_values = &[RHIClearValue {
+            color: RHIClearColorValue {
+                int32: [0, 0, 0, 0],
+            },
+        }];
+        let renderpass_begin_info = RHIRenderPassBeginInfo::builder()
+            .renderpass(&self.render_pass)
+            .framebuffer(&self.framebuffers[current_image_index])
+            .render_area(RHIRect2D {
+                offset: RHIOffset2D { x: 0, y: 0 },
+                extent: swapchain_desc.extent,
+            })
+            .clear_values(clear_values)
+            .build();
+        unsafe {
+            self.rhi.cmd_begin_render_pass(
+                self.rhi.get_current_command_buffer(),
+                &renderpass_begin_info,
+                RHISubpassContents::INLINE,
+            );
+        }
+
+        // ...
+
+        unsafe {
+            self.rhi
+                .cmd_end_render_pass(self.rhi.get_current_command_buffer());
+        }
+
+        Ok(())
     }
 }
 
@@ -49,8 +97,70 @@ impl<R: RHI> MainCameraPass<R> {
         todo!()
     }
 
-    fn setup_render_pass(rhi: &R) -> Result<R::RenderPass, RendererError> {
-        todo!()
+    fn setup_render_pass(
+        rhi: &R,
+        attachments_map: &mut HashMap<RenderPassAttachmentType, RHIAttachmentDescription>,
+    ) -> Result<R::RenderPass, RendererError> {
+        let swapchain_desc = rhi.get_swapchain_info();
+
+        let swapchain_image_attachment = RHIAttachmentDescription::builder()
+            .format(swapchain_desc.image_format)
+            .samples(RHISampleCountFlagBits::TYPE_1)
+            .load_op(RHIAttachmentLoadOp::CLEAR)
+            .store_op(RHIAttachmentStoreOp::STORE)
+            .stecil_load_op(RHIAttachmentLoadOp::DONT_CARE)
+            .stecil_store_op(RHIAttachmentStoreOp::DONT_CARE)
+            .initial_layout(RHIImageLayout::UNDEFINED)
+            .final_layout(RHIImageLayout::PRESENT_SRC_KHR)
+            .build();
+
+        let swapchain_image_attachment_ref = RHIAttachmentReference::builder()
+            .attachment(0)
+            .layout(RHIImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .build();
+        // layout(location = 0) out vec4 outColor
+        let color_attachments = &[swapchain_image_attachment_ref];
+        let subpass = RHISubpassDescription::builder()
+            .pipeline_bind_point(RHIPipelineBindPoint::GRAPHICS)
+            .color_attachments(color_attachments)
+            .build();
+        let attachments = &[swapchain_image_attachment];
+        let subpasses = &[subpass];
+        let create_info = RHIRenderPassCreateInfo::builder()
+            .attachments(attachments)
+            .subpasses(subpasses)
+            .build();
+        let renderpass = unsafe { rhi.create_render_pass(&create_info)? };
+        Ok(renderpass)
+    }
+
+    fn setup_framebuffers(
+        rhi: &R,
+        render_pass: &R::RenderPass,
+        attachments_map: HashMap<RenderPassAttachmentType, RHIAttachmentDescription>,
+    ) -> Result<Vec<R::Framebuffer>, RendererError> {
+        let swapchain_desc = rhi.get_swapchain_info();
+
+        let image_view_counts = swapchain_desc.image_views.len();
+        let mut framebuffers = Vec::with_capacity(image_view_counts);
+        for image_view in swapchain_desc.image_views {
+            let attachments = &[
+                // gbuffer...
+                // depth_image_view...
+                image_view,
+            ];
+            let create_info = RHIFramebufferCreateInfo::builder()
+                .render_pass(render_pass)
+                .attachments(attachments)
+                .width(swapchain_desc.extent.width)
+                .height(swapchain_desc.extent.height)
+                .layers(1)
+                .build();
+            let framebuffer = unsafe { rhi.create_framebuffer(&create_info)? };
+            framebuffers.push(framebuffer);
+        }
+
+        Ok(framebuffers)
     }
 
     fn setup_pipelines(
