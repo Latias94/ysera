@@ -43,6 +43,7 @@ impl<R: RHI> Shader<R> {
             ExecutionModel::GLCompute => RHIShaderStageFlags::COMPUTE,
             _ => RHIShaderStageFlags::empty(),
         };
+
         log::debug!("shader module created.");
         Ok(Self {
             shader,
@@ -53,7 +54,8 @@ impl<R: RHI> Shader<R> {
     }
 
     pub fn destroy(self, rhi: &R) {
-        unsafe { rhi.destroy_shader_module(self.shader) }
+        unsafe { rhi.destroy_shader_module(self.shader) };
+        log::debug!("shader destroyed.");
     }
 
     pub fn get_push_constant_range(&self) -> Option<RHIPushConstantRange> {

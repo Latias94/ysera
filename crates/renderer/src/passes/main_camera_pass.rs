@@ -28,6 +28,7 @@ pub struct MainCameraPass<R: RHI> {
     pub framebuffers: Vec<R::Framebuffer>,
     pub render_pass: R::RenderPass,
     pub pipeline: RenderPipelineBase<R>,
+    shaders: Vec<Shader<R>>,
     rhi: R,
 }
 
@@ -46,13 +47,16 @@ impl<R: RHI> RenderPass for MainCameraPass<R> {
         let mut attachments_map = HashMap::new();
         let render_pass = Self::setup_render_pass(&rhi, &mut attachments_map)?;
         let framebuffers = Self::setup_framebuffers(&rhi, &render_pass, attachments_map)?;
-        let pipeline = Self::setup_pipelines(&rhi, render_pass)?;
+        let shaders = Self::setup_shaders(&rhi)?;
+        let pipeline = Self::setup_pipelines(&rhi, &shaders, render_pass)?;
+        // Self::destroy_shaders(&rhi, shaders);
 
         Ok(Self {
             rhi,
             framebuffers,
             render_pass,
             pipeline,
+            shaders,
         })
     }
 }
@@ -74,28 +78,26 @@ impl<R: RHI> MainCameraPass<R> {
             })
             .clear_values(clear_values)
             .build();
+
+        let cb = self.rhi.get_current_command_buffer();
+
         unsafe {
-            self.rhi.cmd_begin_render_pass(
-                self.rhi.get_current_command_buffer(),
-                &render_pass_begin_info,
-                RHISubpassContents::INLINE,
-            );
+            self.rhi
+                .cmd_begin_render_pass(cb, &render_pass_begin_info, RHISubpassContents::INLINE);
         }
 
         // ...
         unsafe {
-            self.rhi.cmd_bind_pipeline(
-                self.rhi.get_current_command_buffer(),
-                RHIPipelineBindPoint::GRAPHICS,
-                self.pipeline.pipeline,
-            );
+            self.rhi.cmd_set_scissor(cb, 0, &[swapchain_desc.scissor]);
+            self.rhi.cmd_set_viewport(cb, 0, &[swapchain_desc.viewport]);
+
             self.rhi
-                .cmd_draw(self.rhi.get_current_command_buffer(), 3, 1, 0, 0);
+                .cmd_bind_pipeline(cb, RHIPipelineBindPoint::GRAPHICS, self.pipeline.pipeline);
+            self.rhi.cmd_draw(cb, 3, 1, 0, 0);
         }
 
         unsafe {
-            self.rhi
-                .cmd_end_render_pass(self.rhi.get_current_command_buffer());
+            self.rhi.cmd_end_render_pass(cb);
         }
 
         Ok(())
@@ -183,10 +185,8 @@ impl<R: RHI> MainCameraPass<R> {
         Ok(framebuffers)
     }
 
-    fn setup_pipelines(
-        rhi: &R,
-        render_pass: R::RenderPass,
-    ) -> Result<RenderPipelineBase<R>, RendererError> {
+    fn setup_shaders(rhi: &R) -> Result<Vec<Shader<R>>, RendererError> {
+        let mut shaders = Vec::new();
         let vert_bytes =
             unsafe { ShaderUtil::load_pre_compiled_spv_bytes_from_name("triangle.vert") };
         let frag_bytes =
@@ -197,23 +197,38 @@ impl<R: RHI> MainCameraPass<R> {
             entry_name: "main",
         };
         let vert_shader = Shader::<R>::new(rhi, &vert_desc)?;
+        shaders.push(vert_shader);
         let frag_desc = ShaderDescriptor {
             label: Some("Fragment Shader"),
             spv_bytes: &frag_bytes,
             entry_name: "main",
         };
         let frag_shader = Shader::<R>::new(rhi, &frag_desc)?;
-        let vert_shader_state = RHIPipelineShaderStageCreateInfo::builder()
-            .stage(vert_shader.stage)
-            .name(&vert_shader.name)
-            .shader_module(vert_shader.shader)
-            .build();
-        let frag_shader_state = RHIPipelineShaderStageCreateInfo::builder()
-            .stage(frag_shader.stage)
-            .name(&frag_shader.name)
-            .shader_module(frag_shader.shader)
-            .build();
-        let shader_states = &[vert_shader_state, frag_shader_state];
+        shaders.push(frag_shader);
+        Ok(shaders)
+    }
+
+    fn destroy_shaders(rhi: &R, shaders: Vec<Shader<R>>) {
+        for shader in shaders {
+            shader.destroy(rhi)
+        }
+    }
+
+    fn setup_pipelines(
+        rhi: &R,
+        shaders: &[Shader<R>],
+        render_pass: R::RenderPass,
+    ) -> Result<RenderPipelineBase<R>, RendererError> {
+        let shader_states = shaders
+            .iter()
+            .map(|shader| {
+                RHIPipelineShaderStageCreateInfo::builder()
+                    .stage(shader.stage)
+                    .name(&shader.name)
+                    .shader_module(shader.shader)
+                    .build()
+            })
+            .collect::<Vec<_>>();
 
         let vertex_input_state = RHIPipelineVertexInputStateCreateInfo::builder().build();
         let input_assembly_state = RHIPipelineInputAssemblyStateCreateInfo::builder()
@@ -266,8 +281,8 @@ impl<R: RHI> MainCameraPass<R> {
         let layout_info = RHIPipelineLayoutCreateInfo::builder().build();
         let pipeline_layout = unsafe { rhi.create_pipeline_layout(&layout_info)? };
 
-        let pipeline_create_info = RHIGraphicsPipelineCreateInfo::builder()
-            .stages(shader_states)
+        let create_info = RHIGraphicsPipelineCreateInfo::builder()
+            .stages(&shader_states)
             .vertex_input_state(&vertex_input_state)
             .input_assembly_state(&input_assembly_state)
             .viewport_state(&viewport_state)
@@ -280,7 +295,7 @@ impl<R: RHI> MainCameraPass<R> {
             .layout(pipeline_layout)
             .render_pass(render_pass)
             .build();
-        let pipeline = unsafe { rhi.create_graphics_pipeline(&pipeline_create_info)? };
+        let pipeline = unsafe { rhi.create_graphics_pipeline(&create_info)? };
         Ok(RenderPipelineBase {
             pipeline_layout,
             pipeline,

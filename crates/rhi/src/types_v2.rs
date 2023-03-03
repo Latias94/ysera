@@ -237,7 +237,7 @@ bitflags! {
     }
 }
 
-#[derive(TypedBuilder)]
+#[derive(TypedBuilder, Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkGraphicsPipelineCreateInfo.html>"]
 pub struct RHIGraphicsPipelineCreateInfo<'a, R: RHI>
 where
@@ -295,7 +295,7 @@ bitflags! {
     }
 }
 
-#[derive(TypedBuilder, Default)]
+#[derive(TypedBuilder, Default, Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineTessellationStateCreateInfo.html>"]
 pub struct RHIPipelineTessellationStateCreateInfo {
     #[builder(default)]
@@ -311,7 +311,7 @@ bitflags! {
     }
 }
 
-#[derive(TypedBuilder)]
+#[derive(TypedBuilder, Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineVertexInputStateCreateInfo.html>"]
 pub struct RHIPipelineVertexInputStateCreateInfo<'a> {
     #[builder(default)]
@@ -329,6 +329,7 @@ bitflags! {
     }
 }
 
+#[derive(Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkVertexInputBindingDescription.html>"]
 pub struct RHIVertexInputBindingDescription {
     pub binding: u32,
@@ -336,7 +337,7 @@ pub struct RHIVertexInputBindingDescription {
     pub input_rate: RHIVertexInputRate,
 }
 
-#[derive(TypedBuilder)]
+#[derive(TypedBuilder, Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkVertexInputAttributeDescription.html>"]
 pub struct RHIVertexInputAttributeDescription {
     #[builder(default)]
@@ -357,7 +358,7 @@ pub enum RHIVertexInputRate {
     INSTANCE,
 }
 
-#[derive(TypedBuilder)]
+#[derive(TypedBuilder, Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineInputAssemblyStateCreateInfo.html>"]
 pub struct RHIPipelineInputAssemblyStateCreateInfo {
     #[builder(default)]
@@ -376,7 +377,7 @@ bitflags! {
     }
 }
 
-#[derive(TypedBuilder)]
+#[derive(TypedBuilder, Copy, Clone)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineViewportStateCreateInfo.html>"]
 pub struct RHIPipelineViewportStateCreateInfo<'a> {
     #[builder(default)]

@@ -28,7 +28,7 @@ const MAX_FRAMES_IN_FLIGHT: u8 = 3;
 
 pub trait RHI: Sized + Send + Sync + Clone {
     type CommandPool;
-    type CommandBuffer;
+    type CommandBuffer: Copy + Clone;
     type RenderPass: Copy + Clone;
     type Image: Copy + Clone;
     type ImageView: Copy + Clone;

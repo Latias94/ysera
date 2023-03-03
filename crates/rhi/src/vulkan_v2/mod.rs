@@ -1,6 +1,7 @@
 use alloc::borrow::Cow;
 use std::collections::HashSet;
 use std::ffi::{c_char, CStr, CString};
+use std::ptr;
 use std::sync::Arc;
 
 use ash::extensions::{ext, khr};
@@ -203,11 +204,12 @@ impl crate::RHI for VulkanRHI {
     type Buffer = VulkanBuffer;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError> {
+        // 改为左手坐标系 NDC
         let viewport = RHIViewport {
             x: 0.0,
-            y: 0.0,
+            y: init_info.window_size.height as f32,
             width: init_info.window_size.width as f32,
-            height: init_info.window_size.height as f32,
+            height: -(init_info.window_size.height as f32),
             min_depth: 0.0,
             max_depth: 1.0,
         };
@@ -638,17 +640,18 @@ impl crate::RHI for VulkanRHI {
             let input_attachments = attachment
                 .input_attachments
                 .iter()
-                .map(|x| conv::map_attachment_reference(x))
+                .map(conv::map_attachment_reference)
                 .collect::<Vec<_>>();
             let color_attachments = attachment
                 .color_attachments
                 .iter()
-                .map(|x| conv::map_attachment_reference(x))
+                .map(conv::map_attachment_reference)
                 .collect::<Vec<_>>();
+
             let resolve_attachments = attachment
                 .resolve_attachments
                 .iter()
-                .map(|x| conv::map_attachment_reference(x))
+                .map(conv::map_attachment_reference)
                 .collect::<Vec<_>>();
 
             let mut vk_subpass_desc = vk::SubpassDescription::builder()
@@ -657,8 +660,8 @@ impl crate::RHI for VulkanRHI {
                     attachment.pipeline_bind_point,
                 ))
                 .input_attachments(&input_attachments)
-                .color_attachments(&color_attachments)
-                .resolve_attachments(&resolve_attachments);
+                .color_attachments(&color_attachments);
+            // .resolve_attachments(&resolve_attachments); // todo
 
             let mut vk_ds_ref = None;
             if let Some(ref ds_ref) = attachment.depth_stencil_attachment {
@@ -667,6 +670,16 @@ impl crate::RHI for VulkanRHI {
             if let Some(ref ds_ref) = vk_ds_ref {
                 vk_subpass_desc = vk_subpass_desc.depth_stencil_attachment(ds_ref);
             }
+            if input_attachments.is_empty() {
+                vk_subpass_desc.p_input_attachments = ptr::null();
+            }
+            if color_attachments.is_empty() {
+                vk_subpass_desc.p_color_attachments = ptr::null();
+            }
+            // if resolve_attachments.is_empty() {
+            //     vk_subpass_desc.p_resolve_attachments = ptr::null();
+            // }
+
             let vk_subpass_desc = vk_subpass_desc.build();
 
             subpasses.push(vk_subpass_desc);

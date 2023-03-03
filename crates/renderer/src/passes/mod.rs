@@ -1,3 +1,4 @@
+use rhi::types_v2::RHIGraphicsPipelineCreateInfo;
 use rhi::RHI;
 
 use crate::RendererError;
