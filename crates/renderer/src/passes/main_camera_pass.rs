@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rhi::types_v2::{
     RHIAttachmentDescription, RHIAttachmentReference, RHIFramebufferCreateInfo,
     RHIGraphicsPipelineCreateInfo, RHIPipelineBindPoint, RHIPipelineColorBlendStateCreateInfo,
@@ -6,20 +8,19 @@ use rhi::types_v2::{
     RHIPipelineMultisampleStateCreateInfo, RHIPipelineRasterizationStateCreateInfo,
     RHIPipelineShaderStageCreateInfo, RHIPipelineTessellationStateCreateInfo,
     RHIPipelineVertexInputStateCreateInfo, RHIPipelineViewportStateCreateInfo,
-    RHIRenderPassBeginInfo, RHIRenderPassCreateInfo, RHISubpassDescription,
+    RHIRenderPassBeginInfo, RHIRenderPassCreateInfo, RHISubpassDependency, RHISubpassDescription,
+    RHI_SUBPASS_EXTERNAL,
 };
 use rhi::RHI;
 use rhi_types::{
-    RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIBlendFactor, RHIBlendOp, RHIClearColorValue,
-    RHIClearValue, RHIColorComponentFlags, RHICullModeFlags, RHIDynamicState, RHIFrontFace,
-    RHIImageLayout, RHILogicOp, RHIOffset2D, RHIPipelineColorBlendAttachmentState, RHIPolygonMode,
-    RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits, RHISubpassContents,
+    RHIAccessFlags, RHIAttachmentLoadOp, RHIAttachmentStoreOp, RHIBlendFactor, RHIBlendOp,
+    RHIClearColorValue, RHIClearValue, RHIColorComponentFlags, RHICullModeFlags, RHIDynamicState,
+    RHIFrontFace, RHIImageLayout, RHILogicOp, RHIOffset2D, RHIPipelineColorBlendAttachmentState,
+    RHIPipelineStageFlags, RHIPolygonMode, RHIPrimitiveTopology, RHIRect2D, RHISampleCountFlagBits,
+    RHISubpassContents,
 };
-use std::collections::HashMap;
 
-use crate::passes::{
-    Framebuffer, RenderPass, RenderPassAttachmentType, RenderPassInitInfo, RenderPipelineBase,
-};
+use crate::passes::{RenderPass, RenderPassAttachmentType, RenderPassInitInfo, RenderPipelineBase};
 use crate::shader::{Shader, ShaderDescriptor, ShaderUtil};
 use crate::RendererError;
 
@@ -64,8 +65,8 @@ impl<R: RHI> MainCameraPass<R> {
                 int32: [0, 0, 0, 0],
             },
         }];
-        let renderpass_begin_info = RHIRenderPassBeginInfo::builder()
-            .renderpass(&self.render_pass)
+        let render_pass_begin_info = RHIRenderPassBeginInfo::builder()
+            .render_pass(&self.render_pass)
             .framebuffer(&self.framebuffers[current_image_index])
             .render_area(RHIRect2D {
                 offset: RHIOffset2D { x: 0, y: 0 },
@@ -76,12 +77,21 @@ impl<R: RHI> MainCameraPass<R> {
         unsafe {
             self.rhi.cmd_begin_render_pass(
                 self.rhi.get_current_command_buffer(),
-                &renderpass_begin_info,
+                &render_pass_begin_info,
                 RHISubpassContents::INLINE,
             );
         }
 
         // ...
+        unsafe {
+            self.rhi.cmd_bind_pipeline(
+                self.rhi.get_current_command_buffer(),
+                RHIPipelineBindPoint::GRAPHICS,
+                self.pipeline.pipeline,
+            );
+            self.rhi
+                .cmd_draw(self.rhi.get_current_command_buffer(), 3, 1, 0, 0);
+        }
 
         unsafe {
             self.rhi
@@ -124,14 +134,24 @@ impl<R: RHI> MainCameraPass<R> {
             .pipeline_bind_point(RHIPipelineBindPoint::GRAPHICS)
             .color_attachments(color_attachments)
             .build();
+        let dependency = RHISubpassDependency::builder()
+            .src_subpass(RHI_SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(RHIPipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(RHIAccessFlags::empty())
+            .dst_stage_mask(RHIPipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(RHIAccessFlags::COLOR_ATTACHMENT_WRITE)
+            .build();
         let attachments = &[swapchain_image_attachment];
         let subpasses = &[subpass];
+        let dependencies = &[dependency];
         let create_info = RHIRenderPassCreateInfo::builder()
             .attachments(attachments)
             .subpasses(subpasses)
+            .dependencies(dependencies)
             .build();
-        let renderpass = unsafe { rhi.create_render_pass(&create_info)? };
-        Ok(renderpass)
+        let render_pass = unsafe { rhi.create_render_pass(&create_info)? };
+        Ok(render_pass)
     }
 
     fn setup_framebuffers(

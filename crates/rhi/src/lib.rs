@@ -8,12 +8,13 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 pub use winit;
 
 pub use error::*;
-use rhi_types::{RHIExtent2D, RHISubpassContents};
+use rhi_types::{RHIExtent2D, RHIRect2D, RHISubpassContents, RHIViewport};
 
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
-    RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIRenderPassBeginInfo, RHIRenderPassCreateInfo, RHIShaderCreateInfo, RHISwapChainDesc,
+    RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineBindPoint,
+    RHIPipelineLayoutCreateInfo, RHIRenderPassBeginInfo, RHIRenderPassCreateInfo,
+    RHIShaderCreateInfo, RHISwapChainDesc,
 };
 
 mod error;
@@ -40,7 +41,6 @@ pub trait RHI: Sized + Send + Sync + Clone {
     type Pipeline: Default + Copy + Clone;
     type Sampler: Copy + Clone;
     type Shader: Copy + Clone;
-    type Viewport: Copy + Clone;
     type Buffer;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError>;
@@ -114,6 +114,44 @@ pub trait RHI: Sized + Send + Sync + Clone {
     );
 
     unsafe fn cmd_end_render_pass(&self, command_buffer: Self::CommandBuffer);
+
+    unsafe fn cmd_set_viewport(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        first_viewport: u32,
+        viewports: &[RHIViewport],
+    );
+
+    unsafe fn cmd_set_scissor(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        first_scissor: u32,
+        scissors: &[RHIRect2D],
+    );
+
+    // unsafe fn cmd_bind_index_buffer(
+    //     &self,
+    //     command_buffer: Self::CommandBuffer,
+    //     buffer: Self::Buffer,
+    //     offset: RHIDeviceSize,
+    //     index_type: RHIIndexType,
+    // );
+
+    unsafe fn cmd_bind_pipeline(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        pipeline_bind_point: RHIPipelineBindPoint,
+        pipeline: Self::Pipeline,
+    );
+
+    unsafe fn cmd_draw(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    );
 
     unsafe fn destroy_shader_module(&self, shader: Self::Shader);
 

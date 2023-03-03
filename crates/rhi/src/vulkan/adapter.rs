@@ -207,28 +207,28 @@ impl Adapter {
         for queue_family in device_queue_families.iter() {
             let is_graphics_support = if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS)
             {
-                "support"
+                "supported"
             } else {
-                "unsupport"
+                "unsupported"
             };
             let is_compute_support = if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
-                "support"
+                "supported"
             } else {
-                "unsupport"
+                "unsupported"
             };
             let is_transfer_support = if queue_family.queue_flags.contains(vk::QueueFlags::TRANSFER)
             {
-                "support"
+                "supported"
             } else {
-                "unsupport"
+                "unsupported"
             };
             let is_sparse_support = if queue_family
                 .queue_flags
                 .contains(vk::QueueFlags::SPARSE_BINDING)
             {
-                "support"
+                "supported"
             } else {
-                "unsupport"
+                "unsupported"
             };
             log::debug!(
                 "\t\t{}\t    | {: ^10} | {: ^10} | {: ^10} | {: ^15}",

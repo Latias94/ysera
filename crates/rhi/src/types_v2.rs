@@ -15,6 +15,8 @@ use rhi_types::{
 
 use crate::RHI;
 
+pub const RHI_SUBPASS_EXTERNAL: u32 = !0;
+
 pub enum RHICommandBufferLevel {
     PRIMARY,
     SECONDARY,
@@ -37,7 +39,7 @@ bitflags! {
     }
 }
 
-#[derive(TypedBuilder, Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone, Debug)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkRenderPassCreateInfo.html>"]
 pub struct RHIRenderPassCreateInfo<'a> {
     #[builder(default)]
@@ -50,7 +52,7 @@ pub struct RHIRenderPassCreateInfo<'a> {
     pub dependencies: &'a [RHISubpassDependency],
 }
 
-#[derive(TypedBuilder, Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone, Debug)]
 pub struct RHIAttachmentDescription {
     #[builder(default)]
     pub flags: RHIAttachmentDescriptionFlags,
@@ -67,7 +69,7 @@ pub struct RHIAttachmentDescription {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAttachmentDescriptionFlagBits.html>"]
     pub struct RHIAttachmentDescriptionFlags: u16 {
         #[doc = "The attachment may alias physical memory of another attachment in the same render pass"]
@@ -75,7 +77,7 @@ bitflags! {
     }
 }
 
-#[derive(TypedBuilder, Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone, Debug)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSubpassDescription.html>"]
 pub struct RHISubpassDescription<'a> {
     #[builder(default)]
@@ -92,7 +94,7 @@ pub struct RHISubpassDescription<'a> {
     pub depth_stencil_attachment: Option<RHIAttachmentReference>,
 }
 
-#[derive(TypedBuilder, Copy, Clone, Default)]
+#[derive(TypedBuilder, Copy, Clone, Default, Debug)]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkAttachmentReference.html>"]
 pub struct RHIAttachmentReference {
     pub attachment: u32,
@@ -100,7 +102,7 @@ pub struct RHIAttachmentReference {
 }
 
 #[derive(
-    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default,
+    FromPrimitive, ToPrimitive, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug,
 )]
 #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkPipelineBindPoint.html>"]
 pub enum RHIPipelineBindPoint {
@@ -110,7 +112,7 @@ pub enum RHIPipelineBindPoint {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkRenderPassCreateFlagBits.html>"]
     pub struct RHIRenderPassCreateFlags: u16 {
         #[doc = "Provided by VK_QCOM_render_pass_transform"]
@@ -119,25 +121,30 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkSubpassDescriptionFlagBits.html>"]
     pub struct RHISubpassDescriptionFlags: u16 {
     }
 }
 
-#[derive(TypedBuilder, Copy, Clone)]
+#[derive(TypedBuilder, Copy, Clone, Debug)]
 pub struct RHISubpassDependency {
     pub src_subpass: u32,
     pub dst_subpass: u32,
+    #[builder(default)]
     pub src_stage_mask: RHIPipelineStageFlags,
+    #[builder(default)]
     pub dst_stage_mask: RHIPipelineStageFlags,
+    #[builder(default)]
     pub src_access_mask: RHIAccessFlags,
+    #[builder(default)]
     pub dst_access_mask: RHIAccessFlags,
+    #[builder(default)]
     pub dependency_flags: RHIDependencyFlags,
 }
 
 bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)]
     #[doc = "<https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkDependencyFlagBits.html>"]
     pub struct RHIDependencyFlags: u16 {
         #[doc = "Dependency is per pixel region "]
@@ -535,7 +542,7 @@ pub struct RHISwapChainDesc<R: RHI> {
 
 #[derive(TypedBuilder, Clone)]
 pub struct RHIRenderPassBeginInfo<'a, R: RHI> {
-    pub renderpass: &'a R::RenderPass,
+    pub render_pass: &'a R::RenderPass,
     pub framebuffer: &'a R::Framebuffer,
     pub render_area: RHIRect2D,
     pub clear_values: &'a [RHIClearValue],

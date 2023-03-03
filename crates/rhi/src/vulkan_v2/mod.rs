@@ -18,8 +18,9 @@ use rhi_types::{
 
 use crate::types_v2::{
     RHICommandBufferLevel, RHICommandPoolCreateInfo, RHIDescriptorSetLayoutCreateInfo,
-    RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineLayoutCreateInfo,
-    RHIRenderPassBeginInfo, RHIRenderPassCreateInfo, RHIShaderCreateInfo, RHISwapChainDesc,
+    RHIFramebufferCreateInfo, RHIGraphicsPipelineCreateInfo, RHIPipelineBindPoint,
+    RHIPipelineLayoutCreateInfo, RHIRenderPassBeginInfo, RHIRenderPassCreateInfo,
+    RHIShaderCreateInfo, RHISwapChainDesc,
 };
 use crate::utils::c_char_to_string;
 use crate::vulkan_v2::debug::DebugUtils;
@@ -180,11 +181,6 @@ pub struct VulkanShader {
 }
 
 #[derive(Copy, Clone)]
-pub struct VulkanViewport {
-    raw: vk::Viewport,
-}
-
-#[derive(Copy, Clone)]
 pub struct VulkanBuffer {
     raw: vk::Buffer,
 }
@@ -204,7 +200,6 @@ impl crate::RHI for VulkanRHI {
     type Pipeline = VulkanPipeline;
     type Sampler = VulkanSampler;
     type Shader = VulkanShader;
-    type Viewport = VulkanViewport;
     type Buffer = VulkanBuffer;
 
     unsafe fn initialize(init_info: InitInfo) -> Result<Self, RHIError> {
@@ -1057,7 +1052,7 @@ impl crate::RHI for VulkanRHI {
     ) {
         let clear_values = conv::map_clear_values(begin_info.clear_values);
         let vk_begin_info = vk::RenderPassBeginInfo::builder()
-            .render_pass(begin_info.renderpass.raw)
+            .render_pass(begin_info.render_pass.raw)
             .framebuffer(begin_info.framebuffer.raw)
             .render_area(conv::map_rect_2d(begin_info.render_area))
             .clear_values(&clear_values)
@@ -1074,6 +1069,82 @@ impl crate::RHI for VulkanRHI {
 
     unsafe fn cmd_end_render_pass(&self, command_buffer: Self::CommandBuffer) {
         unsafe { self.device.cmd_end_render_pass(command_buffer.raw) };
+    }
+
+    unsafe fn cmd_set_viewport(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        first_viewport: u32,
+        viewports: &[RHIViewport],
+    ) {
+        let viewports = viewports
+            .iter()
+            .map(|x| conv::map_viewport(*x))
+            .collect::<Vec<_>>();
+        unsafe {
+            self.device
+                .cmd_set_viewport(command_buffer.raw, first_viewport, &viewports)
+        };
+    }
+
+    unsafe fn cmd_set_scissor(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        first_scissor: u32,
+        scissors: &[RHIRect2D],
+    ) {
+        let scissors = scissors
+            .iter()
+            .map(|x| conv::map_rect_2d(*x))
+            .collect::<Vec<_>>();
+        unsafe {
+            self.device
+                .cmd_set_scissor(command_buffer.raw, first_scissor, &scissors)
+        };
+    }
+
+    // unsafe fn cmd_bind_index_buffer(&self, command_buffer: Self::CommandBuffer, buffer: Self::Buffer,
+    //                                 offset: RHIDeviceSize,
+    //                                 index_type: RHIIndexType,
+    // ) {
+    //     unsafe {
+    //         self.device
+    //             .cmd_bind_index_buffer(command_buffer.raw, )
+    //     };
+    // }
+
+    unsafe fn cmd_bind_pipeline(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        pipeline_bind_point: RHIPipelineBindPoint,
+        pipeline: Self::Pipeline,
+    ) {
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                command_buffer.raw,
+                conv::map_pipeline_bind_point(pipeline_bind_point),
+                pipeline.raw,
+            )
+        };
+    }
+
+    unsafe fn cmd_draw(
+        &self,
+        command_buffer: Self::CommandBuffer,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) {
+        unsafe {
+            self.device.cmd_draw(
+                command_buffer.raw,
+                vertex_count,
+                instance_count,
+                first_vertex,
+                first_instance,
+            )
+        };
     }
 
     unsafe fn destroy_shader_module(&self, shader: Self::Shader) {
@@ -1827,28 +1898,28 @@ impl VulkanRHI {
         for queue_family in device_queue_families.iter() {
             let is_graphics_support = if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS)
             {
-                "support"
+                "supported"
             } else {
-                "unsupport"
+                "unsupported"
             };
             let is_compute_support = if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
-                "support"
+                "supported"
             } else {
-                "unsupport"
+                "unsupported"
             };
             let is_transfer_support = if queue_family.queue_flags.contains(vk::QueueFlags::TRANSFER)
             {
-                "support"
+                "supported"
             } else {
-                "unsupport"
+                "unsupported"
             };
             let is_sparse_support = if queue_family
                 .queue_flags
                 .contains(vk::QueueFlags::SPARSE_BINDING)
             {
-                "support"
+                "supported"
             } else {
-                "unsupport"
+                "unsupported"
             };
             log::debug!(
                 "\t\t{}\t    | {: ^10} | {: ^10} | {: ^10} | {: ^15}",
